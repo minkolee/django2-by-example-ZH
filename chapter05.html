@@ -465,33 +465,42 @@ ALLOWED_HOSTS = [
                   '_blank');
     });
 </pre>
-<p>这个函数为点击图片绑定了事件，让selected_img的值为图片URL，然后隐藏这个框体。之后打开一个新页面，将之前我们的HTTPS网站加上配好的URL <code>images/create/</code>，之后加上GET请求的参数 <code>?url=用JavaScript处理过的URI</code>&<code>title=JS拿到的当前页面的title值</code>。</p>
-<p>经过试验，确实可以通过书签很方便的将图片加入到自己的站点中来。</p>
-<p>小书签程序在第三方网站上工作的示例如下：</p>
+<p>这个函数的逻辑如下：</p>
+<ol>
+    <li>为每个图片元素绑定一个<code>click()</code>事件</li>
+    <li>当用户点击一个图片时，设置一个变量selected_image，是这个图片的URL地址。</li>
+    <li>之后隐藏新增的HTML结构，使用selected_image和网站的的&lt;title&gt;的内容外加我们的网站地址，生成一个链接然后在新窗口中打开链接，实现GET请求附带参数访问我们自己的网站。</li>
+</ol>
+<p>打开一个网站，然后点击小书签，在右上方出现的窗口中点击一张图片，会被重定向到我们网站的图片创建页面，如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C05-i04.jpg" alt=""></p>
+<p>撒花庆祝，我们实现了第一个小书签程序，然后将其集成到了我们的Django项目中。</p>
 
-<h2><b>图片详情页与缩略图功能</b></h2>
-<p>刚才做完了外部内容分享并且保存至本机的功能，暂时不去动了。现在显然很迫切的需求就是给用户一个管理自己图片的功能，否则只上传，连图片都无法查看和操作，就没什么意义了。</p>
-<p>Image类已经有了，现在要做的就是用视图和模板来做一个给用户展示图片详情的功能。编辑views.py：</p>
+<h2 id="c5-3"><span class="title">3</span>创建图片详情视图</h2>
+<p>完成了图片分享并保存的功能之后，现在需要建立一个详情视图用来展示具体图片，编辑<code>images</code>应用的<code>views.py</code>文件，添加如下代码：</p>
 <pre>
+from django.shortcuts import get_object_or_404
+from .models import Image
+
 def image_detail(request, id, slug):
     image = get_object_or_404(Image, id=id,slug=slug)
-    return render(request, 'images/image/detail.html',{'section':'images','image':image})
+    return render(request, 'images/image/detail.html', {'section':'images','image':image})
 </pre>
-<p>这个也很简单，目的是展示一幅图片所以使用了get_object_or_404，下边配置url</p>
+<p>这是一个简单的用于展示某个图片详情的视图，编辑<code>images</code>应用的<code>urls.py</code>文件为该视图添加一行URL：</p>
 <pre>
-# images/urls.py
 path('detail/&lt;int:id>/&lt;slug:slug>/', views.image_detail, name='detail'),
 </pre>
-<p>看到这里，写过博客项目的我们微微一笑，就知道肯定要写get_absolute_url按照这个格式返回图片的URL了。</p>
+<p>有过上个项目的经验，此时可以知道必须编写<code>Image</code>类的<code>get_absolute_url()</code>方法用于生成规范化链接，打开<code>images</code>应用的<code>models.py</code>文件，添加<code>get_absolute_url()</code>方法如下：</p>
 <pre>
-# get_absolute_url in models.Image
-from django.urls import reverse
-    def get_absolute_url(self):
-        return reverse('images:detail', args=[self.id, self.slug])
+<b>from django.urls import reverse</b>
+
+class Image(models.Model):
+    # ...
+    <b>def get_absolute_url(self):</b>
+        <b>return reverse('images:detail', args=[self.id, self.slug])</b>
 </pre>
-<p>这里多说一下，在django 2里，除了在include url的时候用namespace关键字参数指定命名空间之外，还可以在urls.py里写上app_name = 'namespace' 来设置命名空间，而APP默认有一个同名的命名空间。通过命名空间加名称可以找到想要的url，如果name是唯一的，直接通过name也可以找到。</p>
-<p><code>get_absolute_url</code>是很多情况下为了取得当前对象URL，其他程序会去默认调用的方法，因此一定要多写，多用。</p>
-<p>之后就是建立模板了：</p>
+<p>记住在每个编写的模型中加入该方法，以快捷的生成对应的URL。</p>
+<p class="emp">译者注：在django 2里，<code>urls.py</code>文件中使用<code>include()</code>方法并通过<code>namespace</code>参数指定命名空间，还需要在对应的下一级<code>urls.py</code>里写上<code>app_name = 'namespace'</code> 来设置命名空间。如果<code>include()</code>方法中设置了命名空间，其对应的<code>urls.py</code>文件中的<code>app_name</code>必须一致，否则会报错。如果<code>include()</code>方法未设置命名空间，则以<code>app_name</code>的设置为准。</p>
+<p>最后就是建立模板了，在<code>images</code>应用的模板目录中的<code>/images/image/</code>路径下创建<code>detail.html</code>文件并添加如下代码：</p>
 <pre>
 {#/templates/images/image/detail.html#}
 {% extends 'base.html' %}
@@ -525,51 +534,42 @@ from django.urls import reverse
     {% endwith %}
 {% endblock %}
 </pre>
-<p>这里的逻辑也很简单，先展示图片，然后展示所有喜欢这个图片的用户。用with是为了暂时保存查询结果，避免反复查询数据库。</p>
-<p>这里还有一个要解释的就是 image.image.url 和 user.profile.photo.url，这两个url不是Image类中的url字段，而是在定义Imagefield时候upload_to的路径名称。</p>
-<p>这个时候有的图片可以正常保存，有的会报Noreservematch错误，分析原因，其实是作者有一个小疏忽。因为在Image类重写的save方法里，只把title赋给了slug，不能保证slug字段一定能够被path自动使用的正则匹配到，这里就用django内置的Slugify来处理一下即可：</p>
-<pre>
-# 修改 models.Image的save方法
-from django.template.defaultfilters import slugify
-    def save(self, *args, **kwargs):
-        if not self.slug:
-            self.slug = slugify(self.title)
-        super(Image, self).save(*args, **kwargs)
-</pre>
-<p>这样slug就正确了。每次导入图片之后，会自动跳到这个图片的详情页面，还能显示谁喜欢了这张图片。</p>
-<p>图片详情页的示例如下：</p>
-<img src="http://img.conyli.cc/django2/C05-06.png" alt="">
+<p>这是展示具体某个图片的模板，其中使用<code>{% with %}</code>保存查询结果到<code>total_likes</code>变量中避免了查询两次数据库。然后展示图片的<code>discription</code>字段，之后迭代<code>image.users_like.all</code>，显示出所有喜欢该图片的用户。</p>
+<p class="hint">在一个模板中反复使用某一个QuerySet时，可以通过<code>{% with %}</code>将其查询结果保存到一个变量中，避免重复查询。</p>
+<p class="emp">译者注：<code>image.image.url</code>和<code>user.profile.photo.url</code>：这两个字段不是<code>Image</code>类中的<code>url</code>字段，而是在定义<code>Imagefield</code>字段时<code>upload_to</code>的路径名称。</p>
+<p>现在可以通过小书签程序再导入一个新图片，保存成功之后，会被重定向到图片的详情页，如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C05-06.png" alt=""></p>
 
-<p>在做完了图片分享的跳转网站之后，很显然还需要做一个图片列表页给用户进行管理。由于用户上传过来的图片很可能比较大，而且分辨率各不相同，如果每次都按照原尺寸传输图片，速度较慢。</p>
-<p>常用的解决方案就是显示缩略图，然后统一在页面上显示一个固定的大小，这里使用一个第三方库 <code>sorl-thumbnail</code> 来生成缩略图。</p>
+<h2 id="c5-4"><span class="title">4</span>创建图片缩略图</h2>
+<p>现在我们的图片详情页展示的是原始的图片，但是图片的尺寸可能差异很大，而且原始图片的大小可能会很大，载入时间较长。一般网站需要大量展示图片的通用做法是生成图片的缩略图然后展示缩略图。我们使用一个第三方应用<code>sorl-thumbnail</code>来生成缩略图。</p>
+<p>在系统命令行中输入以下命令安装<code>sorl-thumbnail</code>：</p>
 <pre>
 pip install sorl-thumbnail==12.4.1
-
-# settings.py
+</pre>
+<p>然后在<code>settings.py</code>文件中激活该应用：</p>
+<pre>
 INSTALLED_APPS = [
     # ...
-    'sorl.thumbnail',
+    <b>'sorl.thumbnail',</b>
 ]
 </pre>
-<p>之后按惯例migrate，看到生成了一个新表。</p>
-<p>这个模块的提供了一个新的模板标签{% thumbnail %}供在模板内显示缩略图，和一个基于Imagefield自定义的图片字段，用于在模型内设置缩略图字段。这两种方式都可以显示缩略图。</p>
-<p>我们来采取模板标签的方法。先在detail.html页面中实验一下：</p>
+<p>之后按照惯例执行数据迁移程序，可以看到数据库中增添了该应用的一个数据表。</p>
+<p>这个模块采用了两种方法显示缩略图：一是提供了新的模板标签<code>{% thumbnail %}</code>直接在模板内显示缩略图，二是基于<code>Imagefield</code>自定义的图片字段，用于在模型内设置缩略图字段。这两种方式都可以显示缩略图。</p>
+<p>我们采用模板标签的方式。编辑<code>images/image/detail.html</code>，找到如下这行：</p>
+<pre>&lt;img src="{{ image.image.url }}" class="image-detail"></pre>
+<p>将其替换成下列代码：</p>
 <pre>
 {% load thumbnail %}
-
-{% block content %}
-    &lt;h1>{{ image.title }}&lt;/h1>
-    {% thumbnail image.image '300' as im %}
-    &lt;a href="{{ image.image.url }}">&lt;img src="{{ im.url }}" class="image-detail">&lt;/a>
-    {% endthumbnail %}
-    ...
-{% endblock %}
+{% thumbnail image.image "300" as im %}
+    &lt;a href="{{ image.image.url }}">
+        &lt;img src="{{ im.url }}" class="image-detail">
+    &lt;/a>
+{% endthumbnail %}
 </pre>
-<p>通过之前提供的测试链接进来然后保存，通过浏览器的开发功能，可以看到生成了一个300*368大小的缩略图，放在了media/cache/目录下边。</p>
-<p>这个插件还可以使用很多算法生成各种缩略图，具体文档可以看<a href="https://sorl-thumbnail.readthedocs.io/en/latest/" target="_blank">这里</a>。值得一提的是如果生成不了，在settings.py里写一行 <code>THUMBNAIL_DEBUG=True</code>就可以让插件显示debug信息。</p>
-<p>今后在自己开发的网站中，对于要向用户展示内容的图片，都应该使用缩略图。</p>
+<p>这里我们定义了个固定宽度为300像素的缩略图，当用户第一次打开图片详情页时，一个缩略图会被创建在静态文件夹下，页面的原图片链接会被缩略图链接所代替。启动站点然后打开某个图片详情页，可以在项目根目录的<code>media/cache/</code>找到该图片对应的缩略图。</p>
+<p><code>sorl-thumbnail</code>可以使用很多算法生成各种缩略图。如果生成不了缩略图，在<code>settings.py</code>里增加一行<code>THUMBNAIL_DEBUG=True</code>，之后在命令行窗口中可以看到debug信息。具体文档可以看<a href="https://sorl-thumbnail.readthedocs.io/" target="_blank">https://sorl-thumbnail.readthedocs.io/</a>。</p>
 
-<h1><b>使用AJAX</b></h1>
+<h2 id="c5-5"><span class="title">5</span>使用jQuery发送AJAX请求</h2>
 <p>这是本章的第二个大内容。AJAX对于有基础的我们不再赘述了。有兴趣的读者可以看本站<a href="http://www.conyli.cc/archives/1309" target="_blank">在Django中使用jQuery发送AJAX请求</a>和<a href="http://www.conyli.cc/archives/1517" target="_blank">使用原生JS发送AJAX请求的方法</a>。</p>
 <p>这里要实现的功能，就是用户在图片详情页点击喜欢和不喜欢。之前你可能已经注意到了，image_detail视图并没有使用@login_required装饰器，这是为了让所有用户都可以看到别人上传的图片然后来点赞。</p>
 <p>点赞和取消赞是一个经常进行的动作，没有必要多次重载这个页面，这种只更新页面中的一小部分的功能，都可以用AJAX来实现。</p>
