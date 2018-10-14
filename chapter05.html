@@ -207,27 +207,43 @@ def image_create(request):
 
     return render(request, 'images/image/create.html', {'section': 'images', 'form': form})
 </pre>
-<p>这个视图需要解释以下几点：</p>
-<ul>
-    <li>首先是为什么使用GET获取数据生成请求，是因为在后边用JS发分享链接到我们的视图，会传入title和url，就会用这个来生成基础的表单展示，后续让用户再完整填写，只有收到POST请求的时候才会去下载图片。</li>
-    <li>如果POST请求提交，然后都验证通过，那么建立一个新的Image对象，但是不能保存，因为外键还没有关联，必须取得当前的用户，赋给Image类的外键，才能够保存</li>
-    <li>这里使用的redirect方法，在成功的完成了保存之后，会跳转到新保存的图片的detail页面。但是现在还没有编写Image Model的该方法，之后编写。</li>
-    <li>new_item = form.save(commit=False) 这是一个以前忽略的点：form对象调用.save()方法的时候，会返回这个表单对应的数据对象，这个数据对象就保存了当前form里已经有的数据。在这里，new_item就是当前表单执行了save之后返回的Image类的一个新实例，其中的字段只有form表单显式指定的title,url和description三个字段，以及执行了ImageCreateForm表单类里被重写的save方法之后新增的image字段（也就是那个图片）。之后再执行的new_item.save()方法是Image ORM类里重写的.save()方法，用于生成slug，此时除了users_like字段所有的信息都完全生成，可以写入数据库了。Print一下new_item的类型就可以发现是<code>&lt;class 'images.models.Image'&gt;</code></li>
-</ul>
-
-<h3><b>整理思路</b></h3>
-<p>上边的部分编写完毕以后，可以看出来一个雏形，就是通过一个GET类型的链接访问这个视图，然后自动生成一个页面，只要用户点击，就可以把这个图片上传到本站。</p>
-<p>在具体处理数据的过程中，Image类的全部字段是被各个击破的，首先是表单类显式指定了三个字段url, title 和 description，这三个通过外部链接的GET请求拿到。之后重写表单类的save方法通过拿到的URL将图片保存在image字段里。然后调用表单类的save方法得到数据对象，再给数据对象配上当前用户的user赋给外键，最后调用数据对象被重写过的save方法增加slug。这样除了users_like字段全都生成了。</p>
-<p>目前在写入之后，会报错，因为Image类里没有定义 <code>.get_absolute_url()</code>方法。不过由于跳转是在数据保存后才完成的，所以数据依然被写进了数据库。</p>
-<p>为了方便，书里提供了一个测试链接，也贴出来方便使用：<a href="http://127.0.0.1:8000/images/create/?title=%20Django%20and%20Duke&url=http://upload.wikimedia.org/wikipedia/commons/8/85/Django_Reinhardt_and_Duke_Ellington_%28Gottlieb%29.jpg" target="_blank">测试链接</a>。</p>
-<p>主要是都重写了model 和 form 的save方法，看着有点绕，只要知道form.save()返回的是一个model对象就会清楚很多了，通过form-->form.save-->view赋值-->model.save的方式逐步补全了字段</p>
-<p>继续编写urls.py和create.html</p>
+<p>使用<code>@login_required</code>装饰器令<code>image_create</code>视图仅供登录后的用户使用，这个视图工作逻辑如下：：</p>
+<ol>
+    <li>我们通过一个<code>Get</code>请求附加的参数创建表单对象，参数会带着<code>url</code>和<code>title</code>字段对应的内容。这个<code>Get</code>请求是由之后我们创建的JavaScript小书签程序发起的，现在，我们就假设该表单已经被初始化而且被用户确认并提交。</li>
+    <li>表单提交后，如果验证通过，那么建立一个新的<code>Image</code>对象，但是不存入数据库。</li>
+    <li>取得当前的用户，赋给<code>Image</code>对象的外键后进行保存，这样就可以知道该图片由哪个用户上传。</li>
+    <li>将图片写入数据库。</li>
+    <li>创建一个成功保存图片的消息，然后将用户重定向到规范化的图片对象的URL，现在还没有为<code>Image</code>模型创建<code>get_absolute_url()</code>方法，稍后会进行创建。</li>
+</ol>
+<p>在<code>images</code>应用中建立<code>urls.py</code>文件，添加如下代码：</p>
 <pre>
-# images/urls.py， 新增creete/路径
-    path('create/', views.image_create, name='create'),
-# main urls.py 主路由里把分支路由添加上
-    path('images/', include('images.urls', namespace='images'))
+from django.urls import path
+from . import views
 
+app_name = 'images'
+
+urlpatterns = [
+    path('create/', views.image_create, name='create'),
+]
+</pre>
+<p>然后编辑bookmarks项目的根urls.py文件，为images应用增加一条二级路由匹配：</p>
+<pre>
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('account/', include('account.urls')),
+    path('social-auth/', include('social_django.urls', namespace='social')),
+    <b>path('images/', include('images.urls', namespace='images')),</b>
+]
+</pre>
+<p>最后来建立对应的模板，在images应用的目录下创建如下目录和文件结构：</p>
+<pre>
+templates/
+    images/
+        image/
+            create.html
+</pre>
+<p>然后编辑刚刚创建的<code>create.html</code>文件，添加如下代码：</p>
+<pre>
 {# create.html #}
 {% extends "base.html" %}
 {% block title %}Bookmark an image{% endblock %}
@@ -241,25 +257,29 @@ def image_create(request):
     &lt;/form>
 {% endblock %}
 </pre>
-<p>urls.py和视图的配置比较简单，页面通过url显示这张图片，然后表单里有一个隐藏的url。实际提交表单的时候，再执行保存图片的动作。这样就完成好了通过一个固定的GET请求建立一个页面然后保存图片的功能。</p>
-<p>通过测试连接传入的图片示例页面如下：</p>
-<img src="http://img.conyli.cc/django2/C05-02.png" alt="">
+<p>现在启动站点，输入类似<code>http://127.0.0.1:8000/images/create/?title=...&url=...</code>的链接，其中包含<code>title</code>和<code>url</code>两个参数，分别表示图片的名称和URL地址。可以使用下边这个测试地址：</p>
+<p><a href="http://127.0.0.1:8000/images/create/?title=%20Django%20and%20Duke&url=http://upload.wikimedia.org/wikipedia/commons/8/85/Django_Reinhardt_and_Duke_Ellington_%28Gottlieb%29.jpg" target="_blank">http://127.0.0.1:8000/images/create/?title=%20Django%20and%20Duke&url=http://upload.wikimedia.org/wikipedia/commons/8/85/Django_Reinhardt_and_Duke_Ellington_%28Gottlieb%29.jpg</a></p>
+<p>应该可以看到下面的页面：</p>
+<p><img src="http://img.conyli.cc/django2/C05-02.png" alt=""></p>
+<p>在description内输入一些内容，然后点击BOOKMARK IT!按钮，一个新的Image对象会被存入数据库。由于此时<code>get_absolute_url()</code>方法还未编写，所以会报错如下：</p>
+<p><img src="http://img.conyli.cc/django2/C05-i01.jpg" alt=""></p>
+<p>此时不用担心这个错误信息，通过刚才编写的视图可以知道，执行到这里报错说明图片已经成功存入数据库，打开<a href="http://127.0.0.1:8000/admin/images/image/" target="_blank">http://127.0.0.1:8000/admin/images/image/</a>即可看到该图片的信息，如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C05-i02.jpg" alt=""></p>
 
 
-<h2><b>使用jQuery建立小书签 bookmarklet</b></h2>
-<p>bookmarklet在wiki上叫<a href="https://zh.wikipedia.org/wiki/%E5%B0%8F%E4%B9%A6%E7%AD%BE" target="_blank">小书签</a>，是以URL的形式被保存为浏览器的书签，点击时小书签执行一些功能。</p>
-<p>小书签其实就是一个JS程序，和我们通常上网时候保存的单纯网站地址的书签不同，小书签以<code>javascript:</code>开头。后边的部分会被浏览器按照JS代码解释。所以可以在当前页面执行一些程序。</p>
-<p>我们这里就打算写一个小书签程序，放在浏览器上，用户看到想分享的链接，就可以通过这个小程序将链接分享到我们的网站。前端所有东西感觉阮一峰都写过相应的文章，<a href="http://www.ruanyifeng.com/blog/2011/06/a_guide_for_writing_bookmarklet.html" target="_blank">小书签</a>也不例外。</p>
+
+
+<h3 id="c5-2-3"><span class="title">2.3</span>使用jQuery创建小书签程序</h3>
+<p><a href="https://zh.wikipedia.org/wiki/%E5%B0%8F%E4%B9%A6%E7%AD%BE" target="_blank">小书签程序</a>是一段JavaScript代码，可以被浏览器保存为书签，在点击该小书签时，其中的JavaScript代码被执行，从而实现一些功能。</p>
+<p>一些比较知名的站点，如Pinterest，使用小书签程序让用户可以从其他网站将内容分享到其网站上。我们建立的程序和这个小书签程序类似，让用户将图片分享到我们的站点来。</p>
+<p>我们将使用jQuery建立小书签程序，jQuery是一个得到广泛使用的JavaScript库，可以快速开发基于JavaScript的程序，可以访问其官方站点<a href="https://jquery.com/" target="_blank">https://jquery.com/</a>了解更多信息。</p>
 <p>用户将会这样使用我们的小书签：</p>
 <ol>
-    <li>用户将我们网站上的一个链接拖到浏览器的书签栏中，代码就会保存到浏览器的书签里</li>
-    <li>到任何其他网站上点击这个书签，小书签程序就会运行</li>
+    <li>用户将我们网站上的一个链接拖到浏览器的书签栏中，这个链接的<code>href</code>属性中保存着JS代码，这个链接被保存到浏览器书签成为一个可点击的书签</li>
+    <li>用户在其他网站上看到想分享的图片，点击这个小书签，小书签里边的程序被运行，让用户选择要分享的图片然后自动以GET请求访问我们的网站。</li>
 </ol>
-<p>这样做有一个问题，就是用户第一次添加了书签之后，一般不会再更新书签，我们便很难再更新其中的程序。一个替代的做法是，小书签里只放一个启动程序，实际执行的时候从一个URL里去执行实际的代码，这样就可以更新代码了。只是这么说大概还想不到如何去实现，下边开始编写代码：</p>
-
-<h3><b>编写JS程序</b></h3>
-<p>需要让用户拖到浏览器书签栏里的小书签程序一般长这个样子： <code>&lt;a href="javascript:alert('hi');">xxx&lt;/a></code>，按照刚才的想法，我们必须要编写一个页面让用户拖其中的链接，还需要编写一个JS程序，用于小书签内的启动器链接到这个JS程序。</p>
-<p>在images/templates/下边新建一个bookmarklet_launcher.js：</p>
+<p>由于小书签程序保存在用户的浏览器上，在用户第一次保存后，想要更新该程序就很困难，所以一般小书签程序实际上是一个程序启动器，实际执行的程序位于我们的网站上。这就是我们创建小书签的方法解说，现在来实现：</p>
+<p>在<code>images/templates/</code>目录下创建一个文件，叫做<code>bookmarklet_launcher.js</code>，添加如下JavaScript代码：</p>
 <pre>
 (function () {
     if (window.myBookmarklet !== undefined) {
@@ -270,20 +290,37 @@ def image_create(request):
     }
 })();
 </pre>
-<p>这段代码的意思是，如果当前页面已经有了myBookmarklet这个函数的话，就执行这个函数，如果没有，就去当前页面的body里添加一个script标签，src为 <code>"http://127.0.0.1:8000/static/js/bookmarklet.js?r=xxxxxxxxxxxxxxxxxxxx"</code>，也就是导入了我们网站的一段JS程序并且执行。</p>
-<p>前边先判断是否存在的原因是避免用户反复点击从而反复加载。后边使用随机数的原因是避免浏览器直接从缓存中读取程序，而是每次都会去读取最新的程序。</p>
+<p>这段JavaScript代码首先检查<code>myBookmarklet</code>这个名称是否存在于当前环境，这样用户反复点击小书签程序也不会多次运行相同程序。如果名称不存在，就在当前的页面中增加一个<code>&lt;script&gt;</code>标签，也就是导入了我们网站的一段JavaScript程序并且执行。之后的r参数生成了一段随机数，目的是让浏览器每次都去请求实际的JavaScript文件，而不从缓存中直接读取</p>
+<p>新增的<code>&lt;script&gt;</code>标签的src属性为<code>"http://127.0.0.1:8000/static/js/bookmarklet.js?r=xxxxxxxxxxxxxxxxxxxx"</code>，指向我们网站自己的JavaScript程序文件，这样小程序每次执行的时候，都会将我们网站上的JavaScript程序在当前页面执行。下边我们把小程序链接加入到用户登录首页，以让用户可以将其保存成书签。</p>
 <p>这就是一个启动器，用于加载实际上位于我们站点上的bookmarklet.js然后在当前页面运行。</p>
-<p>下一步就是来给用户增加将启动器加入书签栏的页面，这些内容都展示在用户自己的登录页面dashboard.html上：</p>
+<p>编辑<code>account</code>应用的模板目录中的<code>account/dashboard.html</code>，让其看起来像下边这样：</p>
 <pre>
-{% with total_images_created=request.user.images_created.count %}
-    &lt;p>Welcome to your dashboard. You have bookmarked {{ total_images_created }} image{{ total_images_created|pluralize }}.&lt;/p>
-    {% endwith %}
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+    &lt;h1>Dashboard&lt;/h1>
 
-    &lt;p>Drag the following button to your bookmarks toolbar to bookmark images from other websites &lt;a href="javascript:{% include "bookmarklet_launcher.js" %}" class="button">Bookmark it&lt;/a>&lt;/p>
+    <b>{% with total_images_created=request.user.images_created.count %}</b>
+        <b>&lt;p>Welcome to your dashboard. You have bookmarked {{ total_images_created }} image{{ total_images_created|pluralize }}.&lt;/p></b>
+    <b>{% endwith %}</b>
+
+    <b>&lt;p>Drag the following button to your bookmarks toolbar to bookmark images from other websites &lt;a href="javascript:{% include "bookmarklet_launcher.js" %}" class="button">Bookmark it&lt;/a>&lt;/p></b>
+
+    &lt;p>You can also &lt;a href="{% url "edit" %}">edit your profile&lt;/a> or &lt;a href="{% url "password_change" %}">change your password&lt;/a>.&lt;p>
+{% endblock %}
 </pre>
-<p>第一部分展示当前用户已经上传了多少图片，通过Image的外键related_name进行查询；第二行就是一个小书签按钮，供用户拖到书签上，其中的内容通过include引入。</p>
-<p>启动站点到/account/里边看一下。</p>
-<p>现在把小书签拖过去还没有用，因为小书签里的地址 <code>http://127.0.0.1:8000/static/js/bookmarklet.js</code>还不存在，因此在images应用的目录下边建立static/js目录，然后建立bookmarklet.js。这里还记得把随书源代码中的CSS目录也copy到static中来。然后编写bookmarklet.js：</p>
+<p>现在首页已经当前用户已经分享了多少图片到本站，使用了<code>{% with %}</code>标签用于设置一个变量名给图片总数，可以避免反复查询数据库。然后包含了一个<code>href</code>属性是小标签启动器程序的链接，供用户将其拖动到浏览器的书签栏上。这里使用了<code>include</code>将JavaScript文件的内容导入。</p>
+<p class="emp">译者注：这里灵活使用了<code>include</code>标签，可见引入的模板文件不需要是HTML文件，只要是文本文件即可，这里就通过该标签将<code>bookmarklet_launcher.js</code>文件引入，避免了在此处硬编码JavaScript代码。</p>
+<p>在浏览器中打开<a href="http://127.0.0.1:8000/account/" target="_blank">http://127.0.0.1:8000/account/</a>，可以看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C05-i03.jpg" alt=""></p>
+<p>现在开始来编写实际执行的JavaScript程序，在images应用下建立如下目录和文件结构：</p>
+<pre>
+static/
+    js/
+        bookmarklet.js
+</pre>
+<p>在随书代码中可以看到<code>images</code>应用目录下有<code>static/css/</code>目录，将其中的<code>css/</code>目录拷贝到你的应用的<code>static/</code>目录下，小书签程序将要使用其中的<code>bookmarklet.css</code>文件。</p>
+<p>打开刚建立的<code>bookmarklet.js</code>文件，添加如下代码：</p>
 <pre>
 (function () {
     let jquery_version = '3.3.1';
@@ -292,15 +329,14 @@ def image_create(request):
     let min_width = 100;
     let min_height = 100;
     function bookmarklet(msg){
-        // Here goes our bookmarklet code
+        //这里是分享图片的代码
     }
 
-    // Check if jQuery is loaded
+    // 检查页面是否加载了jQuery，如果没有就进行加载，尝试15次
     if(typeof window.jQuery !== 'undefined'){
         bookmarklet();
     }
     else {
-        // check for conflicts
         let conflict = typeof window.$ !== 'undefined';
         let script = document.createElement('script');
         script.src = '//ajax.googleapis.com/ajax/libs/jquery/' + jquery_version + '/jquery.min.js';
@@ -320,11 +356,16 @@ def image_create(request):
     }
 })();
 </pre>
-<p>现在又进入了JS时间（笑），这段代码先定义了几个变量，用于方便的修改jQuery的版本，站点相关的url，以及图片大小。然后的逻辑主要是导入jQuery，因此先检测jQuery是否存在，如果不存在就到Google的CDN上加载jQuery到head标签里。然后会间隔250毫秒重复去检测是否已经加载成功，一旦加载成功就执行bookmarklet函数。</p>
-<p>现在来编写bookmarklet函数：</p>
+<p>这是加载jQuery的代码。如果jQuery已经在当前页面加载，则会使用当前页面的jQuery，如果没有加载，则将jQuery位于google的CDN地址加入到页面中。当jQuery被成功加载的时候，就去执行<code>bookmarklet()</code>函数，该函数含有实际的分享图片代码。在文件开始的地方还定义了如下几个全局变量：</p>
+<ul>
+    <li><code>jquery_version</code>：jQuery的版本号</li>
+    <li><code>site_url</code>和<code>static_url</code>：我们网站的地址和静态文件地址</li>
+    <li><code>min_width</code>和<code>min_height</code>：用于控制程序寻找的最小图片宽高，小于这个宽或高的图片不会出现在供分享的清单中。</li>
+</ul>
+<p>现在来编写<code>bookmarklet()</code>函数，编辑文件里的<code>bookmarklet()</code>函数的代码如下：</p>
 <pre>
 function bookmarklet(msg){
-    // load CSS
+    // 加载CSS文件
     let css = jQuery('&lt;link>');
     css.attr({
         rel:'stylesheet',
@@ -333,30 +374,38 @@ function bookmarklet(msg){
     });
     jQuery('head').append(css);
 
-    // load HTML
+    // 加载HTML结构
     box_html = '&lt;div id="bookmarklet">&lt;a href="#" id="close">&times;&lt;/a>&lt;h1>Select an image to bookmark:&lt;/h1>&lt;div class="images">&lt;/div>&lt;/div>';
     jQuery('body').append(box_html);
 
-    // close event
+    // 关闭事件
     jQuery('#boorkmarklet #close').click(function () {
         jQuery("#bookmarklet").remove();
     });
-
-    // find images and display them
-    jQuery.each(jQuery('img[src$="jpg"]'), function (index, image) {
-        if (jQuery(image).width() >= min_width && jQuery(image).height() >= min_height) {
-            let image_url = jQuery(image).attr('src');
-            jQuery('#bookmarklet .images').append('&lt;a href="#">&lt;img src="' + image_url + '"/>&lt;/a>');
-        }
-    });
-}
+};
 </pre>
-<p>这段代码首先是装载CSS，用jQuery动态生成一个link元素，然后属性设置为我们网站里的那个CSS文件。然后加载HTML，使用一个box_html的HTML字符串，然后通过jQuery加载到body的尾部。之后给加载的元素绑定事件，让用户选择完图片后就清除新加入的元素。</p>
-<p>最后一部分的功能是，用$.each方法遍历当前文档中的所有src以jpg结尾的img元素，然后逐个判断是否同时长和宽高于设置的最小值，是的话就把图片加入到最后插入的class类的div里。</p>
-<p>在开始试验编写的功能之前，有些网站使用HTTPS协议，不会允许来自HTTP网站的小书签程序运行，因此必须将我们自己的网站弄成HTTPS出来，有一个工具<a href="https://ngrok.com/download" target="_blank">Ngrok</a>可以建立一个隧道将自己的本机变成HTTP和HTTPS向外提供服务。</p>
-<p>下载下来解压之后得到一个exe文件，在命令行下运行：</p>
-<pre>ngrok http 8000</pre>
-<p>可以看到窗口里显示：</p>
+<p>这段代码的逻辑如下：</p>
+<ol>
+    <li>加载<code>bookmarklet.css</code>，使用随机数确保浏览器不从缓存中读取</li>
+    <li>加入一块HTML结构代码到当前页面的<code>&lt;body&gt;</code>标签中，在页面的右上方显示一个浮动的图片列表区域</li>
+    <li>加入了一个事件，用户点击新增的区域的关闭按钮时，将我们添加的HTML结构代码从当前页面中删除。使用jQuery，通过父元素ID为<code>bookmarklet</code>的<code>#bookmarklet</code>和<code>#close</code>选择器定位我们的HTML元素。关于jQuery的选择器，可以参考<a href="https://api.jquery.com/category/selectors/" target="_blank">https://api.jquery.com/category/selectors/</a>。</li>
+</ol>
+<p>在加载了HTML结构和对应的CSS样式后，接下来要添加分享功能，将如下代码追加在<code>bookmarklet()</code>函数的内部：</p>
+<pre>
+    // 寻找页面内所有图片然后显示在新增的HTML结构中
+    jQuery.each(jQuery('img[src$="jpg"]'), function(index, image) {
+    if (jQuery(image).width() >= min_width && jQuery(image).height() >= min_height)
+    {
+        image_url = jQuery(image).attr('src');
+        jQuery('#bookmarklet .images').append('&lt;a href="#">&lt;img src="'+ image_url +'" />&lt;/a>');
+    }
+});
+</pre>
+<p>这段代码使用了<code>img[src$="jpg"]</code>选择器来选择所有jpg格式的<code>&lt;img&gt;</code>元素，然后使用<code>each()</code>方法，对其中每个图片检查是否大于最小宽高，如果大于就将其加入到我们HTML结构的<code>&lt;div class="images"&gt;</code>标签中。</p>
+<p>在开始试验编写的功能之前，还必须进行最后的设置。现在HTTPS协议使用的很广泛，为了安全起见，浏览器一般不会允许HTTP协议的小书签程序运行，因此必须给我们自己的网站一个HTTPS地址，但是Django的测试服务器无法自动支持HTTPS，为了测试小书签的功能，使用<a href="https://ngrok.com/download" target="_blank">Ngrok</a>可以建立一个隧道将自己的本机通过HTTP和HTTPS地址向外提供服务。</p>
+<p>在<a href="https://ngrok.com/download" target="  ">https://ngrok.com/download</a>下载Ngrok，之后在系统命令行里运行如下命令：</p>
+<pre>./ngrok http 8000</pre>
+<p>Ngrok建立一个隧道连接到本机的8000端口，然后为其分配一个域名，可以看到窗口里显示：</p>
 <pre>
 ngrok by @inconshreveable                                                                               (Ctrl+C to quit)
 
@@ -371,16 +420,39 @@ Forwarding                    https://d0de3ca5.ngrok.io -> localhost:8000
 Connections                   ttl     opn     rt1     rt5     p50     p90
                               0       0       0.00    0.00    0.00    0.00
 </pre>
-<p>现在就有了一个公开域名可以同时使用http和https协议访问本机了。把这个网址加入到settings.py的ALLOWED_HOSTS里。启动django服务，来实验一下是否能从刚才的域名采用https访问网站。</p>
-<p>结果发现真的可以，这样我们就有了一个使用HTTPS的公开域名，去将bookmarlet_launcher.ls里的scr修改为这个新的https域名，把bookmarklet.js里的site_url变量也修改为这个域名。</p>
-<p>配置好HTTPS之后的dashboard.html页面如下：</p>
-<img src="http://img.conyli.cc/django2/C05-03.png" alt="">
-
-<p>然后就访问新的HTTPS域名/account/login，任意用户登录之后，将那个BOOKMARTK IT的绿色按钮拖到书签栏里，然后就再找个网站，点击书签栏就会发现，页面左侧显示出了当前页面所有的大于100*100的JPG图像。</p>
-<img src="http://img.conyli.cc/django2/C05-04.png" alt="">
-<p>还剩下最后一步了，回想一下一开始我们编辑的视图是通过GET请求传递进来的，那么最后只需要将点击的那个图片的url和title拼接到一个GET请求上发回给我们的网站就可以了。继续编写bookmarklet函数：</p>
+<p>其中的<code>https://d0de3ca5.ngrok.io</code>就是可以访问到本机Django服务的HTTPS地址，把这个地址加入到<code>settings.py</code>文件的的<code>ALLOWED_HOSTS</code>里：</p>
 <pre>
-    // when an image is selected open URL with it
+ALLOWED_HOSTS = [
+    'mysite.com',
+    'localhost',
+    '127.0.0.1',
+    <code>'d0de3ca5.ngrok.io'</code>
+]
+</pre>
+<p class="emp">译者注：最好按照Ngrok官网的教程注册一个用户再使用，否则HTTPS的域名很快过期，需要重新启动Ngrok并进行相关配置。</p>
+<p>启动站点，然后访问这个HTTPS地址，应该可以看到站点的登录页面，说明HTTPS服务正常。</p>
+<p>获得HTTPS地址之后，编辑<code>bookmarklet_launcher.js</code>文件，将其中的<code>http://127.0.0.1:8000/</code>替换为新获得的HTTPS地址：</p>
+<pre>
+(function () {
+    if (window.myBookmarklet !== undefined) {
+        myBookmarklet()
+    }
+    else {
+        document.body.appendChild(document.createElement('script')).src = '<b>https://d0de3ca5.ngrok.io/</b>static/js/bookmarklet.js?r=' + Math.floor(Math.random() * 99999999999999999999);
+    }
+})();
+</pre>
+<p>再将<code>js/bookmarklet.js</code>文件中的这一行：</p>
+<pre>let site_url='http://127.0.0.1:8000/';</pre>
+<p>修改为：</p>
+<pre>let site_url='<b>https://d0de3ca5.ngrok.io/</b>';</pre>
+<p>然后打开<code>https://d0de3ca5.ngrok.io/account/</code>，将页面上的BOOKMART IT的绿色按钮拖到浏览器的书签栏上，如图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C05-04.png" alt=""></p>
+<p>打开任意一个图片比较多的网站，点击小书签，应该可以看到屏幕右上方显示一块新区域，里边列出了当前站点可供分享的图片，如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C05-05.png" alt=""></p>
+<p>我们希望用户点击一张图片，就可以将该图片分享到我们的网站，进入之前编写的视图对应的表单填写页面上，编辑<code>js/bookmarklet.js</code>文件，在<code>bookmarklet()</code>函数底部追加：</p>
+<pre>
+    // 点击图片时按照指定URL访问我们的网站
     jQuery('#bookmarklet .images a').click(function(e){
       let selected_image = jQuery(this).children('img').attr('src');
       // hide bookmarklet
@@ -393,10 +465,9 @@ Connections                   ttl     opn     rt1     rt5     p50     p90
                   '_blank');
     });
 </pre>
-<p>这个函数为点击图片绑定了事件，让selected_img的值为图片URL，然后隐藏这个框体。之后打开一个新页面，将之前我们的HTTPS网站加上配好的URL <code>images/create/</code>，之后加上GET请求的参数 <code>?url=用JS处理过的URI</code>&<code>title=JS拿到的当前页面的title值</code>。</p>
+<p>这个函数为点击图片绑定了事件，让selected_img的值为图片URL，然后隐藏这个框体。之后打开一个新页面，将之前我们的HTTPS网站加上配好的URL <code>images/create/</code>，之后加上GET请求的参数 <code>?url=用JavaScript处理过的URI</code>&<code>title=JS拿到的当前页面的title值</code>。</p>
 <p>经过试验，确实可以通过书签很方便的将图片加入到自己的站点中来。</p>
 <p>小书签程序在第三方网站上工作的示例如下：</p>
-<img src="http://img.conyli.cc/django2/C05-05.png" alt="">
 
 <h2><b>图片详情页与缩略图功能</b></h2>
 <p>刚才做完了外部内容分享并且保存至本机的功能，暂时不去动了。现在显然很迫切的需求就是给用户一个管理自己图片的功能，否则只上传，连图片都无法查看和操作，就没什么意义了。</p>
