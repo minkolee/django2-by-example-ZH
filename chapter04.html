@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/normalize.min.css">
+    <link rel="stylesheet" href="css/base.css">
+    <title>第四章 创建社交网站</title>
+
+</head>
+<body>
+<h1 id="top">第四章 创建社交网站</h1>
+<p>在之前的章节学习了如何创建站点地图、订阅信息和创建一个全文搜索引擎。这一章我们来开发一个社交网站。会创建用户登录、登出、修改和重置密码功能，为用户创建额外的用户信息，以及使用第三方身份认证登录。</p>
+<p>本章包含以下内容：</p>
+<ul>
+    <li>使用Django内置验证模块</li>
+    <li>创建用户注册视图</li>
+    <li>使用自定义的用户信息表扩展用户模型</li>
+    <li>添加第三方身份认证系统</li>
+</ul>
+<p>我们来创建本书的第二个项目。</p>
+
+<h2 id="c4-1"><span class="title">1</span>社交网站</h2>
+<p>我们将创建一个社交网站，让用户可以把网上看到的图片分享到网站来。这个社交网站包含如下功能：</p>
+<ul>
+    <li>一个供用户注册、登录、登出、修改和重置密码的用户身份验证系统，还能够让用户自行填写用户信息</li>
+    <li>关注系统，让用户可以关注其他用户</li>
+    <li>一个JS小书签工具，让用户可以将外部的图片分享（上传）到本站</li>
+    <li>一个追踪系统，让用户可以看到他所关注的用户的上传内容</li>
+</ul>
+<p>本章涉及到其中的第一个内容：用户身份验证系统。</p>
+
+<h3 id="c4-1-1"><span class="title">1.1</span>启动社交网站项目</h3>
+<p>启动系统命令行，输入下列命令创建并激活一个虚拟环境：</p>
+<pre>
+mkdir env
+virtualenv env/bookmarks
+source env/bookmarks/bin/activate
+</pre>
+<p>终端会显示当前的虚拟环境，如下：</p>
+<pre>(bookmarks)laptop:~ zenx$</pre>
+<p>在终端中安装Django并启动<code>bookmarks</code>项目：</p>
+<pre>
+pip install Django==2.0.5
+django-admin startproject bookmarks
+</pre>
+<p>然后到项目根目录内创建<code>account</code>应用：</p>
+<pre>
+cd bookmarks/
+django-admin startapp account
+</pre>
+<p>然后在<code>settings.py</code>中的<code>INSTALLED_APPS</code>设置中激活该应用：</p>
+<pre>
+INSTALLED_APPS = [
+    <b>'account.apps.AccountConfig',</b>
+    # ...
+]
+</pre>
+<p>这里将我们的应用放在应用列表的最前边，原因是：我们稍后会为自己的应用编写验证系统的模板，Django内置的验证系统自带了一套模板，如此设置可以让我们的模板覆盖其他应用中的模板设置。Django按照<code>INSTALLED_APPS</code>中的顺序寻找模板。</p>
+<p>之后执行数据迁移过程。</p>
+<p class="emp">译者注：新创建的Django项目默认依然使用Python的SQLlite数据库，建议读者为每个项目配置一个新创建的数据库。推荐使用上一章的PostgreSQL，因为本书之后还会使用PostgreSQL。</p>
+
+
+<h2 id="c4-2"><span class="title">2</span>使用Django内置验证框架</h2>
+<p>django提供了一个验证模块框架，具备用户验证，会话控制（session），权限和用户组功能并且自带一组视图，用于控制常见的用户行为如登录、登出、修改和重置密码。</p>
+<p>验证模块框架位于<code>django.contrib.auth</code>，也被其他Django的<code>contrib</code>库所使用。在第一章里创建超级用户的时候，就使用到了验证模块。</p>
+<p>使用<code>startproject</code>命令创建一个新项目时，验证模块默认已经被设置并启用，包括<code>INSTALLED_APPS</code>设置中的<code>django.contrib.auth</code>应用，和<code>MIDDLEWARE</code>设置中的如下两个中间件：</p>
+<ul>
+    <li><code>AuthenticationMiddleware</code>：将用户与HTTP请求联系起来</li>
+    <li><code>SessionMiddleware</code>：处理当前HTTP请求的session</li>
+</ul>
+<p>中间件是一个类，在接收HTTP请求和发送HTTP响应的阶段被调用，在本书的部分内容中会使用中间件，第十三章上线中会学习开发自定义中间件。</p>
+<p>验证模块还包括如下数据模型：</p>
+<ul>
+    <li><code>User</code>：一个用户数数据表，包含如下主要字段：<code>username</code>，<code>password</code>，<code>email</code>，<code>first_name</code>，<code>last_name</code>和<code>is_active</code>。</li>
+    <li><code>Group</code>：一个用户组表格</li>
+    <li><code>Permission</code>：存放用户和组的权限清单</li>
+</ul>
+<p>验证框架还包括默认的验证视图以及对应表单，稍后会使用到。</p>
+
+<h3 id="c4-2-1"><span class="title">2.1</span>创建登录视图</h3>
+<p>从这节开始使用Django的验证模块，一个登录视图需要如下功能：</p>
+<ul>
+    <li>通过用户提交的表单获取用户名和密码</li>
+    <li>将用户名和密码与数据库中的数据进行匹配</li>
+    <li>检查用户是否处于活动状态</li>
+    <li>通过在HTTP请求上附加session，让用户进入登录状态</li>
+</ul>
+<p>首先需要创建一个登录表单，在<code>account</code>应用内创建<code>forms.py</code>文件，添加以下内容：</p>
+<pre>
+from django import forms
+
+class LoginForm(forms.Form):
+    username = forms.CharField()
+    password = forms.CharField(widget=forms.PasswordInput)
+</pre>
+<p>这是用户输入用户名和密码的表单。由于一般密码框不会明文显示，这里采用了<code>widget=forms.PasswordInput</code>，令其在页面上显示为一个<code>type="password"</code>的<code>INPUT</code>元素。</p>
+<p>然后编辑<code>account</code>应用的<code>views.py</code>文件，添加如下代码：</p>
+<pre>
+from django.shortcuts import render, HttpResponse
+from django.contrib.auth import authenticate, login
+from .forms import LoginForm
+
+def user_login(request):
+    if request.method == "POST":
+        form = LoginForm(request.POST)
+        if form.is_valid():
+            cd = form.cleaned_data
+            user = authenticate(request, username=cd['username'], password=cd['password'])
+            if user is not None:
+                if user.is_active:
+                    login(request, user)
+                    return HttpResponse("Authenticated successfully")
+                else:
+                    return HttpResponse("Disabled account")
+            else:
+                return HttpResponse("Invalid login")
+
+    else:
+        form = LoginForm()
+
+    return render(request, 'account/login.html', {'form': form})
+</pre>
+<p>这是我们的登录视图，其基本逻辑是：当视图接受一个<code>GET</code>请求，通过<code>form = LoginForm()</code>实例化一个空白表单；如果接收到<code>POST</code>请求，则进行如下工作：</p>
+<ol>
+    <li>通过<code>form = LoginForm(request.POST)</code>，使用提交的数据实例化一个表单对象。</li>
+    <li>通过调用<code>form.is_valid()</code>验证表单数据。如果未通过，则将当前表单对象展示在页面中。</li>
+    <li>如果表单数据通过验证，则调用内置<code>authenticate()</code>方法。该方法接受<code>request</code>对象，<code>username</code>和<code>password</code>三个参数，之后到数据库中进行匹配，如果匹配成功，会返回一个<code>User</code>数据对象；如果未找到匹配数据，返回<code>None</code>。在匹配失败的情况下，视图返回一个登陆无效信息。</li>
+    <li>如果用户数据成功通过匹配，则根据<code>is_active</code>属性检查用户是否为活动用户，这个属性是Django内置<code>User</code>模型的一个字段。如果用户不是活动用户，则返回一个消息显示不活动用户。</li>
+    <li>如果用户是活动用户，则调用<code>login()</code>方法，在会话中设置用户信息，并且返回登录成功的消息。</li>
+</ol>
+<p class="hint">注意区分内置的<code>authenticate()</code>和<code>login()</code>方法。<code>authenticate()</code>仅到数据库中进行匹配并且返回<code>User</code>数据对象，其工作类似于进行数据库查询。而<code>login()</code>用于在当前会话中设置登录状态。二者必须搭配使用才能完成用户名和密码的数据验证和用户登录的功能。</p>
+<p>现在需要为视图设置路由，在<code>account</code>应用下创建<code>urls.py</code>，添加如下代码：</p>
+<pre>
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('login/', views.user_login, name='login')，
+]
+</pre>
+<p>然后编辑项目的根<code>ulrs.py</code>文件，导入<code>include</code>并且增加一行转发到account应用的二级路由配置：</p>
+<pre>
+from django.conf.urls import path, <b>include</b>
+from django.contrib import admin
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    <b>path('account/', include('account.urls')),</b>
+]
+</pre>
+<p>之后需要配置模板。由于项目还没有任何模板，可以先创建一个母版，在<code>account</code>应用下创建如下目录和文件结构：</p>
+<pre>
+templates/
+    account/
+        login.html
+    base.html
+</pre>
+<p>编辑<code>base.html</code>，添加下列代码：</p>
+<pre>
+{% load staticfiles %}
+&lt;!DOCTYPE html>
+&lt;html>
+&lt;head>
+    &lt;title>{% block title %}{% endblock %}&lt;/title>
+    &lt;link href="{% static "css/base.css" %}" rel="stylesheet">
+&lt;/head>
+&lt;body>
+    &lt;div id="header">
+        &lt;span class="logo">Bookmarks&lt;/span>
+    &lt;/div>
+    &lt;div id="content">
+        {% block content %}
+        {% endblock %}
+    &lt;/div>
+&lt;/body>
+&lt;/html>
+</pre>
+<p>这是这个项目使用的母版。和上一个项目一样使用了CSS文件，你需要把<code>static</code>文件夹从源码复制到<code>account</code>应用目录下。这个母版有一个<code>title</code>块和一个<code>content</code>块用于继承。</p>
+<p class="emp">译者注：原书第一章使用了<code>{% load static %}</code>，这里的模板使用了<code>{% load staticfiles %}</code>，作者并没有对这两者的差异进行说明，读者可以参考<a
+        href="https://stackoverflow.com/questions/24238496/what-is-the-difference-between-load-staticfiles-and-load-static" target="_blank">What is the difference between {% load staticfiles %} and {% load static %}</a>。</p>
+<p>之后编写<code>account/login.html</code>：</p>
+<pre>
+{% extends 'base.html' %}
+
+{% block title %}Log-in{% endblock %}
+
+{% block content %}
+&lt;h1>Log-in&lt;/h1>
+&lt;p>Please, use the following form to log-in:&lt;/p>
+    &lt;form action="." method="post">
+    {{ form.as_p }}
+    {% csrf_token %}
+    &lt;p>&lt;input type="submit" value="Log in">&lt;/p>
+    &lt;/form>
+{% endblock %}
+</pre>
+<p>这是供用户填写登录信息的页面，由于表单通过<code>Post</code>请求提交，所以需要<code>{% csrf_token %}</code>。</p>
+<p>我们的站点还没有任何用户，建立一个超级用户，然后使用超级用户到<a href="http://127.0.0.1:8000/admin/" target=" ">http://127.0.0.1:8000/admin/</a>登录，会看到默认的管理后台：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i01.jpg" alt=""></p>
+<p>使用管理后台添加一个用户，然后打开<a href="http://127.0.0.1:8000/account/login/" target="_blank">http://127.0.0.1:8000/account/login/</a>，可以看到如下登录界面：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i02.jpg" alt=""></p>
+<p>填写刚创建的用户信息并故意留空表单然后提交，可以看到错误信息如下：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i03.jpg" alt=""></p>
+<p>注意和第一章一样，很可能一些现代浏览器会阻止表单提交，修改模板关闭表单的浏览器验证即可。</p>
+<p>再进行一些实验，如果输入不存在的用户名或密码，会得到无效登录的提示，如果输入了正确的信息，就会看到如下的登录成功信息：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i04.jpg" alt=""></p>
+
+<h3 id="c4-2-2"><span class="title">2.2</span>使用内置验证视图</h3>
+<p>Django内置很多视图和表单可供直接使用，上一节的登录视图就是一个很好的例子。在大多数情况下都可以使用Django内置的验证模块而无需自行编写。</p>
+<p>Django在<code>django.contrib.auth.views</code>中提供了如下基于类的视图供使用：</p>
+<ul>
+    <li><code>LoginView</code>：处理登录表单填写和登录功能（和我们写的功能类似）</li>
+    <li><code>LogoutView</code>：退出登录</li>
+    <li><code>PaswordChangeView</code>：处理一个修改密码的表单，然后修改密码</li>
+    <li><code>PasswordChangeDoneView</code>：成功修改密码后执行的视图</li>
+    <li><code>PasswordResetView</code>：用户选择重置密码功能执行的视图，生成一个一次性重置密码链接和对应的验证token，然后发送邮件给用户</li>
+    <li><code>PasswordResetDoneView</code>：通知用户已经发送给了他们一封邮件重置密码</li>
+    <li><code>PasswordResetConfirmView</code>：用户设置新密码的页面和功能控制</li>
+    <li><code>PasswordResetCompleteView</code>：成功重置密码后执行的视图</li>
+</ul>
+<p>上边的视图列表按照一般处理用户相关功能的顺序列出相关视图，在编写带有用户功能的站点时可以参考使用。这些内置视图的默认值可以被修改，比如渲染的模板位置和使用的表单等。</p>
+<p>可以通过官方文档<a href="https://docs.djangoproject.com/en/2.0/topics/auth/default/#all-authentication-views" target="_blank">https://docs.djangoproject.com/en/2.0/topics/auth/default/#all-authentication-views</a>了解更多内置验证视图的信息。</p>
+
+<h3 id="c4-2-3"><span class="title">2.3</span>登录与登出视图</h3>
+<p>由于直接使用内置视图和内置数据模型，所以不需要编写模型与视图，来为内置登录和登出视图配置URL，编辑<code>account</code>应用的<code>urls.py</code>文件，注释掉之前的登录方法，改成内置方法：</p>
+<pre>
+from django.urls import path
+<b>from django.contrib.auth import views as auth_views</b>
+from . import views
+
+urlpatterns = [
+    # path('login/', views.user_login, name='login'),
+    <b>path('login',auth_views.LoginView.as_view(),name='login'),</b>
+    <b>path('logout',auth_views.LogoutView.as_view(),name='logout'),</b>
+]
+</pre>
+<p>现在我们把登录和登出的URL导向了内置视图，然后需要为内置视图建立模板</p>
+<p>在<code>templates</code>目录下新建<code>registration</code>目录，这个目录是内置视图默认到当前应用的模板目录里寻找具体模板的位置。</p>
+<p><code>django.contrib.admin</code>模块中自带一些验证模板，用于管理后台使用。我们在<code>INSTALLED_APPS</code>中将<code>account</code>应用放到<code>admin</code>应用的上边，令django默认使用我们编写的模板。</p>
+<p>在<code>templates/registration</code>目录下创建<code>login.html</code>并添加如下代码：</p>
+<pre>
+{% extends 'base.html' %}
+
+{% block title %}Log-in{% endblock %}
+
+{% block content %}
+    &lt;h1>Log-in&lt;/h1>
+    {% if form.errors %}
+        &lt;p>
+        Your username and password didn't match.
+        Please try again.
+        &lt;/p>
+    {% else %}
+        &lt;p>Please, use the following form to log-in:&lt;/p>
+    {% endif %}
+
+    &lt;div class="login-form">
+        &lt;form action="{% url 'login' %}" method="post">
+            {{ form.as_p }}
+            {% csrf_token %}
+            &lt;input type="hidden" name="next" value="{{ next }}">
+            &lt;p>&lt;input type="submit" value="Log-in">&lt;/p>
+        &lt;/form>
+    &lt;/div>
+
+{% endblock %}
+</pre>
+<p>这个模板和刚才自行编写登录模板很类似。内置登录视图默认使用<code>django.contrib.auth.forms</code>里的<code>AuthenticationForm</code>表单，通过检查<code>{%
+    if form.errors %}</code>可以判断验证信息是否错误。注意我们添加了一个<code>name</code>属性为<code>next</code>的隐藏<code>&lt;input&gt;</code>元素，这是内置视图通过<code>Get</code>请求获得并记录<code>next</code>参数的位置，用于返回登录前的页面，例如<code>http://127.0.0.1:8000/account/login/?next=/account/</code>。<p>
+<p><code>next</code>参数必须是一个URL地址，如果具有这个参数，登录视图会在登录成功后将用户重定向到这个参数的URL。</p>
+<p>在<code>registration</code>目录下创建<code>logged_out.html</code>：</p>
+<pre>
+{% extends 'base.html' %}
+
+{% block title %}
+Logged out
+{% endblock %}
+
+{% block content %}
+&lt;h1>Logged out&lt;/h1>
+    &lt;p>You have been successfully logged out. You can &lt;a href="{% url 'login' %}">log-in again&lt;/a>.&lt;/p>
+{% endblock %}
+</pre>
+<p>这是用户登出之后显示的提示页面。</p>
+<p>现在我们的站点已经可以使用用户登录和登出的功能了。现在还需要为用户制作一个登录成功后自己的首页，打开<code>account</code>应用的<code>views.py</code>文件，添加如下代码：</p>
+<pre>
+from django.contrib.auth.decorators import login_required
+@login_required
+def dashboard(request):
+    return render(request, 'account/dashboard.html', {'section': 'dashboard'})
+</pre>
+<p>使用<code>@login_required</code>装饰器，表示被装饰的视图只有在用户登录的情况下才会被执行，如果用户未登录，则会将用户重定向至<code>Get</code>请求附加的<code>next</code>参数指定的URL。这样设置之后，如果用户在未登录的情况下，无法看到首页。</p>
+<p>还定义了一个参数<code>section</code>，可以用来追踪用户当前所在的功能板块。</p>
+<p>现在可以创建首页对应的模板，在<code>templates/account/</code>目录下创建<code>dashboard.html</code>：</p>
+<pre>
+{% extends 'base.html' %}
+
+{% block title %}
+Dashboard
+{% endblock %}
+
+{% block content %}
+    &lt;h1>Dashboard&lt;/h1>
+    &lt;p>Welcome to your dashboard.&lt;/p>
+{% endblock %}
+</pre>
+<p>然后在<code>account</code>应用的<code>urls.py</code>里增加新视图对应的URL：</p>
+<pre>
+urlpatterns = [
+    # ...
+    <b>path('', views.dashboard, name='dashboard'),</b>
+]
+</pre>
+<p>还需要在settings.py里增加如下设置：</p>
+<pre>
+LOGIN_REDIRECT_URL = 'dashboard'
+LOGIN_URL = 'login'
+LOGOUT_URL = 'logout'
+</pre>
+<p>这三个设置分别表示：</p>
+<ul>
+    <li>如果没有指定<code>next</code>参数，登录成功后重定向的URL</li>
+    <li>用户需要登录的情况下被重定向到的URL地址（例如<code>@login_required</code>重定向到的地址）</li>
+    <li>用户需要登出的时候被重定向到的URL地址</li>
+</ul>
+<p>这里都使用了<code>path()</code>方法中的<code>name</code>属性，以动态的返回链接。在这里也可以硬编码URL。</p>
+<p>总结一下我们现在做过的工作：</p>
+<ul>
+    <li>为项目添加内置登录和登出视图</li>
+    <li>为两个视图编写模板并编写了首页视图和对应模板</li>
+    <li>为三个视图配置了URL</li>
+</ul>
+<p>最后需要在母版上添加登录和登出相关的展示。为了实现这个功能，必须根据当前用户是否登录，决定模板需要展示的内容。在内置函数<code>LoginView</code>成功执行之后，验证模块的中间件在<code>HttpRequest</code>对象上设置了用户对象<code>User</code>，可以通过<code>request.user</code>访问用户信息。在用户未登录的情况下，<code>request.user</code>也存在，是一个<code>AnonymousUser</code>类的实例。判断当前用户是否登录最好的方式就是判断<code>User</code>对象的<code>is_authenticated</code>只读属性。</p>
+<p>编辑<code>base.html</code>，修改ID为<code>header</code>的<code>&lt;div&gt;</code>标签：</p>
+<pre>
+&lt;div id="header">
+&lt;span class="logo">Bookmarks&lt;/span>
+    <b>{% if request.user.is_authenticated %}</b>
+    <b>&lt;ul class="menu"></b>
+        <b>&lt;li {% if section == 'dashboard' %}class="selected"{% endif %}>&lt;a href="{% url 'dashboard' %}">My dashboard&lt;/a>&lt;/li></b>
+        <b>&lt;li {% if section == 'images' %}class="selected"{% endif %}>&lt;a href="#">Images&lt;/a>&lt;/li></b>
+        <b>&lt;li {% if section == 'people' %}class="selected"{% endif %}>&lt;a href="#">People&lt;/a>&lt;/li></b>
+    <b>&lt;/ul></b>
+    <b>{% endif %}</b>
+
+    <b>&lt;span class="user"></b>
+        <b>{% if request.user.is_authenticated %}</b>
+        <b>Hello {{ request.user.first_name }},{{ request.user.username }},&lt;a href="{% url 'logout' %}">Logout&lt;/a></b>
+            <b>{% else %}</b>
+            <b>&lt;a href="{% url 'login' %}">Log-in&lt;/a></b>
+        <b>{% endif %}</b>
+<b>    &lt;/span></b>
+&lt;/div>
+</pre>
+<p>上边的视图只显示站点的菜单给已登录用户。还添加了了根据<code>section</code>的内容为<code>&lt;li&gt;</code>添加CSS类<code>selected</code>的功能，用于显示高亮当前的板块。最后对登录用户显示名称和登出链接，对未登录用户则显示登录链接。</p>
+<p>现在启动项目，到<a href="http://127.0.0.1:8000/account/login/" target="_blank">http://127.0.0.1:8000/account/login/</a>，会看到登录页面，输入有效的用户名和密码并点击登录按钮，之后会看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i05.jpg" alt=""></p>
+<p>可以看到当前的 My dashboard 应用了<code>selected</code>类的CSS样式。当前用户的信息显示在顶部的右侧，点击登出链接，会看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i06.jpg" alt=""></p>
+<p>可以看到用户已经登出，顶部的菜单栏已经不再显示，右侧的链接变为登录链接。</p>
+<p class="hint">如果这里看到Django内置的管理站点样式的页面，检查<code>settings.py</code>文件中的<code>INSTALLED_APPS</code>设置，确保<code>account</code>应用在<code>django.contrib.admin</code>应用的上方。由于内置的视图和我们自定义的视图使用了相同的相对路径，Django的模板加载器会使用先找到的模板。</p>
+
+<h3 id="c4-2-4"><span class="title">2.4</span>修改密码视图</h3>
+<p>在用户登录之后需要允许用户修改密码，我们在项目中集成Django的内置修改密码相关的视图。编辑<code>account</code>应用的<code>urls.py</code>文件，添加如下两行URL：</p>
+<pre>
+path('password_change', auth_views.PasswordChangeView.as_view(), name='password_change'),
+path('password_change/done/', auth_views.PasswordChangeDoneView.as_view(), name='password_change_done'),
+</pre>
+<p><code>asswordChangeView</code>视图会控制渲染修改密码的页面和表单，<code>PasswordChangeDoneView</code>视图在成功修改密码之后显示成功消息。</p>
+<p>之后要为两个视图创建模板，在<code>templates/registration/</code>目录下创建<code>password_change_form.html</code>，添加如下代码：</p>
+<pre>
+{% extends 'base.html' %}
+
+{% block title %}
+Change your password
+{% endblock %}
+
+{% block content %}
+&lt;h1>Change your password&lt;/h1>
+    &lt;p>Use the form below to change your password.&lt;/p>
+    &lt;form action="." method="post" novalidate>
+    {{ form.as_p }}
+    &lt;p>&lt;input type="submit" value="Change">&lt;/p>
+    {% csrf_token %}
+    &lt;/form>
+{% endblock %}
+</pre>
+<p><code>password_change_form.html</code>模板包含修改密码的表单，再在同一目录下创建<code>password_change_done.html</code>：</p>
+<pre>
+{% extends 'base.html' %}
+
+{% block title %}
+Password changed
+{% endblock %}
+
+{% block content %}
+&lt;h1>Password changed&lt;/h1>
+    &lt;p>Your password has been successfully changed.&lt;/p>
+{% endblock %}
+</pre>
+<p><code>password_change_done.html</code>模板包含成功创建密码后的提示消息。</p>
+<p>启动服务，到<a href="http://127.0.0.1:8000/account/password_change/" target="_blank">http://127.0.0.1:8000/account/password_change/</a>，成功登录之后可看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C04-03.png" alt=""></p>
+<p>填写表单并修改密码，之后可以看到成功消息：</p>
+<p><img src="http://img.conyli.cc/django2/C04-04.png" alt=""></p>
+<p>之后登出再登录，验证是否确实成功修改密码。</p>
+
+
+<h3 id="c4-2-5"><span class="title">2.5</span>重置密码视图</h3>
+<p>编辑<code>account</code>应用的<code>urls.py</code>文件，添加如下对应到内置视图的URL：</p>
+<pre>
+path('password_reset/', auth_views.PasswordResetView.as_view(), name='password_reset'),
+path('password_reset/done/', auth_views.PasswordResetDoneView.as_view(), name='password_reset_done'),
+path('reset/&lt;uidb64>/&lt;token>', auth_views.PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+path('reset/done/', auth_views.PasswordResetCompleteView.as_view(), name='password_reset_complete'),
+</pre>
+<p>然后在<code>account</code>应用的<code>templates/registration/</code>目录下创建<code>password_reset_form.html</code>：</p>
+<pre>
+{% extends 'base.html' %}
+
+{% block title %}
+Reset your password
+{% endblock %}
+
+{% block content %}
+&lt;h1>Forgotten your password?&lt;/h1>
+    &lt;p>Enter your e-mail address to obtain a new password.&lt;/p>
+    &lt;form action="." method="post" novalidate>
+    {{ form.as_p }}
+    {% csrf_token %}
+    &lt;p>&lt;input type="submit" value="Send e-mail">&lt;/p>
+    &lt;/form>
+{% endblock %}
+</pre>
+<p>在同一目录下创建发送邮件的页面<code>password_reset_email.html</code>，添加如下代码：</p>
+<pre>
+Someone asked for password reset for email {{ email }}. Follow the link
+below:
+{{ protocol }}://{{ domain }}{% url "password_reset_confirm" uidb64=uid token=token %}
+Your username, in case you've forgotten: {{ user.get_username }}
+</pre>
+<p>这个模板用来渲染向用户发送的邮件内容。</p>
+<p>之后在同一目录再创建<code>password_reset_done.html</code>，表示成功发送邮件的页面：</p>
+<pre>
+{% extends 'base.html' %}
+
+{% block title %}
+Reset your password
+{% endblock %}
+
+{% block content %}
+&lt;h1>Reset your password&lt;/h1>
+&lt;p>We've emailed you instructions for setting your password.&lt;/p>
+&lt;p>If you don't receive an email, please make sure you've entered the
+address you registered with.&lt;/p>
+{% endblock %}
+</pre>
+<p>然后创建重置密码的页面<code>password_reset_confirm.html</code>，这个页面是用户从邮件中打开链接后经过视图处理后返回的页面：</p>
+<pre>
+{% extends 'base.html' %}
+
+{% block title %}Reset your password{% endblock %}
+
+{% block content %}
+    &lt;h1>Reset your password&lt;/h1>
+    {% if validlink %}
+        &lt;p>Please enter your new password twice:&lt;/p>
+        &lt;form action="." method="post">
+            {{ form.as_p }}
+            {% csrf_token %}
+            &lt;p>&lt;input type="submit" value="Change my password"/>&lt;/p>
+        &lt;/form>
+    {% else %}
+        &lt;p>The password reset link was invalid, possibly because it has
+            already been used. Please request a new password reset.&lt;/p>
+    {% endif %}
+{% endblock %}
+</pre>
+<p>这个页面里有一个变量<code>validlink</code>，表示用户点击的链接是否有效，由<code>PasswordResetConfirmView</code>视图传入模板。如果有效就显示重置密码的表单，如果无效就显示一段文字说明链接无效。</p>
+<p>在同一目录内建立<code>password_reset_complete.html</code>：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}Password reset{% endblock %}
+{% block content %}
+&lt;h1>Password set&lt;/h1>
+&lt;p>Your password has been set. You can &lt;a href="{% url "login" %}">log in
+now&lt;/a>&lt;/p>
+{% endblock %}
+</pre>
+
+<p>最后编辑<code>registration/login.html</code>，在<code>&lt;form&gt;</code>元素之后加上如下代码，为页面增加重置密码的链接：</p>
+<pre>
+&lt;p>&lt;a href="{% url 'password_reset' %}">Forgotten your password?&lt;/a>&lt;/p>
+</pre>
+<p>之后在浏览器中打开<a href="http://127.0.0.1:8000/account/login/" target="_blank">http://127.0.0.1:8000/account/login/</a>，点击Forgotten your password？链接，会看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C04-05.png" alt=""></p>
+<p>这里必须在<code>settings.py</code>中配置SMTP服务器，在第二章中已经学习过配置STMP服务器的设置。如果确实没有SMTP服务器，可以增加一行：</p>
+<pre>
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+</pre>
+<p>以让Django将邮件内容输出到命令行窗口中。</p>
+<p>返回浏览器，填入一个已经存在的用户的电子邮件地址，之后点SEND E-MAIL按钮，会看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C04-06.png" alt=""></p>
+<p>此时看一下启动Django站点的命令行窗口，会打印如下邮件内容（或者到信箱中查看实际收到的电子邮件）：</p>
+<pre>
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Subject: Password reset on 127.0.0.1:8000
+From: webmaster@localhost
+To: user@domain.com
+Date: Fri, 15 Dec 2017 14:35:08 -0000
+Message-ID: <20150924143508.62996.55653@zenx.local>
+Someone asked for password reset for email user@domain.com. Follow the link
+below:
+http://127.0.0.1:8000/account/reset/MQ/45f-9c3f30caafd523055fcc/
+Your username, in case you've forgotten: zenx
+</pre>
+<p>这个邮件的内容就是<code>password_reset_email.html</code>经过渲染之后的实际内容。其中的URL指向视图动态生成的链接，将这个URL复制到浏览器中打开，会看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C04-07.png" alt=""></p>
+<p>这个页面使用<code>password_reset_confirm.html</code>模板生成，填入一个新密码然后点击CHANGE MY PASSWORD按钮，Django会用你输入的内容生成加密后的密码保存在数据库中，然后会看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C04-08.png" alt=""></p>
+<p>现在就可以使用新密码登录了。这里生成的链接只能使用一次，如果反复打开该链接，会收到无效链接的错误。</p>
+<p>我们现在已经集成了Django内置验证模块的主要功能，在大部分情况下，可以直接使用内置验证模块。也可以自行编写所有的验证程序。</p>
+<p>在第一个项目中，我们提到为应用配置单独的二级路由，有助于应用的复用。现在的<code>account</code>应用的<code>urls.py</code>文件中所有配置到内置视图的URL，可以用如下一行来代替：</p>
+<pre>
+urlpatterns = [
+    # ...
+    path('', include('django.contrib.auth.urls')),
+]
+</pre>
+<p>可以在github上看到<code>django.contrib.auth.urls</code>的源代码：<a href="https://github.com/django/django/blob/stable/2.0.x/django/contrib/auth/urls.py" target="_blank">https://github.com/django/django/blob/stable/2.0.x/django/contrib/auth/urls.py</a>。</p>
+
+<h2 id="c4-3"><span class="title">3</span>用户注册与用户信息</h2>
+<p>已经存在的用户现在可以登录、登出、修改和重置密码了。现在需要建立一个功能让用户注册。</p>
+
+<h3 id="c4-3-1"><span class="title">3.1</span>用户注册</h3>
+<p>为用户注册功能创建一个简单的视图：先建立一个供用户输入用户名、姓名和密码的表单。编辑<code>account</code>应用的<code>forms.py</code>文件，添加如下代码：</p>
+<pre>
+from django.contrib.auth.models import User
+
+class userRegistrationForm(forms.ModelForm):
+    password = forms.CharField(label='password', widget=forms.PasswordInput)
+    password2 = forms.CharField(label='Repeat password', widget=forms.PasswordInput)
+
+    class Meta:
+        model = User
+        fields = ('username','first_name','email')
+
+    def clean_password2(self):
+        cd = self.cleaned_data
+        if cd['password'] != cd['password2']:
+            raise forms.ValidationError(r"Password don't match.")
+        return cd['password2']
+</pre>
+<p>这里通过用户模型建立了一个模型表单，只包含<code>username</code>，<code>first_name</code>和<code>email</code>字段。这些字段会根据<code>User</code>模型中的设置进行验证，比如如果输入了一个已经存在的用户名，则验证不会通过，因为<code>username</code>字段被设置了<code>unique=True</code>。添加了两个新的字段<code>password</code>和<code>password2</code>，用于用户输入并且确认密码。定义了一个<code>clean_password2()</code>方法用于检查两个密码是否一致，这个方法是一个验证器方法，会在调用<code>is_valid()</code>方法的时候执行。可以对任意的字段采用<code>clean_&lt;fieldname&gt()</code>方法名创建一个验证器。Forms类还拥有一个<code>clean()</code>方法用于验证整个表单，可以方便的验证彼此相关的字段。</p>
+<p class="emp">译者注：这里必须了解表单的验证顺序。<code>clean_password2()</code>方法中使用了<code>cd['password2']</code>；为什么验证器还没有执行完毕的时候，<code>cleaned_data</code>中已经存在<code>password2</code>数据了呢？<a href="https://www.cnblogs.com/ccorz/p/5868380.html" target="_blank">这里</a>有一篇介绍django验证表单顺序的文章，可以看到，在执行自定义验证器之前，已经执行了每个字段的<code>clean()</code>方法，这个方法仅针对字段本身的属性进行验证，只要这个通过了，<code>cleaned_data</code>中就有了数据，之后才执行自定义验证器，最后执行<code>form.clean()</code>完成验证。如果过程中任意时候抛出<code>ValidationError</code>，<code>cleaned_data</code>里就会只剩有效的值，<code>errors</code>属性内就有了错误信息。</p>
+<p>关于用户注册，Django提供了一个位于<code>django.contrib.auth.forms</code>的<code>UserCreationForm</code>表单供使用，和我们自行编写的表单非常类似。</p>
+<p>编辑<code>account</code>应用的<code>views.py</code>文件，添加如下代码：</p>
+<pre>
+from .forms import LoginForm, <b>UserRegistrationForm</b>
+
+<b>def register(request):</b>
+    <b>if request.method == "POST":</b>
+        <b>user_form = UserRegistrationForm(request.POST)</b>
+        <b>if user_form.is_valid():</b>
+            <b># 建立新数据对象但是不写入数据库</b>
+            <b>new_user = user_form.save(commit=False)</b>
+            <b># 设置密码</b>
+            <b>new_user.set_password(user_form.cleaned_data['password'])</b>
+            <b># 保存User对象</b>
+            <b>new_user.save()</b>
+            <b>return render(request, 'account/register_done.html', {'new_user': new_user})</b>
+    <b>else</b>:
+        <b>user_form = UserRegistrationForm()</b>
+    <b>return render(request, 'account/register.html', {'user_form': user_form})</b>
+</pre>
+<p>这个视图逻辑很简单，我们使用了<code>set_password()</code>方法设置加密后的密码。</p>
+<p>再配置<code>account</code>应用的<code>urls.py</code>文件，添加如下的URL匹配:</p>
+<pre>
+path('register/', views.register, name='register'),
+</pre>
+<p>在<code>templates/account/</code>目录下创建模板<code>register.html</code>，添加如下代码：</p>
+<pre>
+{% extends 'base.html' %}
+
+{% block title %}
+Create an account
+{% endblock %}
+
+{% block content %}
+&lt;h1>Create an account&lt;/h1>
+    &lt;p>Please, sign up using the following form：&lt;/p>
+    &lt;form action="." method="post" novalidate>
+    {{ user_form.as_p }}
+    {% csrf_token %}
+    &lt;p>&lt;input type="submit" value="Register">&lt;/p>
+    &lt;/form>
+{% endblock %}
+</pre>
+<p>在同一目录下创建<code>register_done.html</code>模板，用于显示注册成功后的信息：</p>
+<pre>
+{% extends 'base.html' %}
+
+{% block title %}
+Welcome
+{% endblock %}
+
+{% block content %}
+    &lt;h1>Welcome {{ new_user.first_name }}!&lt;/h1>
+    &lt;p>Your account has been successfully created. Now you can &lt;a href="{% url 'login' %}">log in&lt;/a>.&lt;/p>
+{% endblock %}
+</pre>
+<p>现在可以打开<a href="http://127.0.0.1:8000/account/register/" target="_blank">http://127.0.0.1:8000/account/register/</a>，看到注册界面如下：</p>
+<p><img src="http://img.conyli.cc/django2/C04-09.png" alt=""><br></p>
+<p>填写表单并点击CREATE MY ACCOUNT按钮，如果表单正确提交，会看如下成功页面：</p>
+<p><img src="http://img.conyli.cc/django2/C04-10.png" alt=""></p>
+
+<h3 id="c4-3-2"><span class="title">3.2</span>扩展用户模型</h3>
+<p>Django内置验证模块的User模型只有非常基础的字段信息，可能需要额外的用户信息。最好的方式是建立一个用户信息模型，然后通过一对一关联字段，将用户信息模型和用户模型联系起来。</p>
+<p>编辑<code>account</code>应用的<code>models.py</code>文件，添加以下代码：</p>
+<pre>
+from django.db import models
+from django.conf import settings
+
+
+class Profile(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    date_of_birth = models.DateField(blank=True, null=True)
+    photo = models.ImageField(upload_to='user/%Y/%m/%d/', blank=True)
+
+    def __str__(self):
+        return "Profile for user {}".format(self.user.username)
+</pre>
+<p class="hint">为了保持代码通用性，使用<code>get_user_model()</code>方法来获取用户模型；当定义其他表与内置<code>User</code>模型的关系时使用<code>settings.AUTH_USER_MODEL</code>指代<code>User</code>模型。</p>
+<p>这个<code>Profile</code>模型的<code>user</code>字段是一个一对一关联到用户模型的关系字段。将<code>on_delete</code>设置为<code>CASCADE</code>，当用户被删除时，其对应的信息也被删除。这里还有一个图片文件字段，必须安装Python的<code>Pillow</code>库才能使用图片文件字段，在系统命令行中输入：</p>
+<pre>pip install Pillow==5.1.0</pre>
+<p></p>
+<p>由于我们要允许用户上传图片，必须配置Django让其提供媒体文件服务，在<code>settings.py</code>中加入下列内容：</p>
+<pre>
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+</pre>
+<p><code>MEDIA_URL</code>表示存放和提供用户上传文件的URL路径，<code>MEDIA_ROOT</code>表示实际媒体文件的存放目录。这里都采用相对地址动态生成URL。</p>
+<p>来编辑一下<code>bookmarks</code>项目的根urls.py，修改其中的代码如下:</p>
+<pre>
+from django.contrib import admin
+from django.urls import path, include
+<b>from django.conf import settings</b>
+<b>from django.conf.urls.static import static</b>
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('account/', include('account.urls')),
+]
+
+<b>if settings.DEBUG:</b>
+    <b>urlpatterns += static(settings.MEDIA_URL,document_root=settings.MEDIA_ROOT)</b>
+</pre>
+<p>这样设置后，Django开发服务器在<code>DEBUG=True</code>的情况下会提供媒体文件服务。</p>
+<p class="hint"><code>static</code>方法仅用于开发环境，在生产环境中，不要用Django提供静态文件服务（而是用Web服务程序比如NGINX等提供静态文件服务）。</p>
+<p>建立了新的模型之后需要执行数据迁移过程。之后将新的模型加入到管理后台，编辑<code>account</code>应用的<code>admin.py</code>文件，将<code>Profile</code>模型注册到管理后台中：</p>
+<pre>
+from django.contrib import admin
+from .models import Profile
+
+@admin.register(Profile)
+class ProfileAdmin(admin.ModelAdmin):
+    list_display = ['user', 'date_of_birth', 'photo']
+</pre>
+<p>启动站点，打开<a href="http://127.0.0.1:8000/admin/" target="_blank">http://127.0.0.1:8000/admin/</a>，可以在管理后台中看到新增的模型：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i07.jpg" alt=""></p>
+<p>现在需要让用户填写额外的用户信息，为此需要建立表单，编辑<code>account</code>应用的<code>forms.py</code>文件：</p>
+<pre>
+from .models import Profile
+
+class UserEditForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ('first_name', 'last_name', 'email')
+
+class ProfileEditForm(forms.ModelForm):
+    class Meta:
+        model = Profile
+        fields = ('date_of_birth', 'photo')
+</pre>
+<p>这两个表单解释如下：</p>
+<ul>
+    <li><code>UserEditForm</code>：这个表单依据<code>User</code>类生成，让用户输入姓，名和电子邮件。</li>
+    <li><code>ProfileEditForm</code>：这个表单依据<code>Profile</code>类生成，可以让用户输入生日和上传一个头像。</li>
+</ul>
+<p>之后建立视图，编辑<code>account</code>应用的<code>views.py</code>文件，导入<code>Profile</code>模型：</p>
+<pre>from .models import Profile</pre>
+<p>然后在<code>register</code>视图的<code>new_user.save()</code>下增加一行：</p>
+<pre>
+Profile.objects.create(user=new_user)
+</pre>
+<p>当用户注册的时候，会自动建立一个空白的用户信息关联到用户。在之前创建的用户，则必须在管理后台中手工为其添加对应的<code>Profile</code>对象</p>
+<p>还必须让用户可以编辑他们的信息，在同一个文件内添加下列代码：</p>
+<pre>
+from .forms import LoginForm, UserRegistrationForm, <b>UserEditForm, ProfileEditForm</b>
+
+<b>@login_required</b>
+<b>def edit(request):</b>
+    <b>if request.method == "POST":</b>
+        <b>user_form = UserEditForm(instance=request.user, data=request.POST)</b>
+        <b>profile_form = ProfileEditForm(instance=request.user.profile, data=request.POST, files=request.FILES)</b>
+        <b>if user_form.is_valid() and profile_form.is_valid():</b>
+            <b>user_form.save()</b>
+            <b>profile_form.save()</b>
+    <b>else:</b>
+        <b>user_form = UserEditForm(instance=request.user)</b>
+        <b>profile_form = ProfileEditForm(instance=request.user.profile)</b>
+
+    return render(request, 'account/edit.html', {'user_form': user_form, 'profile_form': profile_form})
+</pre>
+<p>这里使用了<code>@login_required</code>装饰器，因为用户必须登录才能编辑自己的信息。我们使用<b>UserEditForm</b>表单存储内置的<b>User</b>类的数据，用<code>ProfileEditForm</code>存放<code>Profile</code>类的数据。然后调用<code>is_valid()</code>验证两个表单数据，如果全部都通过，将使用<code>save()</code>方法写入数据库。</p>
+<p class="emp">译者注：原书没有解释<code>instance</code>参数。<code>instance</code>用于指定表单类实例化为某个具体的数据对象。在这个例子里，将<code>UserEditForm</code><code>instance</code>指定为request.user表示该对象是数据库中当前登录用户那一行的数据对象，而不是一个空白的数据对象，<code>ProfileEditForm</code>的<code>instance</code>属性指定为当前用户对应的<code>Profile</code>类中的那行数据。这里如果不指定<code>instance</code>参数，则变成向数据库中增加两条新记录，而不是修改原有记录。</p>
+<p>之后编辑<code>account</code>应用的<code>urls.py</code>文件，为新视图配置URL：</p>
+<pre>
+path('edit/', views.edit, name='edit'),
+</pre>
+<p>最后，在<code>templates/account/</code>目录下创建<code>edit.html</code>，添加如下代码：</p>
+<pre>
+{#edit.html#}
+{% extends 'base.html' %}
+
+{% block title %}
+Edit your account
+{% endblock %}
+
+{% block content %}
+&lt;h1>Edit your account&lt;/h1>
+    &lt;p>You can edit your account using the following form:&lt;/p>
+    &lt;form action="." method="post" enctype="multipart/form-data" novalidate>
+    {{ user_form.as_p }}
+    {{ profile_form.as_p }}
+    {% csrf_token %}
+        &lt;p>&lt;input type="submit" value="Save changes">&lt;/p>
+    &lt;/form>
+{% endblock %}
+</pre>
+<p>由于这个表单可能处理用户上传头像文件，所以必须设置<code>enctype="multipart/form-data</code>。我们采用一个HTML表单同时提交<code>user_form</code>和<code>profile_form</code>表单。</p>
+<p>启动站点，注册一个新用户，然后打开<a href="http://127.0.0.1:8000/account/edit/" target="_blank">http://127.0.0.1:8000/account/edit/</a>，可以看到页面如下：</p>
+<p><img src="http://img.conyli.cc/django2/C04-11.png" alt=""></p>
+<p>现在可以在用户登录后的首页加上修改用户信息的链接了，打开<code>account/dashboard.html</code>，找到下边这行：</p>
+<pre>&lt;p>Welcome to your dashboard.&lt;/p></pre>
+<p>将其替换为：</p>
+<pre>
+&lt;p>Welcome to your dashboard. <b>You can &lt;a href="{% url 'edit' %}">edit your profile&lt;/a> or &lt;a href="{% url "password_change" %}">change your password&lt;/a>.</b>&lt;/p>
+</pre>
+<p>用户现在可以通过登录后的首页修改用户信息，打开<a href="http://127.0.0.1:8000/account/" target="_blank">http://127.0.0.1:8000/account/</a>然后可以看到新增了修改用户信息的链接，页面如下：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i08.jpg" alt=""></p>
+
+<h4 id="c4-3-2-1"><span class="title">3.2.1</span>使用自定义的用户模型</h4>
+<p>Django提供了使用自定义的模型替代内置<code>User</code>模型的方法，需要编写自定义的类继承<code>AbstractUser</code>类。这个<code>AbstractUser</code>类提供了默认的用户模型的完整实现，作为一个抽象类供其他类继承。关于模型的继承将在本书最后一个项目中学习。可以在<a
+        href="https://docs.djangoproject.com/en/2.0/topics/auth/customizing/#substituting-a-custom-user-model" target="_blank">https://docs.djangoproject.com/en/2.0/topics/auth/customizing/#substituting-a-custom-user-model</a>找到关于自定义用户模型的详细信息。</p>
+<p>使用自定义用户模型比起默认内置用户模型可以更好的满足开发需求，但需要注意的是会影响一些使用Django内置用户模型的第三方应用。</p>
+
+
+<h3 id="c4-3-3"><span class="title">3.3</span>使用消息框架</h3>
+<p>当用户在我们的站点执行各种操作时，在一些关键操作可能需要通知用户其操作是否成功。Django有一个内置消息框架可以给用户发送一次性的通知。</p>
+<p>消息模块位于<code>django.contrib.messages</code>，并且已经被包含在初始化的<code>INSTALLED_APPS</code>设置中，还有一个默认启用的中间件叫做<code>django.contrib.messages.middleware.MessageMiddleware</code>，共同构成了消息系统。</p>
+<p>消息框架提供了非常简单的方法向用户发送通知：默认在cookie中存储消息内容（根据session的存储设置），然后会在下一次HTTP请求的时候在对应的响应上附加该信息。导入消息模块并且在视图中使用很简单的语句就可以发送消息，例如：</p>
+<pre>
+from django.contrib import messages
+messages.error(request, 'Something went wrong')
+</pre>
+<p>这样就在请求上附加了一个错误信息。可以使用<code>add_message()</code>或如下的方法创建消息：</p>
+<ul>
+    <li><code>success()</code>：一个动作成功之后发送的消息</li>
+    <li><code>info()</code>：通知性质的消息</li>
+    <li><code>warning()</code>：警告性质的内容，所谓警告就是还没有失败但很可能失败的情况</li>
+    <li><code>error()</code>：错误信息，通知操作失败</li>
+    <li><code>debug()</code>：除错信息，给开发者展示，在生产环境中需要被移除</li>
+</ul>
+<p>在我们的站点中增加消息内容。由于消息是贯穿整个网站的，所以打算将消息显示的部分设置在母版中，编辑<code>base.html</code>，在ID为<code>header</code>的<code>&lt;div&gt;</code>标签和ID为<code>content</code>的<code>&lt;div&gt;</code>标签之间增加下列代码：</p>
+<pre>
+{% if messages %}
+    &lt;ul class="messages">
+        {% for message in messages %}
+            &lt;li class="{{ message.tags }}">{{ message|safe }}&lt;a href="#" class="close">X&lt;/a>&lt;/li>
+        {% endfor %}
+    &lt;/ul>
+{% endif %}
+</pre>
+<p>在模板中使用了<code>messages</code>变量，在后文可以看到视图并未向模板传入该变量。这是因为在<code>settings.py</code>中的<code>TEMPLATES</code>设置中，<code>context_processors</code>的设置中包含<code>django.contrib.messages.context_processors.messages</code>这个上下文管理器，从而为模板传入了<code>messages</code>变量，而无需经过视图。默认情况下可以看到还有<code>debug</code>，<code>request</code>和<code>auth</code>三个上下文处理器。其中后两个就是我们在模板中可以直接使用<code>request.user</code>而无需传入该变量，也无需为<code>request</code>对象添加<code>user</code>属性的原因。</p>
+<p>之后来修改<code>account</code>应用的<code>views.py</code>文件，导入<code>messages</code>，然后编辑<code>edit</code>视图：</p>
+<pre>
+<b>from django.contrib import messages</b>
+
+@login_required
+def edit(request):
+    if request.method == "POST":
+        user_form = UserEditForm(instance=request.user, data=request.POST)
+        profile_form = ProfileEditForm(instance=request.user.profile, data=request.POST, files=request.FILES)
+        if user_form.is_valid() and profile_form.is_valid():
+            user_form.save()
+            profile_form.save()
+            <b>messages.success(request, 'Profile updated successfully')</b>
+        <b>else:</b>
+            <b>messages.error(request, "Error updating your profile")</b>
+    else:
+        user_form = UserEditForm(instance=request.user)
+        profile_form = ProfileEditForm(instance=request.user.profile)
+
+    return render(request, 'account/edit.html', {'user_form': user_form, 'profile_form': profile_form})
+</pre>
+<p>为视图增加了两条语句，分别在成功登录之后显示成功信息，在表单验证失败的时候显示错误信息。</p>
+<p>浏览器中打开<a href="http://127.0.0.1:8000/account/edit/" target="_blank">http://127.0.0.1:8000/account/edit/</a>，编辑用户信息，之后可以看到成功信息如下：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i09.jpg" alt=""></p>
+<p>故意填写通不过验证的数据，则可以看到错误信息如下：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i10.jpg" alt=""></p>
+<p>关于消息框架的更多信息，可以查看官方文档：<a href="https://docs.djangoproject.com/en/2.0/ref/contrib/messages/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/contrib/messages/</a>。</p>
+
+<h2 id="c4-4"><span class="title">4</span>创建自定义验证后端</h2>
+<p>Django允许对不同的数据来源采用不同的验证方式。在<code>settings.py</code>里有一个<code>AUTHENTICATION_BACKENDS</code>设置列出了项目中可使用的验证后端。其默认是：</p>
+<pre>['django.contrib.auth.backends.ModelBackend']</pre>
+<p>默认的<code>ModelBackend</code>通过<code>django.contrib.auth</code>后端进行验证，这对于大部分项目已经足够。然而我们也可以创建自定义的验证后端，用于满足个性化需求，比如LDAP目录或者来自于其他系统的验证。</p>
+<p>关于自定义验证后端可以参考官方文档：<a href="https://docs.djangoproject.com/en/2.0/topics/auth/customizing/#other-authentication-sources" target="_blank">https://docs.djangoproject.com/en/2.0/topics/auth/customizing/#other-authentication-sources</a>。</p>
+<p>每次使用内置的<code>authenticate()</code>函数时，Django会按照<code>AUTHENTICATION_BACKENDS</code>设置中列出的顺序，依次执行其中的验证后端进行验证工作，直到有一个验证后端返回成功为止。如果列表中的后端全部返回失败，则这个用户就不会被认证通过。</p>
+<p>Django提供了一个简单的规则用于编写自定义验证后端：一个验证后端必须是一个类，至少提供如下两个方法：</p>
+<ul>
+    <li><code>authenticate()</code>：参数为<code>request</code>和用户验证信息，如果用户验证信息有效，必须返回一个<code>user</code>对象，否则返回<code>None</code>。<code>request</code>参数必须是一个<code>HttpRequest</code>对象或者是<code>None</code></li>
+    <li><code>get_user()</code>：参数为用户的ID，返回一个<code>user</code>对象</li>
+</ul>
+<p>我们来编写一个采用电子邮件（而不是<code>username</code>字段）和密码登录的验证后端，编写验证后端就和编写一个Python的类没有什么区别：</p>
+<pre>
+from django.contrib.auth.models import User
+
+
+class EmailAuthBakcend:
+    """
+    Authenticate using an e-mail address.
+    """
+
+    def authenticate(self, request, username=None, password=None):
+        try:
+            user = User.objects.get(email=username)
+            if user.check_password(password):
+                return user
+            return None
+        except User.DoesNotExist:
+            return None
+
+    def get_user(self, user_id):
+        try:
+            return User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return None
+</pre>
+<p>以上代码是一个简单的验证后端。<code>authenticate()</code>方法接受<code>request</code>对象和<code>username</code>及<code>password</code>作为可选参数，这里可以用任何自定义的参数名称，我们使用<code>username</code>及<code>password</code>是为了可以与内置验证框架配合工作。两个方法工作流程如下：</p>
+<ul>
+    <li><code>authenticate()</code>：尝试使用电子邮件和密码获取用户对象，采用<code>check_password()</code>方法验证加密后的密码。</li>
+    <li><code>get_user()</code>：通过<code>user_id</code>参数获取用户ID，在会话存续Django会使用内置的验证后端去验证并取得<code>User</code>对象。</li>
+</ul>
+<p>编辑settings.py文件增加：</p>
+<pre>
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'account.authentication.EmailAuthBackend',
+]
+</pre>
+<p>在上边的设置里，我们将自定义验证后端加到了默认验证的后边。打开<a href="http://127.0.0.1:8000/account/login/" target="_blank">http://127.0.0.1:8000/account/login/</a>，注意Django尝试使用所有的验证后端，所以我们现在可以使用用户名或者电子邮件来登录，填写的信息会先交给<code>ModelBackend</code>进行验证，如果没有得到用户对象，就会使用我们的<code>EmailAuthBackend</code>进行验证。</p>
+<p class="hint"><code>AUTHENTICATION_BACKENDS</code>中的顺序很重要，如果一个用户信息对于多个验证后端都有效，Django会停止在第一个成功验证的后端处。</p>
+
+<h2 id="c4-5"><span class="title">5</span>第三方认证登录</h2>
+<p>很多社交网站除了注册用户之外，提供了链接可以快速的通过第三方平台的用户信息进行登录，我们也可以为自己的站点添加例如Facebook，Twitter或Google的第三方认证登录功能。Python Social Auth是一个提供第三方认证登录的模块。使用这个模块可以让用户以第三方网站的信息进行登录，而无需先注册本网站的用户。这个模块的源码在<a href="https://github.com/python-social-auth" target="_blank">https://github.com/python-social-auth</a>。</p>
+<p>这个模块支持很多不同的Python Web框架，其中也包括Django，通过以下命令安装：</p>
+<pre>
+pip install social-auth-app-django==2.1.0
+</pre>
+<p>然后将应用名<code>social_django</code>添加到<code>settings.py</code>文件的<code>INSTALLED_APPS</code>设置中：</p>
+<pre>
+INSTALLED_APPS = [
+    #...
+    <b>'social_django',</b>
+]
+</pre>
+<p>该应用自带了数据模型，所以需要执行数据迁移过程。执行之后可以在数据库中看到新增<code>social_auth</code>开头的一系列数据表。Python 的social auth模块具体支持的第三方验证服务，可以查看官方文档：<a href="https://python-social-auth.readthedocs.io/en/latest/backends/index.html#supported-backends" target="_blank">https://python-social-auth.readthedocs.io/en/latest/backends/index.html#supported-backends</a>。</p>
+<p class="emp">译者注：Facebook，Twitter和Google的第三方验证均通过OAuth2认证，而且操作方式基本相同。以下仅以Google为例子进行翻译：</p>
+<p>需要先把第三方认证的URL添加到项目中，编辑<code>bookmarks</code>项目的根<code>urls.py</code>：</p>
+<pre>
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('account/', include('account.urls')),
+    <b>path('social-auth/', include('social_django.urls', namespace='social')),</b>
+]
+</pre>
+<p>一些网站的第三方验证接口不允许将验证后的地址重定向到类似<code>127.0.0.1</code>或者<code>localhost</code>这种本地地址，为了正常使用第三方验证服务，需要一个正式域名，可以通过修改Hosts文件。如果是Linux或macOS X下，可以编辑<code>/etc/hosts</code>加入一行：</p>
+<pre>127.0.0.1 mysite.com</pre>
+<p>这样会将<code>mysite.com</code>域名对应到本机地址。如果是Windows环境，可以在<code>C:\Windows\System32\Drivers\etc\hosts</code>找到<code>hosts</code>文件。</p>
+<p>为了测试该设置是否生效，启动站点然后在浏览器中打开<a href="http://mysite.com:8000/account/login/" target="_blank">http://mysite.com:8000/account/login/</a>，会得到如下错误信息：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i11.jpg" alt=""></p>
+<p>这是因为Djanog在<code>settings.py</code>中的<code>ALLOWED_HOSTS</code>设置中，仅允许对此处列出的域名提供服务，这是为了防止<a href="https://www.acunetix.com/blog/articles/automated-detection-of-host-header-attacks/" target="_blank">HTTP请求头攻击</a>。关于该设置可以参考官方文档：<a
+        href="https://docs.djangoproject.com/en/2.0/ref/settings/#allowed-hosts" target="_blank">https://docs.djangoproject.com/en/2.0/ref/settings/#allowed-hosts</a>。</p>
+<p>编辑<code>settings.py</code>文件然后修改<code>ALLOWED_HOSTS</code>为如下：</p>
+<pre>ALLOWED_HOSTS = ['mysite.com', 'localhost', '127.0.0.1']</pre>
+<p>在<code>mysite.com</code>之外，我们增加了<code>localhost</code>和<code>127.0.0.1</code>，其中<code>localhost</code>是在<code>DEBUG=True</code>和<code>ALLOWED_HOSTS</code>留空情况下的默认值，现在就可以通过<a
+        href="http://mysite.com:8000/account/login/" target="_blank">http://mysite.com:8000/account/login/</a>正常访问开发网站了。</p>
+
+<h3 id="c4-5-1"><span class="title">5.1</span>使用Google第三方认证</h3>
+<p>Google提供OAuth2认证，详细文档可以参考：<a href="https://developers.google.com/identity/protocols/OAuth2" target="_blank">https://developers.google.com/identity/protocols/OAuth2</a>。</p>
+<p>为使用Google的第三方认证服务，将以下验证后端添加到<code>settings.py</code>的<code>AUTHENTICATION_BACKENDS</code>中：</p>
+<pre>
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'account.authentication.EmailAuthBackend',
+    <b>'social_core.backends.facebook.FacebookAppOAuth2',</b>
+]
+</pre>
+<p class="emp">译者注：由于Google API的界面在原书成书后已经改变，以下在Google网站的操作步骤和截图来自于译者实际操作过程。</p>
+<p>需要到Google开发者网站创建一个API key，按照以下步骤操作：</p>
+<ol>
+    <li>
+        打开<a href="https://console.developers.google.com/apis/credentials" target="_blank">https://console.developers.google.com/apis/credentials</a>，点击屏幕左上方<code>Google APIs</code>字样右边的<code>选择项目</code>，会弹出项目对话框，点击右上方的<code>新建项目</code>，如图所示：
+        <p><img src="http://img.conyli.cc/django2/C04-g01.jpg" alt=""></p>
+    </li>
+    <li>
+        填写新建项目的信息，项目名称为<code>Bookmarks</code>，位置可以不选，之后点击创建按钮，如下图所示：
+        <p><img src="http://img.conyli.cc/django2/C04-g02.jpg" alt=""></p>
+    </li>
+    <li>
+        之后与步骤1中的步骤类似，点开<code>选择项目</code>，选中刚建立的<code>Bookmarks</code>项目，然后点击右下方的<code>打开</code>。
+    </li>
+    <li>
+        会自动跳转到一个页面提示尚未创建API凭据，点击页面中的<code>创建凭据</code>按钮，并选择第二项<code>OAuth客户端ID</code>，如下图所示：
+        <p><img src="http://img.conyli.cc/django2/C04-g03.jpg" alt=""></p>
+    </li>
+    <li>
+        之后会进入一个界面，要求必须配置OAuth同意屏幕，如下图所示：
+        <p><img src="http://img.conyli.cc/django2/C04-g04.jpg" alt=""></p>
+        点击右侧的<code>配置同意屏幕</code>按钮。
+    </li>
+    <li>
+        之后进入到OAuth同意屏幕，里边有一系列设置。在应用名称中填入<code>Bookmarks</code>，默认<code>支持电子邮件</code>为你自己的电子邮件地址，可以修改为其他地址，在<code>已获授权的网域</code>中填入<code>mysite.com</code>，之后点击保存，如图所示：
+        <p><img src="http://img.conyli.cc/django2/C04-g05.jpg" alt=""></p>
+    </li>
+    <li>
+        此时会跳转到步骤5的问题页面，选择<code>网页应用</code>，之后会被要求填写辅助信息，在<code>名称</code>中填写<code>Bookmarks</code>，<code>已获授权的重定向 URI</code>中填写<code>http://mysite.com:8000/socialauth/complete/google-oauth2/</code>，如下图所示：
+        <p><img src="http://img.conyli.cc/django2/C04-g06.jpg" alt=""></p>
+
+    </li>
+    <li>
+        点击<code>创建</code>按钮，即可在页面中看到当前API的ID和密钥，如图所示：
+        <p><img src="http://img.conyli.cc/django2/C04-g07.jpg" alt=""></p>
+    </li>
+    <li>
+        将API ID 和密钥填写到settings.py文件中，增加如下两行：
+<pre>
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = 'XXX' # API ID
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = 'XXX' # 密钥
+</pre>
+    </li>
+    <li>
+        点击<code>确认</code>关闭对话框，之后在左侧菜单的<code>凭据</code>菜单内可以回到此处查看ID和密钥。现在点击左侧菜单的<code>库</code>，会跳转到欢迎使用新版API库的界面，在其中找到Google+ API，如图所示：
+        <p><img src="http://img.conyli.cc/django2/C04-g08.jpg" alt=""></p>
+    </li>
+    <li>
+        点击Google+ API，在弹出的页面中选择启用，如图所示：
+        <p><img src="http://img.conyli.cc/django2/C04-g09.jpg" alt=""></p>
+    </li>
+</ol>
+<p>在Google中的配置就全部结束了，生成了一个OAuth2认证的ID和密钥，之后我们就将采用这些信息与Google进行通信。</p>
+
+<p>然后编辑<code>account</code>应用的<code>registration/login.html</code>模板，在<code>content</code>块的内部最下方增加用于进行Google第三方认证登录的链接：</p>
+<pre>
+&lt;div class="social">
+    &lt;ul>
+        &lt;li class="google">&lt;a href="{% url 'social:begin' 'google-oauth2' %}">Log in with Google&lt;/a>&lt;/li>
+    &lt;/ul>
+&lt;/div>
+</pre>
+<p>打开<a href="http://mysite.com:8000/account/login/" target="_blank">http://mysite.com:8000/account/login/</a>，可以看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C04-i12.jpg" alt=""></p>
+<p>点击Login with Google按钮，使用Google账户登录后，就会被重定向到我们网站的登录首页。</p>
+<p>我们现在就为项目增加了第三方认证登录功能，即使是没有在本站注册的用户，也可以快捷的进行登录了。</p>
+
+<p class="emp">译者注：这里有一个小问题，就是通过第三方登录进来的用户，检查<code>auth_user</code>表会发现其实用户信息已经被写入到了该表里，但是<code>Profile</code>表没有写入对应的外键字段，导致第三方认证用户在修改用户信息时会报错。很多网站的做法是：通过第三方验证进来的用户，必须捆绑到本站已经存在的账号中。这里我们简化一下处理，当用户修改字段的<code>Get</code>请求进来时，检测<code>Profile</code>表中该用户的外键是不是存在，如果不存在，就新建对应该用户的<code>Profile</code>对象，然后再用这个数据对象返回表单实例供填写。修改后的<code>edit</code>视图如下：</p>
+<pre>
+@login_required
+def edit(request):
+    if request.method == "POST":
+        user_form = UserEditForm(instance=request.user, data=request.POST)
+        profile_form = ProfileEditForm(instance=request.user.profile, data=request.POST, files=request.FILES)
+        if user_form.is_valid() and profile_form.is_valid():
+            user_form.save()
+            profile_form.save()
+            messages.success(request, 'Profile updated successfully')
+        else:
+            messages.error(request, "Error updating your profile")
+    else:
+        <b>try:</b>
+            <b>Profile.objects.get(user=request.user)</b>
+        <b>except Profile.DoesNotExist:</b>
+            <b>Profile.objects.create(user=request.user)</b>
+        user_form = UserEditForm(instance=request.user)
+        profile_form = ProfileEditForm(instance=request.user.profile)
+
+    return render(request, 'account/edit.html', {'user_form': user_form, 'profile_form': profile_form})
+</pre>
+
+<h1><b>总结</b></h1>
+<p>这一章学习了使用内置框架快捷的建立用户验证系统，以及建立自定义的用户信息，还学习了为网站添加第三方认证。</p>
+<p>下一章中将学习建立一个图片分享系统，生成图片缩略图，以及在Djanog中使用AJAX技术。</p>
+</body>
+</html>

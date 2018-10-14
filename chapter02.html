@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/normalize.min.css">
+    <link rel="stylesheet" href="css/base.css">
+    <title>第二章 增强博客功能</title>
+
+</head>
+<body>
+<h1 id="top">第二章 增强博客功能</h1>
+<p>在之前的章节创建基础的博客应用，现在可以变成具备通过邮件分享文章，带有评论和标签系统等功能的完整博客。在这一章会学习到如下内容：</p>
+<ul>
+    <li>使用Django发送邮件</li>
+    <li>创建表单并且通过视图控制表单</li>
+    <li>通过模型生成表单</li>
+    <li>集成第三方应用</li>
+    <li>更复杂的ORM查询</li>
+</ul>
+<h2 id="c2-1"><span class="title">1</span>通过邮件分享文章</h2>
+<p>首先来制作允许用户通过邮件分享文章链接的功能。在开始之前，先想一想你将如何使用视图、URLs和模板来实现这个功能，然后看一看你需要做哪些事情：</p>
+<ul>
+    <li>创建一个表单供用户填写名称和电子邮件地址收件人，以及评论等。</li>
+    <li>在<code>views.py</code>中创建一个视图控制这个表单，处理接收到的数据然后发送电子邮件</li>
+    <li>为新的视图在<code>urls.py</code>中配置URL</li>
+    <li>创建展示表单的模板</li>
+</ul>
+<h3 id="c2-1-1"><span class="title">1.1</span>使用Django创建表单</h3>
+<p>Django内置一个表单框架，可以简单快速的创建表单。表单框架具有自定义表单字段、确定实际显示的方式和验证数据的功能。</p>
+<p>Django使用两个类创建表单：</p>
+<ul>
+    <li><code>Form</code>：用于生成标准的表单</li>
+    <li><code>ModelForm</code>：用于从模型生成表单</li>
+</ul>
+<p>在<code>blog</code>应用中创建一个<code>forms.py</code>文件，然后编写：</p>
+<pre>
+from django import forms
+
+class EmailPostForm(forms.Form):
+    name = forms.CharField(max_length=25)
+    email = forms.EmailField()
+    to = forms.EmailField()
+    comments = forms.CharField(required=False, widget=forms.Textarea)
+</pre>
+<p>这是使用forms类创建的第一个标准表单，通过继承内置<code>Form</code>类，然后设置字段为各种类型，用于验证数据。</p>
+<p class="hint">表单可以编写在项目的任何位置，但通常将其编写在对应应用的<code>forms.py</code>文件中。</p>
+<p><code>name</code>字段是<code>Charfield</code>类型，会被渲染为<code>&lt;input type="text"&gt;</code>HTML标签。每个字段都有一个默认的<code>widget</code>参数决定该字段被渲染成的HTML元素类型，可以通过<code>widget</code>参数改写。在<code>comments</code>字段中，使用了<code>widget=forms.Textarea</code>令该字段被渲染为一个<code>&lt;textarea&gt;</code>元素，而不是默认的<code>&lt;input&gt;</code>元素。
+</p>
+<p>
+    字段验证也依赖于字段属性。例如：<code>email</code>和<code>to</code>字段都是<code>EmailField</code>类型，两个字段都接受一个有效的电子邮件格式的字符串，否则这两个字段会抛出<code>forms.ValidationError</code>错误。表单里还存在的验证是：<code>name</code>字段的最大长度<code>maxlength</code>是25个字符，<code>comments</code>字段的<code>required=False</code>表示该字段可以没有任何值。所有的这些设置都会影响到表单验证。本表单只使用了很少一部分的字段类型，关于所有表单字段可以参考<a
+        href="https://docs.djangoproject.com/en/2.0/ref/forms/fields/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/forms/fields/</a>。
+</p>
+
+<h3 id="c2-1-2"><span class="title">1.2</span>通过视图控制表单</h3>
+<p>现在需要写一个视图，用于处理表单提交来的数据，当表单成功提交的时候发送电子邮件。编辑<code>blog</code>应用的<code>views.py</code>文件：</p>
+<pre>
+from .forms import EmailPostForm
+
+def post_share(request, post_id):
+    # 通过id 获取 post 对象
+    post = get_object_or_404(Post, id=post_id, status='published')
+    if request.method == "POST":
+        # 表单被提交
+        form = EmailPostForm(request.POST)
+        if form.is_valid():
+            # 验证表单数据
+            cd = form.cleaned_data
+            # 发送邮件......
+    else:
+        form = EmailPostForm()
+    return render(request, 'blog/post/share.html', {'post': post, 'form': form})
+</pre>
+<p>这段代码的逻辑如下：</p>
+<ul>
+    <li>定义了post_share视图，参数是<code>request</code>对象和<code>post_id</code>。</li>
+    <li>使用<code>get_object_or_404()</code>方法，通过ID和<code>published</code>取得所有已经发布的文章中对应ID的文章。</li>
+    <li>这个视图同时用于显示空白表单和处理提交的表单数据。我们先通过<code>request.method</code>判断当前请求是<code>POST</code>还是<code>GET</code>请求。如果是<code>GET</code>请求，展示一个空白表单；如果是<code>POST</code>请求，需要处理表单数据。
+    </li>
+</ul>
+<p>处理表单数据的过程如下：</p>
+<ol>
+    <li>视图收到<code>GET</code>请求，通过<code>form = EmailPostForm()</code>创建一个空白的<code>form</code>对象，展示在页面中是一个空白的表单供用户填写。</li>
+    <li>用户填写并通过<code>POST</code>请求提交表单，视图使用<code>request.POST</code>中包含的表单数据创建一个表单对象：
+        <pre>
+if request.method == 'POST':
+    # 表单被提交
+    form = EmailPostForm(request.POST)
+</pre>
+    </li>
+
+    <li>在上一步之后，调用表单对象的<code>is_valid()</code>方法。这个方法会验证表单中所有的数据是否有效，如果全部通过验证会返回<code>True</code>，任意一个字段未通过验证，<code>is_valid()</code>就会返回<code>False</code>。如果返回<code>False</code>，此时可以在<code>form.errors</code>属性中查看错误信息。
+    </li>
+    <li>如果表单验证失败，我们将这个表单对象渲染回页面，页面中会显示错误信息。</li>
+    <li>如果表单验证成功，可以通过<code>form.cleaned_data</code>属性访问表单内所有通过验证的数据，这个属性类似于一个字典，包含字段名与值构成的键值对。</li>
+</ol>
+<p class="hint">如果表单验证失败，<code>form.cleaned_data</code>只会包含通过验证的数据。</p>
+<p>现在就可以来学习如何使用Django发送邮件了。</p>
+
+<h3 id="c2-1-3"><span class="title">1.3</span>使用Django发送邮件</h3>
+<p>使用Django发送邮件比较简单，需要一个本地或者外部的SMTP服务器，然后在<code>settings.py</code>文件中加入如下设置：</p>
+
+<ul>
+    <li><code>EMAIL_HOST</code>：邮件主机，默认是<code>localhost</code></li>
+    <li><code>EMAIL_PORT</code>：SMTP服务端口，默认是25</li>
+    <li><code>EMAIL_HOST_USER</code>：SMTP服务器的用户名</li>
+    <li><code>EMAIL_HOST_PASSWORD</code>：SMTP服务器的密码</li>
+    <li><code>EMAIL_USE_TLS</code>：是否使用TLS进行连接</li>
+    <li><code>EMAIL_USE_SSL</code>：是否使用SSL进行连接</li>
+</ul>
+<p>如果无法使用任何SMTP服务器，则可以将邮件打印在命令行窗口中，在<code>settings.py</code>中加入下列这行：</p>
+<pre>
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+</pre>
+<p>这样会把所有的邮件内容显示在控制台，非常便于测试。</p>
+<p>如果没有本地SMTP服务器，可以使用很多邮件服务供应商提供的SMTP服务，以下是使用Google的邮件服务示例：</p>
+<pre>
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_HOST_USER = 'your_account@gmail.com'
+EMAIL_HOST_PASSWORD = 'your_password'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+</pre>
+<p>输入<code>python manage.py shell</code>，在命令行环境中试验一下发送邮件的指令：</p>
+<pre>
+from django.core.mail import send_mail
+send_mail('Django mail', 'This e-mail was sent with Django.', 'your_account@gmail.com', ['your_account@gmail.com'], fail_silently=False)
+</pre>
+<p><code>send_mail()</code>方法的参数分别是邮件标题、邮件内容、发件人和收件人地址列表，最后一个参数<code>fail_silently=False</code>表示如果发送失败就抛出异常。如果看到返回1，就说明邮件成功发送。
+</p>
+<p>如果采用以上设置无法成功使用Google的邮件服务，需要到<a href="https://myaccount.google.com/lesssecureapps?pli=1" target="_blank">https://myaccount.google.com/lesssecureapps</a>，启用“允许不够安全的应用”，如下图所示：
+</p>
+<p><img src="http://img.conyli.cc/django2/C02-i01.jpg" alt=""></p>
+<p>现在我们把发送邮件的功能加入到视图中，编辑<code>views.py</code>中的<code>post_share</code>视图函数：</p>
+<pre>
+def post_share(request, post_id):
+    # 通过id 获取 post 对象
+    post = get_object_or_404(Post, id=post_id, status='published')
+    <b>sent = False</b>
+
+    if request.method == "POST":
+        # 表单被提交
+        form = EmailPostForm(request.POST)
+        if form.is_valid():
+            # 表单字段通过验证
+            cd = form.cleaned_data
+            <b>post_url = request.build_absolute_uri(post.get_absolute_url())</b>
+            <b>subject = '{} ({}) recommends you reading "{}"'.format(cd['name'], cd['email'], post.title)</b>
+            <b>message = 'Read "{}" at {}\n\n{}\'s comments:{}'.format(post.title, post_url, cd['name'], cd['comments'])</b>
+            <b>send_mail(subject, message, 'lee0709@vip.sina.com', [cd['to']])</b>
+            <b>sent = True</b>
+
+    else:
+        form = EmailPostForm()
+    return render(request, 'blog/post/share.html', {'post': post, 'form': form, <b>'sent': sent</b>})
+</pre>
+<p>声明了一个<code>sent</code>变量用于向模板返回邮件发送的状态，当邮件发送成功的时候设置为<code>True</code>。稍后将使用该变量显示一条成功发送邮件的消息。由于要在邮件中包含连接，因此使用了<code>get_absolute_url()</code>方法获取被分享文章的URL，然后将其作为<code>request.build_absolute_uri()</code>的参数转为完整的URL，再加上表单数据创建邮件正文，最后将邮件发送给<code>to</code>字段中的收件人。
+</p>
+<p>还需要给视图配置URL，打开<code>blog</code>应用中的<code>urls.py</code>，加一条<code>post_share</code>的URL pattern：</p>
+<pre>
+urlpatterns = [
+    # ...
+    <b>path('&lt;int:post_id&gt;/share/', views.post_share, name='post_share'),</b>
+]
+</pre>
+
+<h3 id="c2-1-4"><span class="title">1.4</span>在模板中渲染表单</h3>
+<p>在创建表单，视图和配置好URL之后，现在只剩下模板了。在<code>blog/templates/blog/post/</code>目录内创建share.html，添加如下代码：</p>
+<pre>
+{% extends "blog/base.html" %}
+
+{% block title %}Share a post{% endblock %}
+
+{% block content %}
+    {% if sent %}
+        &lt;h1>E-mail successfully sent&lt;/h1>
+        &lt;p>
+            "{{ post.title }}" was successfully sent to {{ form.cleaned_data.to }}.
+        &lt;/p>
+    {% else %}
+        &lt;h1>Share "{{ post.title }}" by e-mail&lt;/h1>
+        &lt;form action="." method="post">
+        {{ form.as_p }}
+            {% csrf_token %}
+            &lt;input type="submit" value="Send e-mail">
+        &lt;/form>
+    {% endif %}
+{% endblock %}
+</pre>
+<p>这个模板在邮件发送成功的时候显示一条成功信息，否则则显示表单。你可能注意到了，创建了一个HTML表单元素并且指定其通过POST请求提交：</p>
+<pre>
+&lt;form action="." method="post"&gt;
+</pre>
+<p>之后渲染表单实例，通过使用<code>as_p</code>方法，将表单中的所有元素以&lt;p&gt;元素的方式展现出来。还可以使用<code>as_ul</code>和<code>as_table</code>分别以列表和表格的形式显示。如果想分别渲染每个表单元素，可以迭代表单对象中的每个元素，例如这样：
+</p>
+<pre>
+{% for field in form %}
+    &lt;div>
+        {{ field.errors }}
+        {{ field.label_tag }} {{ field }}
+    &lt;/div>
+{% endfor %}
+</pre>
+<p><code>{% csrf_token %}</code>在页面中显示为一个隐藏的input元素，是一个自动生成的防止跨站请求伪造（CSRF)攻击的token。跨站请求伪造是一种冒充用户在已经登录的Web网站上执行非用户本意操作的一种攻击方式，可能由其他网站或一段程序发起。关于CRSF的更多信息可以参考<a
+        href="https://www.owasp.org/index.php/Cross-Site_Request_Forgery_(CSRF)" target="_blank">https://www.owasp.org/index.php/Cross-Site_Request_Forgery_(CSRF)</a>。
+</p>
+<p>例子生成的隐藏字段类似如下：</p>
+<pre>
+&lt;input type='hidden' name='csrfmiddlewaretoken' value='26JjKo2lcEtYkGoV9z4XmJIEHLXN5LDR' />
+</pre>
+<p class="hint">Django默认会对所有<code>POST</code>请求进行CSRF检查，在所有<code>POST</code>方式提交的表单中，都要添加<code>csrf_token</code>。</p>
+<p>修改<code>blog/post/detail.html</code>将下列链接增加到<code>{{ post.body|linebreaks }}</code>之后：</p>
+<pre>
+&lt;p>
+    &lt;a href="{% url "blog:post_share" post.id %}">Share this post&lt;/a>
+&lt;/p>
+</pre>
+<p>这里的<code>{% url %}</code>标签，其功能和在视图中使用的<code>reverse()</code>方法类似，使用URL的命名空间<code>blog</code>和URL命名<code>post_share</code>，再传入一个ID作为参数，就可以构建出一个URL。在页面渲染时，<code>{% url %}</code>就会被渲染成反向解析出的URL。</p>
+<p>现在使用<code>python manage.py runserver</code>启动站点，打开<a href="http://127.0.0.1:8000/blog/" target="_blank">http://127.0.0.1:8000/blog/</a>，点击任意文章查看详情页，在文章的正文下会出现分享链接，如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C02-01.png" alt=""></p>
+<p>点击 Share this post 链接，可以看到分享页面：</p>
+<p><img src="http://img.conyli.cc/django2/C02-02.png" alt=""></p>
+<p>这个表单的CSS样式表文件位于<code>static/css/blog.css</code>。当你点击SEND E-MAIL按钮的时候，就会提交表单并验证数据，如果有错误，可以看到页面如下：</p>
+<p><img src="http://img.conyli.cc/django2/C02-03.png" alt=""></p>
+<p>在某些现代浏览器上，很有可能浏览器会阻止你提交表单，提示必须完成某些字段，这是因为浏览器在提交根据表单的HTML元素属性先进行了验证。现在通过邮件分享链接的功能制作完成了，下一步是创建一个评论系统。</p>
+<p class="hint">关闭浏览器验证的方法是给表单添加<code>novalidate</code>属性：<code>&lt;form action="" <b>novalidate</b>&gt;</code></p>
+
+
+<h2 id="c2-2"><span class="title">2</span>创建评论系统</h2>
+<p>现在，我们要创建一个评论系统，让用户可以对文章发表评论。创建评论系统需要进行以下步骤：</p>
+<ol>
+    <li>创建一个模型用于存储评论</li>
+    <li>创建一个表单用于提交评论和验证数据</li>
+    <li>创建一个视图用于处理表单和将表单数据存入数据库</li>
+    <li>编辑文章详情页以展示评论和提供增加新评论的表单</li>
+</ol>
+<p>首先来创建评论对应的数据模型，编辑<code>blog</code>应用的<code>models.py</code>文件，添加以下代码：</p>
+<pre>
+class Comment(models.Model):
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='comments')
+    name = models.CharField(max_length=80)
+    email = models.EmailField()
+    body = models.TextField()
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ("created",)
+
+    def __str__(self):
+        return 'Comment by {} on {}'.format(self.name, self.post)
+</pre>
+<p><code>Comment</code>模型包含一个外键（<code>ForeignKey</code>）用于将评论与一个文章联系起来，定义了文章和评论的一对多关系，即一个文章下边可以有多个评论；外键的<code>related_name</code>参数定义了在通过文章查找其评论的时候引用该关联关系的名称。这样定义了该外键之后，可以通过<code>comment.post</code>获得一条评论对应的文章，通过<code>post.comments.all()</code>获得一个文章对应的所有评论。如果不定义<code>related_name</code>，Django会使用模型的小写名加上<code>_set</code>（<code>comment_set</code>）来作为反向查询的管理器名称。</p>
+<p>关于一对多关系的可以参考<a href="https://docs.djangoproject.com/en/2.0/topics/db/examples/many_to_one/" target="_blank">https://docs.djangoproject.com/en/2.0/topics/db/examples/many_to_one/</a>。</p>
+<p>模型还包括一个<code>active</code>布尔类型字段，用于手工关闭不恰当的评论；还指定了排序方式为按照<code>created</code>字段进行排序。</p>
+<p>新的<code>Comment</code>模型还没有与数据库同步，执行以下命令创建迁移文件：</p>
+<pre>
+python manage.py makemigrations blog
+</pre>
+<p>会看到如下输出：</p>
+<pre>
+Migrations for 'blog':
+  blog/migrations/0002_comment.py
+    - Create model Comment
+</pre>
+<p>Django在<code>migrations/</code>目录下创建了<code>0002_comment.py</code>文件，现在可以执行实际的迁移命令将模型写入数据库：</p>
+<pre>
+python manage.py migrate
+</pre>
+<p>会看到以下输出：</p>
+<pre>
+Applying blog.0002_comment... OK
+</pre>
+<p>数据迁移的过程结束了，数据库中新创建了名为<code>blog_comment</code>的数据表。</p>
+<p class="emp">译者注：数据迁移的部分在原书中重复次数太多，而且大部分无实际意义，如无需要特殊说明的地方，以下翻译将略过类似的部分，以“执行数据迁移”或类似含义的字样替代。</p>
+<p>创建了模型之后，可以将其加入管理后台。打开<code>blog</code>应用中的<code>admin.py</code>文件，导入<code>Comment</code>模型，然后增加如下代码：</p>
+<pre>
+from .models import Post, <b>Comment</b>
+
+<b>@admin.register(Comment)</b>
+<b>class CommentAdmin(admin.ModelAdmin):</b>
+    <b>list_display = ('name', 'email', 'post', 'created', 'active')</b>
+    <b>list_filter = ('active', 'created', 'updated')</b>
+    <b>search_fields = ('name', 'email', 'body')</b>
+</pre>
+<p>启动站点，到<a href="http://127.0.0.1:8000/admin/" target="_blank">http://127.0.0.1:8000/admin/</a>查看管理站点，会看到新的模型已经被加入到管理后台中：</p>
+<p><img src="http://img.conyli.cc/django2/C02-i02.jpg" alt=""></p>
+
+
+<h3 id="c2-2-1"><span class="title">2.1</span>根据模型创建表单</h3>
+<p>在发送邮件的功能里，采用继承<code>forms.Form</code>类的方式，自行编写各个字段创建了一个表单。Django对于表单有两个类：<code>Form</code>和<code>ModelForm</code>。这次我们使用<code>ModelForm</code>动态的根据<code>Comment</code>模型生成表单。编辑<code>blog</code>应用的<code>forms.py</code>文件：</p>
+<pre>
+from .models import Comment
+
+class CommentForm(forms.ModelForm):
+    class Meta:
+        model = Comment
+        fields = ('name', 'email', 'body')
+</pre>
+<p>依据模型创建表单，只需要在<code>Meta</code>类中指定基于哪个类即可。Django会自动内省该类然后创建对应的表单。我们对于模型字段的设置会影响到表单数据的验证规则。默认情况下，Django对每一个模型字段都创建一个对应的表单元素。然而，可以显示的通过<code>Meta</code>类中的<code>fields</code>属性指定需要创建表单元素的字段，或者使用exclude属性指定需要排除的字段。对于我们的<code>CommentForm</code>类，我们指定了表单只需要包含<code>name</code>，<code>email</code>和<code>body</code>字段即可。</p>
+
+<h3 id="c2-2-2"><span class="title">2.2</span>在视图中处理表单</h3>
+<p>由于提交评论的动作在文章详情页发生，所以把处理表单的功能整合进文章详情视图中会让代码更简洁。编辑<code>views.py</code>文件，导入<code>Comment</code>模型然后修改<code>post_detail</code>视图：</p>
+<pre>
+from .models import Post, <b>Comment</b>
+from .forms import EmailPostForm, <b>CommentForm</b>
+
+def post_detail(request, year, month, day, post):
+    post = get_object_or_404(Post, slug=post, status="published", publish__year=year, publish__month=month, publish__day=day)
+    <b># 列出文章对应的所有活动的评论</b>
+    <b>comments = post.comments.filter(active=True)</b>
+
+    <b>new_comment = None</b>
+
+    <b>if request.method == "POST":</b>
+        <b>comment_form = CommentForm(data=request.POST)</b>
+        <b>if comment_form.is_valid():</b>
+            <b># 通过表单直接创建新数据对象，但是不要保存到数据库中</b>
+            <b>new_comment = comment_form.save(commit=False)</b>
+            <b># 设置外键为当前文章</b>
+            <b>new_comment.post = post</b>
+            <b># 将评论数据对象写入数据库</b>
+            <b>new_comment.save()</b>
+    <b>else:</b>
+        <b>comment_form = CommentForm()</b>
+    return render(request, 'blog/post/detail.html',
+                  {'post': post, <b>'comments': comments, 'new_comment': new_comment, comment_form: comment_form</b>})
+</pre>
+<p>现在post_detail视图可以显示文章及其评论，在视图中增加了一个获得当前文章对应的全部评论的QuerySet，如下：</p>
+<pre>
+comments = post.comments.filter(active=True)
+</pre>
+<p>以<code>Comments</code>类中定义的外键的<code>related_name</code>属性的名称作为管理器，对<code>post</code>对象执行查询从而得到了所需的QuerySet。</p>
+<p>同时还为这个视图增加了新增评论的功能。初始化了一个<code>new_comment</code>变量为<code>None</code>，用于标记一个新评论是否被创建。如果是<code>GET</code>请求，使用<code>comment_form = CommentForm()</code>创建空白表单；如果是<code>POST</code>请求，使用提交的数据生成表单对象并调用<code>is_valid()</code>方法进行验证。如果表单未通过验证，使用当前表单渲染页面以提供错误信息。如果表单通过验证，则进行如下工作：</p>
+<ol>
+    <li>调用当前表单的<code>save()</code>方法生成一个<code>Comment</code>实例并且赋给<code>new_comment</code>变量，就是下边这一行：
+    <pre>new_comment = comment_form.save(commit=False)</pre>
+        表单对象的<code>save()</code>方法会返回一个由当前数据构成的，表单关联的数据类的对象，并且会将这个对象写入数据库。如果指定<code>commit=False</code>，则数据对象会被创建但不会被写入数据库，便于在保存到数据库之前对对象进行一些操作。
+    </li>
+    <li>将<code>comment</code>对象的外键关联指定为当前文章：<code>new_comment.post = post</code>，这样就明确了当前的评论是属于这篇文章的。</li>
+    <li>最后，调用<code>save()</code>方法将新的评论对象写入数据库：<code>new_comment.save()</code></li>
+</ol>
+<p class="hint"><code>save()</code>方法仅对<code>ModelForm</code>生效，因为<code>Form</code>类没有关联到任何数据模型。</p>
+
+
+
+<h3 id="c2-2-3"><span class="title">2.3</span>为文章详情页面添加评论</h3>
+<p>已经创建了用于管理一个文章的评论的视图，现在需要修改<code>post/detail.html</code>来做以下的事情：</p>
+<ul>
+    <li>展示当前文章的评论总数</li>
+    <li>列出所有评论</li>
+    <li>展示表单供用户添加新评论</li>
+</ul>
+<p>首先要增加评论总数，编辑<code>post/detail.html</code>，将下列内容追加在<code>content</code>块内的底部：</p>
+<pre>
+{% with comments.count as total_comments %}
+    &lt;h2>
+        {{ total_comments }} comment{{ total_comments|pluralize }}
+    &lt;/h2>
+{% endwith %}
+</pre>
+<p>我们在模板里使用了Django ORM，执行了<code>comments.count()</code>。在模板中执行一个对象的方法时，不需要加括号；也正因为如此，不能够执行必须带有参数的方法。<code>{% with %}</code>标签表示在<code>{% endwith %}</code>结束之前，都可以使用一个变量来代替另外一个变量或者值。</p>
+<p class="hint"><code>{% with %}</code>标签经常用于避免反复对数据库进行查询和向模板传入过多变量。</p>
+<p>这里使用了<code>pluralize</code>模板过滤器，用于根据<code>total_comments</code>的值显示复数词尾。将在下一章详细讨论模板过滤器。</p>
+<p>如果值大于1，<code>pluralize</code>过滤器会返回一个带复数词尾"s"的字符串，实际渲染出的字符串会是<em>0 comments</em>，<em>1 comment</em>，<em>2 comments</em>或者<em>N comments</em>。</p>
+<p>然后来增加评论列表的部分，在<code>post/detail.html</code>中上述代码之后继续追加：</p>
+<pre>
+{% for comment in comments %}
+    &lt;div class="comment"&gt;
+        &lt;p class="info"&gt;
+            Comment {{ forloop.counter }} by {{ comment.name }}
+            {{ comment.created }}
+        &lt;/p&gt;
+        {{ comment.body|linebreaks }}
+    &lt;/div&gt;
+{% empty %}
+    &lt;p&gt;There are no comments yet.&lt;/p&gt;
+{% endfor %}
+</pre>
+<p>这里使用了<code>{% for %}</code>标签，用于循环所有的评论数据对象。如果<code>comments</code>对象为空，则显示一条信息提示用户没有评论。使用<code>{{ forloop.counter }}</code>可以在循环中计数。然后，显示该条评论的发布者，发布时间和评论内容。</p>
+<p>最后是显示表单或者一条成功信息的部分，在上述代码后继续追加：</p>
+<pre>
+{% if new_comment %}
+    &lt;h2&gt;Your comment has been added.&lt;/h2&gt;
+{% else %}
+    &lt;h2&gt;Add a new comment&lt;/h2&gt;
+    &lt;form action="." method="post"&gt;
+    {{ comment_form.as_p }}
+    {% csrf_token %}
+    &lt;p&gt;&lt;input type="submit" value="Add comment"&gt;&lt;/p&gt;
+    &lt;/form&gt;
+{% endif %}
+</pre>
+<p>这段代码的逻辑很直白：如果new_comment对象存在，显示一条成功信息，其他情况下则用<code>as_p</code>方法渲染整个表单以及CSRF token。在浏览器中打开<a href="http://127.0.0.1:8000/blog/">http://127.0.0.1:8000/blog/</a>，可以看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C02-04.png" alt=""></p>
+<p>使用表单添加一些评论，然后刷新页面，应该可以看到评论以发布的时间排序：</p>
+<p><img src="http://img.conyli.cc/django2/C02-05.png" alt=""></p>
+<p>在浏览器中打开<a href="http://127.0.0.1:8000/admin/blog/comment/" target="_blank">http://127.0.0.1:8000/admin/blog/comment/</a>，可以在管理后台中看到所有评论，点击其中的一个进行编辑，取消掉Active字段的勾，然后点击SAVE按钮。然后会跳回评论列表，Acitve栏会显示一个红色叉号表示该评论未被激活，如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C02-i03.jpg" alt=""></p>
+<p>此时返回文章详情页，可以看到被设置为未激活的评论不会显示出来，也不会被统计到评论总数中。由于有了这个<code>active</code>字段，可以非常方便的控制评论显示与否而不需要实际删除。</p>
+
+
+<h2 id="c2-3"><span class="title">3</span>添加标签功能</h2>
+<p>在完成了评论系统之后，我们将来给文章加上标签系统。标签系统通过集成<code>django-taggit</code>第三方应用模块到我们的Django项目来实现，<code>django-taggit</code>提供一个<code>Tag</code>数据模型和一个管理器，可以方便的给任何模型加上标签。<code>django-taggit</code>的源代码位于：<a href="https://github.com/alex/django-taggit" target="_blank">https://github.com/alex/django-taggit</a>。</p>
+<p>通过<code>pip</code>安装<code>django-taggit</code>：</p>
+<pre>
+pip install django_taggit==0.22.2
+</pre>
+<p class="emp">译者注：如果安装了django 2.1或更新版本，请下载最新版 <code>django-taggit</code>。原书的0.22.2版只能和Django 2.0.5版搭配使用。新版使用方法与0.22.2版没有任何区别。</p>
+<p>之后在<code>setting.py</code>里的<code>INSTALLED_APPS</code>设置中增加<code>taggit</code>以激活该应用：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    'blog.apps.BlogConfig',
+    <b>'taggit',</b>
+]
+</pre>
+<p>打开<code>blog</code>应用下的<code>models.py</code>文件，将<code>django-taggit</code>提供的<code>TaggableMananger</code>模型管理器加入到<code>Post</code>模型中：</p>
+<pre>
+<b>from taggit.managers import TaggableManager</b>
+
+class Post(models.Model):
+    # ......
+    <b>tags=TaggableManager()</b>
+</pre>
+<p>这个管理器可以对<code>Post</code>对象的标签进行增删改查。然后执行数据迁移。</p>
+<p>现在数据库也已经同步完成了，先学习一下如何使用<code>django-taggit</code>模块和其<code>tags</code>管理器。使用<code>python manage.py shell</code>进入Python命令行然后输入下列命令：</p>
+<p>之后来看如何使用，先到命令行里：</p>
+<pre>
+>>> from blog.models import Post
+>>> post = Post.objects.get(id=1)
+</pre>
+<p>然后给这个文章增加一些标签，然后再获取这些标签看一下是否添加成功：</p>
+<pre>
+>>> post.tags.add('music', 'jazz', 'django')
+>>> post.tags.all()
+&lt;QuerySet [&lt;Tag: jazz>, &lt;Tag: music>, &lt;Tag: django>]>
+</pre>
+<p>删除一个标签再检查标签列表：</p>
+<pre>
+>>> post.tags.remove('django')
+>>> post.tags.all()
+&lt;QuerySet [&lt;Tag: jazz>, &lt;Tag: music>]>
+</pre>
+<p>操作很简单。启动站点然后到<a href="http://127.0.0.1:8000/admin/taggit/tag/" target="_blank">http://127.0.0.1:8000/admin/taggit/tag/</a>，可以看到列出<code>taggit</code>应用中<code>Tag</code>对象的管理页面：</p>
+<p><img src="http://img.conyli.cc/django2/C02-i04.jpg" alt=""></p>
+<p>到<a href="http://127.0.0.1:8000/admin/blog/post/" target="_blank">http://127.0.0.1:8000/admin/blog/post/</a>点击一篇文章进行修改，可以看到文章现在包含了一个标签字段，如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C02-i05.jpg" alt=""></p>
+<p>现在还需要在页面上展示标签，编辑<code>blog/post/list.html</code>，在显示文章的标题下边添加：</p>
+<pre>
+&lt;p class="tags">Tags: {{ post.tags.all|join:", " }}&lt;/p>
+</pre>
+<p><code>join</code>过滤器的功能和Python字符串的<code>join()</code>方法很类似，打开<a href="http://127.0.0.1:8000/blog/" target="_blank">http://127.0.0.1:8000/blog/</a>，就可以看到在每个文章的标题下方列出了标签：</p>
+<p><img src="http://img.conyli.cc/django2/C02-i06.jpg" alt=""></p>
+<p>现在来编辑<code>post_list</code>视图，让用户可以根据一个标签列出具备该标签的所有文章，打开<code>blog</code>应用的<code>views.py</code>文件，从django-taggit中导入Tag模型，然后修改post_list视图，让其可以额外的通过标签来过滤文章：</p>
+<pre>
+<b>from taggit.models import Tag</b>
+
+def post_list(request, <b>tag_slug=None</b>):
+    <b>tag = None</b>
+    <b>if tag_slug:</b>
+        <b>tag = get_object_or_404(Tag, slug=tag_slug)</b>
+        <b>object_list = object_list.filter(tags__in=[tag])</b>
+    paginator = Paginator(object_list, 3) # 3 posts in each page
+    # ......
+</pre>
+<p>post_list视图现在工作如下：</p>
+<ol>
+    <li>多接收一个<code>tag_slug</code>参数，默认值为<code>None</code>。这个参数将通过URL传入</li>
+    <li>在视图中，创建了初始的QuerySet用于获取所有的已发布的文章，然后判断如果传入了<code>tag_slug</code>，就通过<code>get_object_or_404()</code>方法获取对应的<code>Tag</code>对象</li>
+    <li>然后过滤初始的QuerySet，条件为文章的标签中包含选出的<code>Tag</code>对象，由于这是一个多对多关系，所以将<code>Tag</code>对象放入一个列表内选择。</li>
+</ol>
+<p>QuerySet是惰性的，直到模板渲染过程中迭代<code>posts</code>对象列表的时候，QuerySet才被求值。</p>
+<p>最后修改，视图底部的<code>render()</code>方法，把<code>tag</code>变量也传入模板。完整的视图如下：</p>
+<pre>
+def post_list(request, tag_slug=None):
+    object_list = Post.published.all()
+    tag = None
+
+    if tag_slug:
+        tag = get_object_or_404(Tag, slug=tag_slug)
+        object_list = object_list.filter(tags__in=[tag])
+
+    paginator = Paginator(object_list, 3) # 3 posts in each page
+    page = request.GET.get('page')
+    try:
+        posts = paginator.page(page)
+    except PageNotAnInteger:
+        posts = paginator.page(1)
+    except EmptyPage:
+        posts = paginator.page(paginator.num_pages)
+
+    return render(request, 'blog/post/list.html', {'page': page, 'posts': posts, <b>'tag': tag</b>})
+</pre>
+<p>打开<code>blog</code>应用的<code>urls.py</code>文件，注释掉<code>PostListView</code>那一行，取消<code>post_list</code>视图的注释，像下边这样：</p>
+<pre>
+<b>path('', views.post_list, name='post_list'),</b>
+# path('', views.PostListView.as_view(), name='post_list'),
+</pre>
+<p>再增加一行通过标签显示文章的URL：</p>
+<pre>
+path('tag/&lt;slug:tag_slug>/', views.post_list, name='post_list_by_tag'),
+</pre>
+<p>可以看到，两个URL指向了同一个视图，但命名不同。第一个URL不带任何参数去调用<code>post_list</code>视图，第二个URL则会带上<code>tag_slug</code>参数调用<code>post_list</code>视图。使用了一个<code>&lt;slug:tag_slug></code>获取参数。</p>
+<p>由于我们将CBV改回为FBV，所以在<code>blog/post/list.html</code>里将<code>include</code>语句的变量改回FBV的<code>posts</code>：</p>
+<pre>
+{% include "pagination.html" with page=posts %}
+</pre>
+<p>再增加显示文章标签的<code>{% for %}</code>循环的代码：</p>
+<pre>
+{% if tag %}
+    &lt;h2>Posts tagged with "{{ tag.name }}"&lt;/h2>
+{% endif %}
+</pre>
+<p>如果用户访问博客，可以看到全部的文章列表；如果用户点击某个具体标签，就可以看到具备该标签的文章。现在还需改变一下标签的显示方式：</p>
+<pre>
+&lt;p class="tag">
+    Tags:
+    <b>{% for tag in post.tags.all %}</b>
+        <b>&lt;a href="{% url "blog:post_list_by_tag" tag.slug %}">{{ tag.name }}&lt;/a></b>
+    <b>{% if not forloop.last %}, {% endif %}</b>
+    <b>{% endfor %}</b>
+&lt;/p>
+</pre>
+<p>我们通过迭代所有标签，将标签设置为一个链接，指向通过该标签对应的所有文章。通过<code>{% url "blog:post_list_by_tag" tag.slug %}</code>反向解析出了链接。</p>
+<p>现在到<a href="http://127.0.0.1:8000/blog/" target="_blank">http://127.0.0.1:8000/blog/</a>，然后点击任何标签，就可以看到该标签对应的文章列表：</p>
+<p><img src="http://img.conyli.cc/django2/C02-06.png" alt=""></p>
+
+<h2 id="c2-4"><span class="title">4</span>通过相似性获取文章</h2>
+<p>在为博客添加了标签功能之后，可以使用标签来做一些有趣的事情。一些相同主题的文章会具有相同的标签，可以创建一个功能给用户按照共同标签数量的多少推荐文章。</p>
+<p>为了实现该功能，需要如下几步：</p>
+<ol>
+    <li>获得当前文章的所有标签</li>
+    <li>拿到所有具备这些标签的文章</li>
+    <li>把当前文章从这个文章列表里去掉以避免重复显示</li>
+    <li>按照具有相同标签的多少来排列</li>
+    <li>如果文章具有相同数量的标签，按照时间来排列</li>
+    <li>限制总推荐文章数目</li>
+</ol>
+<p>这几个步骤会使用到更复杂的QuerySet，打开<code>blog</code>应用的<code>views.py</code>文件，在最上边增加一行：</p>
+<pre>from django.db.models import Count</pre>
+<p>这是从Django ORM中导入的<code>Count</code>聚合函数，这个函数可以按照分组统计某个字段的数量，django.db.models还包含下列聚合函数：</p>
+<ul>
+    <li><code>Avg</code>：计算平均值</li>
+    <li><code>Max</code>：取最大值</li>
+    <li><code>Min</code>：取最小值</li>
+    <li><code>Count</code>：计数</li>
+    <li><code>Sum</code>：求和</li>
+</ul>
+<p class="emp">译者注：作者在此处有所保留，没有写<code>Sum</code>函数，此外还有Q查询</p>
+<p>聚合查询的官方文档在<a href="https://docs.djangoproject.com/en/2.0/topics/db/aggregation/" target="_blank">https://docs.djangoproject.com/en/2.0/topics/db/aggregation/</a>。</p>
+<p>修改<code>post_detail</code>视图，在<code>render()</code>上边加上这一段内容，缩进与<code>render()</code>行同级：</p>
+<pre>
+def post_detail(request, year, month, day, post):
+    # ......
+    # 显示相近Tag的文章列表
+    <b>post_tags_ids = post.tags.values_list('id',flat=True)</b>
+    <b>similar_tags = Post.published.filter(tags__in=post_tags_ids).exclude(id=post.id)</b>
+    <b>similar_posts = similar_tags.annotate(same_tags=Count('tags')).order_by('-same_tags','-publish')[:4]</b>
+    return render(......
+</pre>
+<p>以上代码解释如下：</p>
+<ol>
+    <li><code>values_list</code>方法返回指定的字段的值构成的元组，通过指定<code>flat=True</code>，让其结果变成一个列表比如<code>[1, 2, 3, ...]</code></li>
+    <li>选出所有包含上述标签的文章并且排除当前文章</li>
+    <li>使用<code>Count</code>对每个文章按照标签计数，并生成一个新字段<code>same_tags</code>用于存放计数的结果</li>
+    <li>按照相同标签的数量，降序排列结果，然后截取前四个结果作为最终传入模板的数据对象。</li>
+</ol>
+<p>最后修改<code>render()</code>函数将新生成的<code>similar_posts</code>传给模板：</p>
+<pre>
+    return render(request,
+        'blog/post/detail.html',
+        {'post': post,
+        'comments': comments,
+        'new_comment': new_comment,
+        'comment_form': comment_form,
+        <b>'similar_posts': similar_posts</b>})
+</pre>
+<p>然后编辑<code>blog/post/detail.html</code>，将以下代码添加到评论列表之前：</p>
+<pre>
+&lt;h2>Similar posts&lt;/h2>
+    {% for post in similar_posts %}
+    &lt;p>
+        &lt;a href="{{ post.get_absolute_url }}">{{ post.title }}&lt;/a>
+    &lt;/p>
+{% empty %}
+    There are no similar posts yet.
+{% endfor %}
+</pre>
+<p>现在的文章详情页面示例如下：</p>
+<p><img src="http://img.conyli.cc/django2/C02-07.png" alt=""></p>
+<p>现在已经实现了该功能。<code>django-taggit</code>模块包含一个<code>similar_objects()</code>模型管理器也可以实现这个功能，可以在<a href="https://django-taggit.readthedocs.io/en/latest/api.html" target="_blank">https://django-taggit.readthedocs.io/en/latest/api.html</a>查看<code>django-taggit</code>的所有模型管理器使用方法。</p>
+<p>还可以用同样的方法在文章详情页为文章添加标签显示。</p>
+
+<h1>总结</h1>
+<p>在这一章里了解了如何使用Django的表单和模型表单，为博客添加了通过邮件分享文章的功能和评论系统。第一次使用了Django的第三方应用，通过<code>django-taggit</code>为博客增添了基于标签的功能。最后进行复杂的聚合查询实现了通过标签相似性推荐文章。</p>
+<p>下一章会学习如何创建自定义的模板标签和模板过滤器，创建站点地图和RSS feed，以及对博客文章实现全文检索功能。</p>
+</body>
+</html>

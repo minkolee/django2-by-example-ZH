@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/normalize.min.css">
+    <link rel="stylesheet" href="css/base.css">
+    <title>第一章 创建博客应用</title>
+</head>
+<body>
+<h1 id="top">第一章 创建博客应用</h1>
+<p>欢迎来到Django 2 by example的教程。你看到的是目前全网唯一翻译该书的教程。</p>
+<p>本书将介绍如何创建可以用于生产环境的完整Django项目。如果你还没有安装Django，本章在第一部分中将介绍如何安装Django，之后的内容还包括创建一个简单的博客应用。本章的目的是让读者对Django的整体运行有一个概念，理解Django的各个组件如何交互运作，知道创建一个应用的基础方法。本书将指导你创建一个个完整的项目，但不会对所有细节进行详细阐述，Django各个组件的内容会在全书的各个部分内进行解释。</p>
+<p>本章的主要内容有：</p>
+<ul>
+    <li>安装Django并创建第一个项目</li>
+    <li>设计数据模型和进行模型迁移（migrations）</li>
+    <li>为数据模型创建管理后台</li>
+    <li>使用QuerySet和模型管理器</li>
+    <li>创建视图、模板和URLs</li>
+    <li>给列表功能的视图添加分页功能</li>
+    <li>使用基于类的视图</li>
+</ul>
+<h2 id="c1-1"><span class="title">1</span>安装Django</h2>
+<p>如果已经安装了Django，可以跳过本部分到<a href="#c1-2">创建第一个Django项目</a>小节。Django是Python的一个包（模块），所以可以安装在任何Python环境。如果还没有安装Django，本节是一个用于本地开发的快速安装Django指南。</p>
+<p>Django 2.0需要Python解释器的版本为3.4或更高。在本书中，采用Python 3.6.5版本，如果使用Linux或者macOS X，系统中也许已经安装Python（部分Liunx发行版初始安装Python2.7），对于Windows系统，从<a href="https://www.python.org/downloads/windows/" target="_blank">https://www.python.org/downloads/windows/</a>下载Python安装包。</p>
+<p class="emp">译者在此强烈建议使用基于UNIX的系统进行开发。</p>
+<p>如果不确定系统中是否已经安装了Python，可以尝试在系统命令行中输入<code>python</code>然后查看输出结果，如果看到类似下列信息，则说明Python已经安装：</p>
+<pre>
+Python 3.6.5 (v3.6.5:f59c0932b4, Mar 28 2018, 03:03:55)
+[GCC 4.2.1 (Apple Inc. build 5666) (dot 3)] on darwin
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+</pre>
+<p>如果安装的版本低于3.4，或者没有安装Python，从<a href="https://www.python.org/downloads/" target="_blank">https://www.python.org/downloads/</a>下载并安装。</p>
+<p>由于我们使用Python 3，所以暂时不需要安装数据库，因为Python 3自带一个轻量级的SQLite3数据库可以用于Django开发。如果打算在生产环境中部署Django项目，需要使用更高级的数据库，比如PostgreSQL，MySQL或者Oracle数据库。关于如何在Django中使用数据库，可以看官方文档<a href="https://docs.djangoproject.com/en/2.0/topics/install/#database-installation" target="_blank">https://docs.djangoproject.com/en/2.0/topics/install/#database-installation</a>。</p>
+<p class="emp">译者注：在翻译本书和实验代码的时候，译者的开发环境是Centos 7.5 1804 + Python 3.7.0 + Django 2.1.0（最后一章升级到Django 2.1.2），除了后文会提到的一个旧版本第三方库插件冲突的问题之外，未发现任何兼容性问题。</p>
+<h3 id="c1-1-1"><span class="title">1.1</span>创建独立的Python开发环境</h3>
+<p>推荐使用<code>virtualenv</code>创建独立的开发环境，这样可以对不同的项目应用不同版本的模块，比将这些模块直接安装为系统Python的第三方库要灵活很多。另一个使用<code>virtualenv</code>的优点是安装Python模块的时候不需要任何管理员权限。在系统命令行中输入如下命令来安装<code>virtualenv</code>：</p>
+<pre>
+pip install virtualenv
+</pre>
+<p>在安装完<code>virtualenv</code>之后，通过以下命令创建一个独立环境：</p>
+<pre>
+virtualenv my_env
+</pre>
+<p class="emp">译者注：需要将<code>virtualenv</code>的所在路径添加到系统环境变量<code>PATH</code>中，对于Django也是如此，不然无法直接执行<code>django-admin</code>命令。</p>
+<p>这个命令会在当前目录下创建一个<code>my_env/</code>目录，其中放着一个Python虚拟环境。在虚拟环境中安装的Python包实际会被安装到<code>my_env/lib/python3.6/site-packages</code>目录中。</p>
+<p class="hint">如果操作系统中安装的是Python 2.X，必须再安装Python 3.X，还需要设置<code>virtualenv</code>虚拟Python 3.X的环境。</p>
+<p>可以通过如下命令查找Python 3的安装路径，然后创建虚拟环境：</p>
+<pre>
+zenx$ which python3
+/Library/Frameworks/Python.framework/Versions/3.6/bin/python3
+zenx$ virtualenv my_env -p /Library/Frameworks/Python.framework/Versions/3.6/bin/python3
+</pre>
+<p>根据Linux发行版的不同，上边的代码也会有所不同。在创建了虚拟环境对应的目录之后，使用如下命令激活虚拟环境：</p>
+<pre>
+source my_env/bin/activate
+</pre>
+<p>激活之后，在命令行模式的提示符前会显示括号包住该虚拟环境的名称，如下所示：</p>
+<pre>
+(my_env)laptop:~ zenx$
+</pre>
+<p>开启虚拟环境后，随时可以通过在命令行中输入<code>deactivate</code>来退出虚拟环境。</p>
+<p>关于<code>virtualenv</code>的更多内容可以查看<a href="https://virtualenv.pypa.io/en/latest/" target="_blank">https://virtualenv.pypa.io/en/latest/</a>。</p>
+<p><code>virtualenvwrapper</code>这个工具可以方便的创建和管理系统中的所有虚拟环境，需要在系统中先安装<code>virtualenv</code>，可以到<a href="https://virtualenvwrapper.readthedocs.io/en/latest/" target="_blank">https://virtualenvwrapper.readthedocs.io/en/latest/</a>下载。</p>
+<h3><span class="title">1.2</span>使用PIP安装Django</h3>
+<p>推荐使用<code>pip</code>包安装Django。Python 3.6已经预装了<code>pip</code>，也可以在<a href="https://pip.pypa.io/en/stable/installing/" target="_blank">https://pip.pypa.io/en/stable/installing/</a>找到<code>pip</code>的安装指南。</p>
+<p>使用下边的命令安装Django：</p>
+<pre>
+pip install Django==2.0.5
+</pre>
+<p class="emp">译者这里安装的是2.1版。</p>
+<p>Django会被安装到虚拟环境下的<code>site-packages/</code>目录中。</p>
+<p>现在可以检查Django是否已经成功安装，在系统命令行模式运行<code>python</code>，然后导入Django，检查版本，如下：</p>
+<pre>
+>>> import django
+>>> django.get_version()
+'2.0.5'
+</pre>
+<p>如果看到了这个输出，就说明Django已经成功安装了。</p>
+<p class="hint">Django的其他安装方式，可以查看官方文档完整的安装指南：<a href="https://docs.djangoproject.com/en/2.0/topics/install/" target="_blank">https://docs.djangoproject.com/en/2.0/topics/install/</a>。</p>
+
+<h2 id="c1-2"><span class="title">2</span>创建第一个Django项目</h2>
+<p>本书的第一个项目是创建一个完整的博客项目。Django提供了一个创建项目并且初始化其中目录结构和文件的命令，在命令行模式中输入：</p>
+<pre>
+django-admin startproject mysite
+</pre>
+<p>这会创建一个项目，名称叫做<code>mysite</code>。</p>
+<p class="hint">避免使用Python或Django的内置名称作为项目名称。</p>
+<p>看一下项目目录的结构：</p>
+<pre>
+mysite/
+  manage.py
+  mysite/
+    __init__.py
+    settings.py
+    urls.py
+    wsgi.py
+</pre>
+<p>这些文件解释如下：</p>
+<ul>
+    <li><code>manage.py</code>：是一个命令行工具，可以通过这个文件管理项目。其实是一个<code>django-admin.py</code>的包装器，这个文件在创建项目过程中不需要编辑。</li>
+    <li><code>mysite/</code>：这是项目目录，由以下文件组成：<ul>
+        <li><code>__init__.py</code>：一个空文件，告诉Python将<code>mysite</code>看成一个包。</li>
+        <li><code>settings.py</code>：这是当前项目的设置文件，包含一些初始设置</li>
+        <li><code>urls.py</code>：这是<code>URL patterns</code>的所在地，其中的每一行URL，表示URL地址与视图的一对一映射关系。</li>
+        <li><code>wsgi.py</code>：这是自动生成的当前项目的WSGI程序，用于将项目作为一个WSGI程序启动。</li>
+    </ul></li>
+</ul>
+<p>自动生成的<code>settings.py</code>是当前项目的配置文件，包含一个用于使用SQLite 3 数据库的设置，以及一个叫做<code>INSTALLED_APPS</code>的列表。<code>INSTALLED_APPS</code>包含Django默认添加到一个新项目中的所有应用。在之后的<a href="#c1-2-2">项目设置</a>部分会接触到这些应用。</p>
+<p>为了完成项目创建，还必须在数据库里创建起<code>INSTALLED_APPS</code>中的应用所需的数据表，打开系统命令行输入下列命令：</p>
+<pre>
+cd mysite
+python manage.py migrate
+</pre>
+<p>会看到如下输出：</p>
+<pre>
+Applying contenttypes.0001_initial... OK
+Applying auth.0001_initial... OK
+Applying admin.0001_initial... OK
+Applying admin.0002_logentry_remove_auto_add... OK
+Applying contenttypes.0002_remove_content_type_name... OK
+Applying auth.0002_alter_permission_name_max_length... OK
+Applying auth.0003_alter_user_email_max_length... OK
+Applying auth.0004_alter_user_username_opts... OK
+Applying auth.0005_alter_user_last_login_null... OK
+Applying auth.0006_require_contenttypes_0002... OK
+Applying auth.0007_alter_validators_add_error_messages... OK
+Applying auth.0008_alter_user_username_max_length... OK
+Applying auth.0009_alter_user_last_name_max_length... OK
+Applying sessions.0001_initial... OK
+</pre>
+<p>这些输出表示Django刚刚执行的数据库迁移（migrate）工作，在数据库中创建了这些应用所需的数据表。在本章的<a href="#c1-3-2">创建和执行迁移</a>部分会详细介绍<code>migrate</code>命令。</p>
+
+<h3 id="c1-2-1"><span class="title">2.1</span>运行开发中的站点</h3>
+<p>Django提供了一个轻量级的Web服务程序，无需在生产环境即可快速测试开发中的站点。启动这个服务之后，会检查所有的代码是否正确，还可以在代码被修改之后，自动重新载入修改后的代码，但部分情况下比如向项目中加入了新的文件，还需要手工关闭服务再重新启动。</p>
+<p>在命令行中输入下列命令就可以启动站点：</p>
+<pre>
+python manage.py runserver
+</pre>
+<p>应该会看到下列输出：</p>
+<pre>
+Performing system checks...
+
+System check identified no issues (0 silenced).
+May 06, 2018 - 17:17:31
+Django version 2.0.5, using settings 'mysite.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+</pre>
+<p>现在可以在浏览器中打开<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>，会看到成功运行站点的页面，如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C01-10.jpg" alt=""></p>
+<p>能看到这个页面，说明Django正在运行，如果此时看一下刚才启动站点的命令行窗口，可以看到浏览器的<code>GET</code>请求：</p>
+<pre>
+[15/May/2018 17:20:30] "GET / HTTP/1.1" 200 16348
+</pre>
+<p>站点接受的每一个HTTP请求，都会显示在命令行窗口中，如果站点发生错误，也会将错误显示在该窗口中。</p>
+<p>在启动站点的时候，还可以指定具体的主机地址和端口，或者使用另外一个配置文件，例如：</p>
+<pre>
+python manage.py runserver 127.0.0.1:8001 --settings=mysite.settings
+</pre>
+<p class="hint">如果站点需要在不同环境下运行，单独为每个环境创建匹配的配置文件。</p>
+<p>当前这个站点只能用作开发测试，不能够配置为生产用途。想要将Django配置到生产环境中，必须通过一个Web服务程序比如Apache，Gunicorn或者uWSGI，将Django作为一个WSGI程序运行。使用不同web服务程序部署Django请参考：<a href="https://docs.djangoproject.com/en/2.0/howto/deployment/wsgi/" target="_blank">https://docs.djangoproject.com/en/2.0/howto/deployment/wsgi/</a>。本书的<em>第十三章 上线</em>会介绍如何配置生产环境。</p>
+
+<h3 id="c1-2-2"><span class="title">2.2</span>项目设置</h3>
+<p>打开<code>settings.py</code>看一下项目设置，其中列出了一些设置，但这只是Django所有设置的一部分。可以在<a href="https://docs.djangoproject.com/en/2.0/ref/settings/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/settings/</a>查看所有的设置和初始值。</p>
+<p>文件中的以下设置值得注意：</p>
+<ul>
+    <li><code>DEBUG</code>是一个布尔值，控制DEBUG模式的开启或关闭。当设置为<code>True</code>时，Django会将所有的日志和错误信息都打印在窗口中。在生产环境中则必须设置为<code>False</code>，否则会导致信息泄露。</li>
+    <li><code>ALLOWED_HOSTS</code>在本地开发的时候，无需设置。在生产环境中，<code>DEBUG</code>设置为<code>False</code>时，必须将主机名/IP地址填入该列表中，以让Django为该主机/IP提供服务。</li>
+    <li><code>INSTALLED_APPS</code>列出了每个项目当前激活的应用，Django默认包含下列应用：
+        <ul>
+            <li><code>django.contrib.admin</code>：管理后台应用</li>
+            <li><code>django.contrib.auth</code>：用户身份认证</li>
+            <li><code>django.contrib.contenttypes</code>：追踪ORM模型与应用的对应关系</li>
+            <li><code>django.contrib.sessions</code>：session应用</li>
+            <li><code>django.contrib.messages</code>：消息应用</li>
+            <li><code>django.contrib.staticfiles</code>：管理站点静态文件</li>
+        </ul></li>
+    <li><code>MIDDLEWARE</code>是中间件列表。</li>
+    <li><code>ROOT_URLCONF</code>指定项目的根URL patterns配置文件。</li>
+    <li><code>DATABASE</code>是一个字典，包含不同名称的数据库及其具体设置，必须始终有一个名称为<code>default</code>的数据库，默认使用SQLite 3数据库。</li>
+    <li><code>LANGUAGE_CODE</code>站点默认的语言代码。</li>
+    <li><code>USE_TZ</code>是否启用时区支持，Django可以支持根据时区自动切换时间显示。如果通过<code>startproject</code>命令创建站点，该项默认被设置为<code>True</code>。</li>
+</ul>
+<p>如果目前对这些设置不太理解也没有关系，在之后的章节中这里的设置都会使用到。</p>
+
+<h3 id="c1-2-3"><span class="title">2.3</span>项目（projects）与应用（applications）</h3>
+<p>在整本书中，这两个词会反复出现。在Django中，像我们刚才那样的一套目录结构和其中的设置就是一个Django可识别的项目。应用指的就是一组Model（数据模型）、Views（视图）、Templates（模板）和URLs的集合。Django框架通过使用应用，为站点提供各种功能，应用还可以被复用在不同的项目中。你可以将一个项目理解为一个站点，站点中包含很多功能，比如博客，wiki，论坛，每一种功能都可以看作是一个应用。</p>
+
+<h3 id="c1-2-4"><span class="title">2.4</span>创建一个应用</h3>
+<p>我们将从头开始创建一个博客应用，进入项目根目录（<code>manage.py</code>文件所在的路径），在系统命令行中输入以下命令创建第一个Django应用：</p>
+<pre>
+python manage.py startapp blog
+</pre>
+<p>这条命令会在项目根目录下创建一个如下结构的应用：</p>
+<pre>
+blog/
+  __init__.py
+  admin.py
+  apps.py
+  migrations/
+    __init__.py
+    models.py
+    tests.py
+    views.py
+</pre>
+<p>这些文件的含义为：</p>
+<ul>
+    <li><code>admin.py</code>：用于将模型注册到管理后台，以便在Django的管理后台（Django administration site）查看。管理后台也是一个可选的应用。</li>
+    <li><code>apps.py</code>：当前应用的主要配置文件</li>
+    <li><code>migrations</code>这个目录包含应用的数据迁移记录，用来追踪数据模型的变化然后和数据库同步。</li>
+    <li><code>models.py</code>：当前应用的数据模型，所有的应用必须包含一个<code>models.py</code>文件，但其中内容可以是空白。</li>
+    <li><code>test.py</code>：为应用增加测试代码的文件</li>
+    <li><code>views.py</code>：应用的业务逻辑部分，每一个视图接受一个HTTP请求，处理这个请求然后返回一个HTTP响应。</li>
+</ul>
+
+<h2 id="c1-3"><span class="title">3</span>设计博客应用的数据架构（data schema）</h2>
+<p>schema是一个数据库名词，一般指的是数据在数据库中的组织模式或者说架构。我们将通过在Django中定义数据模型来设计我们博客应用在数据库中的数据架构。一个数据模型，是指一个继承了<code>django.db.models.Model</code>的Python 类。Django会为在<code>models.py</code>文件中定义的每一个类，在数据库中创建对应的数据表。Django为创建和操作数据模型提供了一系列便捷的API（Django ORM）：</p>
+<p>我们首先来定义一个<code>Post</code>类，在<code>blog</code>应用下的<code>models.py</code>文件中添加下列代码：</p>
+
+<pre>
+from django.db import models
+from django.utils import timezone
+from django.contrib.auth.models import User
+
+
+class Post(models.Model):
+    STATUS_CHOICES = (('draft', 'Draft'), ('published', 'Published'))
+    title = models.CharField(max_length=250)
+    slug = models.SlugField(max_length=250, unique_for_date='publish')
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='blog_posts')
+    body = models.TextField()
+    publish = models.DateTimeField(default=timezone.now)
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
+
+
+    class Meta:
+        ordering = ('-publish',)
+
+
+    def __str__(self):
+        return self.title
+</pre>
+<p>这是我们为了博客中每一篇文章定义的数据模型：</p>
+<ul>
+    <li><code>title</code>：这是文章标题字段。这个字段被设置为<code>Charfield</code>类型，在SQL数据库中对应<code>VARCHAR</code>数据类型</li>
+    <li><code>slug</code>：该字段通常在URL中使用。slug是一个短的字符串，只能包含字母，数字，下划线和减号。将使用<code>slug</code>字段构成优美的URL，也方便搜索引擎搜索。其中的<code>unique_for_date</code>参数表示不允许两条记录的<code>publish</code>字段日期和<code>title</code>字段全都相同，这样就可以使用文章发布的日期与<code>slug</code>字段共同生成一个唯一的URL标识该文章。</li>
+    <li><code>author</code>：是一个外键字段。通过这个外键，告诉Django一篇文章只有一个作者，一个作者可以写多篇文章。对于这个字段，Django会在数据库中使用外键关联到相关数据表的主键上。在这个例子中，这个外键关联到Django内置用户验证模块的<code>User</code>数据模型上。<code>on_delete</code>参数表示删除外键关联的内容时候的操作，这个并不是Django特有的定义，而是SQL 数据库的标准操作；将其设置为<code>CASCADE</code>意味着如果删除一个作者，将自动删除所有与这个作者关联的文章，对于该参数的设置，可以查看<a href="https://docs.djangoproject.com/en/2.0/ref/models/fields/#django.db.models.ForeignKey.on_delete" class="title">https://docs.djangoproject.com/en/2.0/ref/models/fields/#django.db.models.ForeignKey.on_delete</a>。<code>related_name</code>参数设置了从<code>User</code>到<code>Post</code>的反向关联关系，用<code>blog_posts</code>为这个反向关联关系命名，稍后会学习到该关系的使用。</li>
+    <li><code>body</code>：是文章的正文部分。这个字段是一个文本域，对应SQL数据库的<code>TEXT</code>数据类型。</li>
+    <li><code>publish</code>：文章发布的时间。使用了<code>django.utils.timezone.now</code>作为默认值，这是一个包含时区的时间对象，可以将其认为是带有时区功能的Python标准库中的<code>datetime.now</code>方法。</li>
+    <li><code>created</code>：表示创建该文章的时间。<code>auto_now_add</code>表示当创建一行数据的时候，自动用创建数据的时间填充。</li>
+    <li><code>updated</code>：表示文章最后一次修改的时间，<code>auto_now</code>表示每次更新数据的时候，都会用当前的时间填充该字段。</li>
+    <li><code>statues</code>：这个字段表示该文章的状态，使用了一个<code>choices</code>参数，所以这个字段的值只能为一系列选项中的值。</li>
+</ul>
+<p>Django提供了很多不同类型的字段可以用于数据模型，具体可以参考：<a href="https://docs.djangoproject.com/en/2.0/ref/models/fields/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/models/fields/</a>。</p>
+<p>在数据模型中的Meta类表示存放模型的元数据。通过定义<code>ordering = ('-publish',)</code>，指定了Django在进行数据库查询的时候，默认按照发布时间的逆序将查询结果排序。逆序通过加在字段名前的减号表示。这样最近发布的文章就会排在前边。</p>
+<p><code>__str__()</code>方法是Python类的功能，供显示给人阅读的信息，这里将其设置为文章的标题。Django在很多地方比如管理后台中都调用该方法显示对象信息。</p>
+<p class="hint">如果你之前使用的是Python 2.X，注意在Python 3中，所有的字符串都已经是原生Unicode格式，所以只需要定义<code>__str__()</code>方法，<code>__unicode__()</code>方法已被废弃。</p>
+
+<h3 id="c1-3-1"><span class="title">3.1</span>激活应用</h3>
+<p>为了让Django可以为应用中的数据模型创建数据表并追踪数据模型的变化，必须在项目里激活应用。要激活应用，编辑<code>settings.py</code>文件，添加<code>blog.apps.BlogConfig</code>到<code>INSTALLED_APPS</code>设置中：</p>
+<pre>
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    <b>'blog.apps.BlogConfig',</b>
+]
+</pre>
+<p><code>BlogConfig</code>类是我们应用的配置类。现在Django就已经知道项目中包含了一个新应用，可以载入这个应用的数据模型了。</p>
+<h3 id="c1-3-2"><span class="title">3.2</span>创建和执行迁移</h3>
+<p>创建好了博客文章的数据模型，之后需要将其变成数据库中的数据表。Django提供数据迁移系统，用于追踪数据模型的变动，然后将变化写入到数据库中。我们之前执行过的<code>migrate</code>命令会对<code>INSTALLED_APPS</code>中的所有应用进行扫描，根据数据模型和已经存在的迁移数据执行数据库同步操作。</p>
+<p>首先，我们需要来为<code>Post</code>模型创建迁移数据，进入项目根目录，输入下列命令：</p>
+<pre>
+python manage.py makemigrations blog
+</pre>
+<p>会看到如下输出：</p>
+<pre>
+Migrations for 'blog':
+  blog/migrations/0001_initial.py
+    - Create model Post
+</pre>
+<p>该命令执行后会在<code>blog</code>应用下的<code>migrations</code>目录里新增一个<code>0001_initial.py</code>文件，可以打开该文件看一下迁移数据是什么样子的。一个迁移数据文件里包含了与其他迁移数据的依赖关系，以及实际要对数据库执行的操作。</p>
+<p>为了了解Django实际执行的SQL语句，可以使用<code>sqlmigrate</code>加上迁移文件名，会列出要执行的SQL语句，但不会实际执行。在命令行中输入下列命令然后观察数据迁移的指令：</p>
+<pre>
+python manage.py sqlmigrate blog 0001
+</pre>
+<p>输出应该如下所示：</p>
+<pre>
+BEGIN;
+--
+-- Create model Post
+--
+CREATE TABLE "blog_post" ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT,
+"title" varchar(250) NOT NULL, "slug" varchar(250) NOT NULL, "body" text NOT
+NULL, "publish" datetime NOT NULL, "created" datetime NOT NULL, "updated"
+datetime NOT NULL, "status" varchar(10) NOT NULL, "author_id" integer NOT
+NULL REFERENCES "auth_user" ("id"));
+CREATE INDEX "blog_post_slug_b95473f2" ON "blog_post" ("slug");
+CREATE INDEX "blog_post_author_id_dd7a8485" ON "blog_post" ("author_id");
+COMMIT;
+</pre>
+<p>具体的输出根据你使用的数据库会有变化。上边的输出针对SQLite数据库。可以看到表名被设置为应用名加上小写的类名（<code>blog_post</code>）也可以通过在<code>Meta</code>类中使用<code>db_table</code>属性设置表名。Django自动为每个模型创建了主键，也可以通过设置某个模型字段参数<code>primary_key=True</code>来指定主键。默认的主键列名叫做<code>id</code>，和这个列同名的<code>id</code>字段会自动添加到你的数据模型上。（即<code>Post</code>类被Django添加了<code>Post.id</code>属性）。</p>
+<p>然后来让数据库与新的数据模型进行同步，在命令行中输入下列命令：</p>
+<pre>
+python manage.py migrate
+</pre>
+<p>会看到如下输出：</p>
+<pre>
+Applying blog.0001_initial... OK
+</pre>
+<p>这样就对<code>INSTALLED_APPS</code>中的所有应用执行完了数据迁移过程，包括我们的<code>blog</code>应用。在执行完迁移之后，数据库中的数据表就反映了我们此时的数据模型。</p>
+<p>如果之后又编辑了<code>models.py</code>文件，对已经存在的数据模型进行了增删改，或者又添加了新的数据模型，必须重新执行<code>makemigrations</code>创建新的数据迁移文件然后执行<code>migrate</code>命令同步数据库。</p>
+
+<h2 id="c1-4"><span class="title">4</span>为数据模型创建管理后台站点（administration site）</h2>
+<p>定义了<code>Post</code>数据模型之后，可以为方便的管理其中的数据创建一个简单的管理后台。Django内置了一个管理后台，这个管理后台动态的读入数据模型，然后创建一个完备的管理界面，从而可以方便的管理数据。这是一个可以“拿来就用”的方便工具。</p>
+<p>管理后台功能其实也是一个应用叫做<code>django.contrib.admin</code>，默认包含在<code>INSTALLED_APPS</code>设置中。</p>
+
+
+<h3 id="c1-4-1"><span class="title">4.1</span>创建超级用户</h3>
+<p>要使用管理后台，需要先注册一个超级用户，输入下列命令：</p>
+<pre>
+manage.py createsuperuser
+</pre>
+<p>会看到下列输出，输入用户名、密码和邮件：</p>
+<pre>
+Username (leave blank to use 'admin'): admin
+Email address: admin@admin.com
+Password: ********
+Password (again): ********
+Superuser created successfully.
+</pre>
+
+<h3 id="c1-4-2"><span class="title">4.2</span>Django 管理后台</h3>
+<p>使用<code>python manage.py runserver</code>启动站点，然后打开<a href="http://127.0.0.1:8000/admin/" target="_blank">http://127.0.0.1:8000/admin/</a>，可以看到如下的管理后台登录页面：</p>
+<p><img src="http://img.conyli.cc/django2/C01-11.jpg" alt="管理后台登录界面"></p>
+<p>输入刚才创建的超级用户的用户名和密码，可以看到管理后台首页，如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C01-02.png" alt="默认界面"></p>
+<p><code>Group</code>和<code>User</code>已经存在于管理后台中，这是因为设置中默认启用了<code>django.contrib.auth</code>应用的原因。如果你点击Users，可以看到刚刚创建的超级用户。还记得<code>blog</code>应用的<code>Post</code>模型与<code>User</code>模型通过<code>author</code>字段产生外键关联吗？</p>
+
+<h3 id="c1-4-3"><span class="title">4.3</span>向管理后台内添加模型</h3>
+<p>我们把<code>Post</code>模型添加到管理后台中，编辑<code>blog</code>应用的<code>admin.py</code>文件为如下这样：</p>
+<pre>
+from django.contrib import admin
+from .models import Post
+
+admin.site.register(Post)
+</pre>
+<p>之后刷新管理后台页面，可以看到<code>Post</code>类出现在管理后台中：</p>
+<p><img src="http://img.conyli.cc/django2/C01-03.png" alt="添加POST类后界面"></p>
+<p>看上去好像很简单。每当在管理后台中注册一个模型，就能迅速在管理后台中看到它，还可以对其进行增删改查。</p>
+<p>点击Posts右侧的Add链接，可以看到Django根据模型的具体字段动态的生成了添加页面，如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C01-04.png" alt=""></p>
+<p>Django对于每个字段使用不同的表单插件（form widgets，控制该字段实际在页面上对应的HTML元素）。即使是比较复杂的字段比如<code>DateTimeField</code>，也会以简单的界面显示出来，类似于一个JavaScript的时间控件。</p>
+<p>填写完这个表单然后点击SAVE按钮，被重定向到文章列表页然后显示一条成功信息，像下面这样：</p>
+<p><img src="http://img.conyli.cc/django2/C01-05.png" alt=""></p>
+<p>可以再录入一些文章数据，为之后数据库相关操作做准备。</p>
+
+<h3 id="c1-4-4"><span class="title">4.4</span>自定义模型在管理后台的显示</h3>
+<p>现在我们来看一下如何自定义管理后台，编辑<code>blog</code>应用的<code>admin.py</code>，修改成如下：</p>
+<pre>
+from django.contrib import admin
+from .models import Post
+@admin.register(Post)
+class PostAdmin(admin.ModelAdmin):
+    list_display = ('title', 'slug', 'author', 'publish', 'status')
+</pre>
+<p>这段代码的意思是将我们的模型注册到管理后台中，并且创建了一个类继承<code>admin.ModelAdmin</code>用于自定义模型的展示方式和行为。<code>list_display</code>属性指定那些字段在详情页中显示出来。<code>@admin.register()</code>装饰器的功能与之前的<code>admin.site.register()</code>一样，用于将<code>PostAdmin</code>类注册成<code>Post</code>的管理类。</p>
+<p>再继续添加一些自定义设置，如下所示：</p>
+<pre>
+@admin.register(Post)
+class PostAdmin(admin.ModelAdmin):
+    list_display = ('title', 'slug', 'author', 'publish', 'status',)
+    <b>list_filter = ('status', 'created', 'publish', 'author',)</b>
+    <b>search_fields = ('title', 'body',)</b>
+    <b>prepopulated_fields = {'slug': ('title',)}</b>
+    <b>raw_id_fields = ('author',)</b>
+    <b>date_hierarchy = 'publish'</b>
+    <b>ordering = ('status', 'publish',)</b>
+</pre>
+<p>回到浏览器，刷新一下posts的列表页，会看到如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C01-06.png" alt=""></p>
+<p>可以看到在该页面上显示的字段就是<code>list_display</code>中的字段。页面出现了一个右侧边栏用于筛选结果，这个功能由<code>list_filter</code>属性控制。页面上方出现了一个搜索栏，这是因为在<code>search_fields</code>中定义了可搜索的字段。在搜索栏的下方，出现了时间层级导航条，这是在<code>date_hierarchy</code>中定义的。还可以看到文章默认通过Status和Publish字段进行排序，这是由<code>ordering</code>属性设置的。</p>
+<p>这个时候点击Add Post，可以发现也有变化。当输入文章标题时，<code>slug</code>字段会根据标题自动填充，这是因为设置了<code>prepopulated_fields</code>属性中<code>slug</code>字段与<code>title</code>字段的对应关系。现在<code>author</code>字段旁边出现了一个搜索图标，并且可以按照ID来查找和显示作者，如果在用户数量很大的时候，这就方便太多了。</p>
+<p>通过短短几行代码，就可以自定义模型在管理后台中的显示方法，还有很多自定义管理后台和扩展管理后台功能的方法，会在以后的各章中逐步遇到。</p>
+
+<h2 id="c1-5"><span class="title">5</span>使用QuerySet和模型管理器（managers）</h2>
+<p>现在我们有了一个功能齐备的管理后台用于管理博客的内容数据，现在可以来学习如何从数据库中查询数据并且对结果进行操作了。Django具有一套强大的API，可以供你轻松的实现增删改查的功能，这就是<b>Django Object-relational-mapper</b>即Django ORM，可以兼容MySQL，PostgreSQL，SQLite和Oracle，可以在<code>settings.py</code>的<code>DATABASES</code>中修改数据库设置。可以通过编辑数据库的路由设置让Django同时使用多个数据库。</p>
+<p>一旦你创建好了数据模型，Django就提供了一套API供你操作数据模型，详情可以参考<a href="https://docs.djangoproject.com/en/2.0/ref/models/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/models/</a>。</p>
+
+
+<h3 id="c1-5-1"><span class="title">5.1</span>创建数据对象</h3>
+<p>打开系统的终端窗口，运行如下命令：</p>
+<pre>
+python manage.py shell
+</pre>
+<p>然后录入如下命令：</p>
+<pre>
+>>>from django.contrib.auth.models import User
+>>>from blog.models import Post
+>>>user = User.objects.get(username='admin')
+>>>post = Post(title='Another post', slug='another-post', body='Post body', author = user)
+>>>post.save()
+</pre>
+<p>让我们来分析一下这段代码做的事情：我们先通过用户名<code>admin</code>取得<code>user</code>对象，就是下边这条命令：</p>
+<pre>
+user = User.objects.get(username='admin')
+</pre>
+<p>get()方法允许从数据库中取出单独一个数据对象。如果找不到对应数据，会抛出<code>DoseNotExist</code>异常，如果结果超过一个，会抛出<code>MultipleObjectsReturn</code>异常，这两个异常都是被查找的类的属性。</p>
+<p>然后我们通过下边这条命令，使用了标题，简称和文章内容，以及指定<code>author</code>字段为刚取得的<code>User</code>对象，新建了一个<code>Post</code>对象：</p>
+<pre>
+post = Post(title='Another post', slug='another-post', body='Post body', author = user)
+</pre>
+<p class="hint">这个对象暂时保存在内存中，没有被持久化（写入）到数据库中。</p>
+<p>最后，我们通过<code>save()</code>方法将<code>Post</code>对象写入到数据库中：</p>
+<pre>
+post.save()
+</pre>
+<p>这条命令实际会转化成一条<code>INSERT</code> SQL语句。现在我们已经知道了如何在内存中先创建一个数据对象然后将其写入到数据库中的方法，我们还可以使用<code>create()</code>方法一次性创建并写入数据库，像这样：</p>
+<pre>
+Post.objects.create(title='One more post', slug='One more post', body='Post body', author=user)
+</pre>
+
+<h3 id="c1-5-2"><span class="title">5.2</span>修改数据对象</h3>
+<p>现在，修改刚才的post对象的标题：</p>
+<pre>
+>>> post.title = 'New title'
+>>> post.save()
+</pre>
+<p>这次<code>save()</code>方法实际转化为一个<code>UPDATE</code>SQL语句。</p>
+<p class="hint">对数据对象做的修改直到调用<code>save()</code>方法才会被存入数据库。</p>
+
+<h3 id="c1-5-3"><span class="title">5.3</span>查询数据</h3>
+<p>Django ORM的全部使用都基于QuerySet（查询结果集对象，由于该术语使用频繁，因此在之后的文章中不再进行翻译）。一个查询结果集是一系列从数据库中取得的数据对象，经过一系列的过滤条件，最终组合到一起构成的一个对象。</p>
+<p>之前已经了解了使用<code>Post.objects.get()</code>方法从数据库中取出一个单独的数据对象，每个模型都有至少一个管理器，默认的管理器叫做<code>objects</code>。通过使用一个模型管理器，可以得到一个QuerySet，想得到一个数据表里的所有数据对象，可以使用默认模型管理器的<code>all()</code>方法，像这样：</p>
+<pre>
+>>> all_posts = Post.objects.all()
+</pre>
+<p>这样就取得了一个包含数据库中全部post的Queryset，值得注意的是，QuerySet还没有被执行（即执行SQL语句），因为QuerySet是惰性求值的，只有在确实要对其进行表达式求值的时候，QuerySet才会被执行。惰性求值特性使得QuerySet非常有用。如果我们不是把QuerySet的结果赋值给一个变量，而是直接写在Python命令行中，对应的SQL语句就会立刻被执行，因为会强制对其求值：</p>
+<pre>
+>>> Post.objects.all()
+</pre>
+<p class="emp">译者注：原书一直没有非常明确的指出这几个概念，估计是因为本书不是面向Django初学者所致。这里译者总结一下：数据模型Model类=数据表，数据模型类的实例=数据表的一行数据（不一定是来自于数据库的，也可能是内存中创建的），查询结果集=包装一系列数据模型类实例的对象。</p>
+
+
+<h4 id="c1-5-3-1"><span class="title">5.3.1</span>使用<code class="code_in_title">filter()</code>方法</h4>
+<p>可以使用模型管理器的<code>filter()</code>过滤所需的数据，例如，可以过滤出所有2017年发布的博客文章：</p>
+<pre>
+Post.objects.filter(publish__year=2017)
+</pre>
+<p>还可以同时使用多个字段过滤，比如选出所有<code>admin</code>作者于2017年发布的文章：</p>
+<pre>
+Post.objects.filter(publish__year=2017, author__username='admin')
+</pre>
+<p>这和链式调用QuerySet的结果一样：</p>
+<pre>
+Post.objects.filter(publish__year=2017).filter(author__username='admin')
+</pre>
+<p class="hint">QuerySet中使用的条件查询采用双下划线写法，比如例子中的<code>publish__year</code>，双下划线还一个用法是从关联的模型中取其字段，例如<code>author__username</code>。</p>
+
+<h4 id="c1-5-3-2"><span class="title">5.3.2</span>使用<code class="code_in_title">exclude()</code>方法</h4>
+<p>使用模型管理器的<code>exclude()</code>从结果集中去除符合条件的数据。例如选出2017年发布的所有标题不以<code>Why</code>开头的文章：</p>
+<pre>
+Post.objects.filter(publish__year=2017).exclude(title__startswith='Why')
+</pre>
+
+<h4 id="c1-5-3-3"><span class="title">5.3.3</span>使用<code class="code_in_title">order_by()</code>方法</h4>
+<p>对于查询出的结果，可以使用<code>order_by()</code>方法按照不同的字段进行排序。例如选出所有文章，使其按照<code>title</code>字段排序：</p>
+<pre>
+Post.objects.order_by('title')
+</pre>
+<p>默认会采用升序排列，如果需要使用降序排列，在字符串格式的字段名前加一个减号：</p>
+<pre>
+Post.objects.order_by('-title')
+</pre>
+<p class="emp">译者注：如果不指定order_by的排序方式，但在Meta中指定了顺序，则默认会优先以Meta中的顺序列出。</p>
+
+<h3 id="c1-5-4"><span class="title">5.4</span>删除数据</h3>
+<p>如果想删除一个数据，可以对一个数据对象直接调用<code>delete()</code>方法：</p>
+<pre>
+post = Post.objects.get(id=1)
+post.delete()
+</pre>
+<p class="hint">当外键中的<code>on_delete</code>参数被设置为<code>CASCADE</code>时，删除一个对象会同时删除所有对其有依赖关系的对象，比如删除作者的时候该作者的文章会一并删除。</p>
+<p class="emp">译者注：<code>filter()</code>，<code>exclude()</code>，<code>all()</code>这三个方法都返回一个QuerySet对象，所以可以任意链式调用。</p>
+
+<h3 id="c1-5-5"><span class="title">5.5</span>QuerySet何时会被求值</h3>
+<p>可以对一个QuerySet串联任意多的过滤方法，但只有到该QuerySet实际被求值的时候，才会进行数据库查询。QuerySet仅在下列时候才被实际执行：</p>
+<ul>
+    <li>第一次迭代QuerySet</li>
+    <li>执行切片操作，例如<code>Post.objects.all()[:3]</code></li>
+    <li>pickled或者缓存QuerySet的时候</li>
+    <li>调用QuerySet的<code>repr()</code>或者<code>len()</code>方法</li>
+    <li>显式对其调用<code>list()</code>方法将其转换成列表</li>
+    <li>将其用在逻辑判断表达式中。比如<code>bool()</code>，<code>or</code>，<code>and</code>和<code>if</code></li>
+</ul>
+<p class="emp">如果对结构化程序设计中的表达式求值有所了解的话，就可以知道只有表达式被实际求值的时候，QuerySet才会被执行。译者在这里推荐伯克利大学的<a href="https://cs61a.org/">CS 61A: Structure and Interpretation of Computer Programs</a>Python教程。</p>
+
+<h3 id="c1-5-6"><span class="title">5.6</span>创建模型管理器</h3>
+<p>像之前提到的那样，类名后的<code>.objects</code>就是默认的模型管理器，所有的ORM方法都通过模型管理器操作。除了默认的管理器之外，我们还可以自定义这个管理器。我们要创建一个管理器，用于获取所有<code>status</code>字段是<code>published</code>的文章。</p>
+<p>自行编写模型管理器有两种方法：一是给默认的管理器增加新的方法，二是修改默认的管理器。第一种方法就像是给你提供了一个新的方法例如：<code>Post.objects.my_manager()</code>，第二种方法则是直接使用新的管理器例如：<code>Post.my_manager.all()</code>。我们想实现的方式是：<code>Post.published.all()</code>这样的管理器。</p>
+<p>在<code>blog</code>的<code>models.py</code>里增加自定义的管理器：</p>
+<pre>
+<b>class PublishedManager(models.Manager):</b>
+    <b>def get_queryset(self):</b>
+        <b>return super(PublishedManager, self).get_queryset().filter(status='published')</b>
+
+class Post(models.Model):
+    # ......
+    <b>objects = models.Manager()  # 默认的管理器</b>
+    <b>published = PublishedManager()  # 自定义管理器</b>
+</pre>
+<p>模型管理器的<code>get_queryset()</code>方法返回后续方法要操作的QuerySet，我们重写了该方法，以让其返回所有过滤后的结果。现在我们已经自定义好了管理器并且将其添加到了<code>Post</code>模型中，现在可以使用这个管理器进行数据查询，来测试一下：</p>
+<p>启动包含Django环境的Python命令行模式：</p>
+<pre>
+python manage.py shell
+</pre>
+<p>现在可以取得所有标题开头是<code>Who</code>，而且已经发布的文章（实际的查询结果根据具体数据而变）：</p>
+<pre>
+Post.published.filter(title__startswith="Who")
+</pre>
+
+<h2 id="c1-6"><span class="title">6</span>创建列表和详情视图函数</h2>
+<p>在了解了ORM的相关知识以后，就可以来创建视图了。视图是一个Python中的函数，接受一个HTTP请求作为参数，返回一个HTTP响应。所有返回HTTP响应的业务逻辑都在视图中完成。</p>
+<p>首先，我们会创建应用中的视图，然后会为每个视图定义一个匹配的URL路径，最后，会创建HTML模板将视图生成的结果展示出来。每一个视图都会向模板传递参数并且渲染模板，然后返回一个包含最终渲染结果的HTTP响应。</p>
+
+
+<h3 id="c1-6-1"><span class="title">6.1</span>创建视图函数</h3>
+
+
+<p>来创建一个视图用于列出所有的文章。编辑<code>blog</code>应用的<code>views.py</code>文件：</p>
+<pre>
+from django.shortcuts import render, get_object_or_404
+from .models import Post
+
+def post_list(request):
+    posts = Post.published.all()
+    return render(request, 'blog/post/list.html', {'posts': posts})
+</pre>
+<p>我们创建了第一个视图函数--文章列表视图。<code>post_list</code>目前只有一个参数<code>request</code>，这个参数对于所有的视图都是必需的。在这个视图中，取得了所有已经发布（使用了<code>published</code>管理器）的文章。</p>
+<p>最后，使用由<code>django.shortcuts</code>提供的<code>render()</code>方法，使用一个HTML模板渲染结果。<code>render()</code>方法的参数分别是<code>reqeust</code>，HTML模板的位置，传给模板的变量名与值。<code>render()</code>方法返回一个带有渲染结果（HTML文本）的<code>HttpResponse</code>对象。<code>render()</code>方法还会将<code>request</code>对象携带的变量也传给模板，在模板中可以访问所有模板上下文管理器设置的变量。模板上下文管理器就是将变量设置到模板环境的可调用对象，会在第三章学习到。</p>
+<p>再写一个显示单独一篇文章的视图，在<code>views.py</code>中添加下列函数：</p>
+<pre>
+def post_detail(request, year, month, day, post):
+    post = get_object_or_404(Post, slug=post, status="published", publish__year=year, publish__month=month,
+                             publish__day=day)
+    return render(request, 'blog/post/detail.html', {'post': post})
+</pre>
+<p>这就是我们的文章详情视图。这个视图需要<code>year</code>，<code>month</code>，<code>day</code>和<code>post</code>参数，用于获取一个指定的日期和简称的文章。还记得之前创建模型时设置<code>slug</code>字段的<code>unique_for_date</code>参数，这样通过日期和简称可以找到唯一的一篇文章（或者找不到）。使用<code>get_object_or_404()</code>方法来获取文章，这个方法返回匹配的一个数据对象，或者在找不到的情况下返回一个HTTP 404错误（not found）。最后使用<code>render()</code>方法通过一个模板渲染页面。</p>
+
+
+<h3 id="c1-6-2"><span class="title">6.2</span>为视图配置URL</h3>
+<p>URL pattern的作用是将URL映射到视图上。一个URL pattern由一个正则字符串，一个视图和可选的名称（该名称必须唯一，可以在整个项目环境中使用）组成。Django接到对于某个URL的请求时，按照顺序从上到下试图匹配URL，停在第一个匹配成功的URL处，将<code>HttpRequest</code>类的一个实例和其他参数传给对应的视图并调用视图处理本次请求。</p>
+<p>在<code>blog</code>应用下目录下边新建一个<code>urls.py</code>文件，然后添加如下内容：</p>
+<pre>
+from django.urls import path
+from . import views
+
+app_name = 'blog'
+urlpatterns = [
+    # post views
+    path('', views.post_list, name='post_list'),
+    path('&lt;int:year&gt;/&lt;int:month&gt;/&lt;int:day&gt;/&lt;slug:post&gt;/', views.post_detail, name='post_detail'),
+]
+</pre>
+<p>上边的代码中，通过<code>app_name</code>定义了一个命名空间，方便以应用为中心组织URL并且通过名称对应到URL上。然后使用<code>path()</code>设置了两条具体的URL pattern。第一条没有任何的参数，对应<code>post_list</code>视图。第二条需要如下四个参数并且对应到<code>post_detail</code>视图：</p>
+<ul>
+    <li><code>year</code>：需要匹配一个整数</li>
+    <li><code>month</code>：需要匹配一个整数</li>
+    <li><code>day</code>：需要匹配一个整数</li>
+    <li><code>post</code>：需要匹配一个slug形式的字符串</li>
+</ul>
+<p>我们使用了一对尖括号从URL中获取这些参数。任何URL中匹配上这些内容的文本都会被捕捉为这个参数的对应的类型值。例如<code>&lt;int:year&gt;</code>会匹配到一个整数形式的字符串然后会给模板传递名称为<code>int</code>的变量，其值为捕捉到的字符串转换为整数后的值。而<code>&lt;slug:post&gt;</code>则会被转换成一个名称为<code>post</code>，值为slug类型（仅有ASCII字符或数字，减号，下划线组成的字符串）的变量传给视图。</p>
+<p>对于URL匹配的类型，可以参考<a href="https://docs.djangoproject.com/en/2.0/topics/http/urls/#path-converters" target="_blank">https://docs.djangoproject.com/en/2.0/topics/http/urls/#path-converters</a></p>
+<p>如果使用<code>path()</code>无法满足需求，则可以使用<code>re_path()</code>，通过Python正则表达式匹配复杂的URL。参考<a href="https://docs.djangoproject.com/en/2.0/ref/urls/#django.urls.re_path" target="_blank">https://docs.djangoproject.com/en/2.0/ref/urls/#django.urls.re_path</a>了解<code>re_path()</code>的使用方法，参考<a href="https://docs.python.org/3/howto/regex.html">https://docs.python.org/3/howto/regex.html</a>了解Python中如何使用正则表达式。</p>
+<p class="hint">为每个视图创建单独的<code>urls.py</code>文件是保持应用可被其他项目重用的最好方式。</p>
+<p>现在我们必须把<code>blog</code>应用的URL包含在整个项目的URL中，到<code>mysite</code>目录下编辑<code>urls.py</code>：</p>
+<pre>
+from django.contrib import admin
+from django.urls import path, <b>include</b>
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    <b>path('blog/', include('blog.urls', namespace='blog')),</b>
+]
+</pre>
+<p>这行新的URL使用include方法导入了<code>blog</code>应用的所有URL，使其位于<code>blog/</code>URL路径下，还指定了命名空间<code>blog</code>。URL命名空间必须在整个项目中唯一。之后我们方便的通过使用命名空间来快速指向具体的URL，例如<code>blog:post_list</code>和<code>blog:post_detail</code>。关于URL命名空间可以参考<a href="https://docs.djangoproject.com/en/2.0/topics/http/urls/#url-namespaces" target="_blank">https://docs.djangoproject.com/en/2.0/topics/http/urls/#url-namespaces</a>。</p>
+
+<h3 id="c1-6-3"><span class="title">6.3</span>规范模型的URL</h3>
+<p>可以使用在上一节创建的<code>post_detail</code> URL来为Post模型的每一个数据对象创建规范化的URL。通常的做法是给模型添加一个<code>get_absolute_url()</code>方法，该方法返回对象的URL。我们将使用<code>reverse()</code>方法通过名称和其他参数来构建URL。编辑<code>models.py</code>文件</p>
+<pre>
+<b>from django.urls import reverse</b>
+
+class Post(models.Model):
+    # ......
+    <b>def get_absolute_url(self):</b>
+        <b>return reverse('blog:post_detail', args=[self.publish.year, self.publish.month, self.publish.day, self.slug])</b>
+</pre>
+<p>之后在模板中，就可以使用<code>get_absolute_url()</code>创建超链接到具体数据对象。</p>
+<p class="emp">译者注：原书这里写得很简略，实际上反向解析URL是创建结构化站点非常重要的内容，本站有Django 1.11版本的<a href="http://www.conyli.cc/archives/1186" target="_blank">Django进阶-路由系统</a>可供了解原理，Django 2.0此部分变化较大，需研读官方文档。</p>
+
+<h2 id="c1-7"><span class="title">7</span>为视图创建模板</h2>
+<p>已经为<code>blog</code>应用配置好了URL pattern，现在需要将内容通过模板展示出来。</p>
+<p>在<code>blog</code>应用下创建如下目录：</p>
+<pre>
+templates/
+    blog/
+        base.html
+        post/
+            list.html
+            detail.html
+</pre>
+<p>这就是模板的目录结构。<code>base.html</code>包含页面主要的HTML结构，并且将结构分为主体内容和侧边栏两部分。<code>list.html</code>和<code>detail.html</code>会分表继承<code>base.html</code>并渲染各自的内容。</p>
+<p>Django提供了强大的模板语言用于控制数据渲染，由<em>模板标签(template tags)</em>，<em>模板变量(template variables)</em>，<em>模板过滤器(template filters)</em>组成：</p>
+<ul>
+    <li><code>template tags</code>：进行渲染控制，类似<code>{% tag %}</code></li>
+    <li><code>template variables</code>：可认为是模板标签的一种特殊形式，即只是一个变量，渲染的时候只替换内容，类似<code>{{ variable }}</code></li>
+    <li><code>template filters</code>：附加在模板变量上改变变量最终显示结果，类似<code>{{ variable|filter }}</code></li>
+</ul>
+<p>所有内置的模板标签和过滤器可以参考<a href="https://docs.djangoproject.com/en/2.0/ref/templates/builtins/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/templates/builtins/</a>。</p>
+<p>编辑<code>base.html</code>，添加下列内容：</p>
+<pre>
+{% load static %}
+&lt;!DOCTYPE html>
+&lt;html lang="en">
+&lt;head>
+    &lt;meta charset="utf-8">
+    &lt;title>{% block title %}{% endblock %}&lt;/title>
+    &lt;link rel="stylesheet" href="{% static "css/blog.css" %}">
+&lt;/head>
+&lt;body>
+    &lt;div id="content">
+        {% block content %}
+        {% endblock %}
+    &lt;/div>
+    &lt;div id="sidebar">
+        &lt;h2>My blog&lt;/h2>
+        &lt;p>This is my blog.&lt;/p>
+    &lt;/div>
+&lt;/body>
+&lt;/html>
+</pre>
+<p><code>{% load static %}</code> 表示导入由<code>django.contrib.staticfiles</code>应用提供的<code>static</code>模板标签，导入之后，在整个当前模板中都可以使用<code>{% static %}</code>标签从而导入静态文件例如<code>blog.css</code>（可在本书配套源码<code>blog</code>应用的<code>static/</code>目录下找到，将其拷贝到你的项目的相同位置）。</p>
+<p>还可以看到有两个<code>{% block %}</code>表示这个标签的开始与结束部分定义了一个块，继承该模板的模板将用具体内容替换这两个块。这两个块的名称是<code>title</code>和<code>content</code>。</p>
+<p>编辑<code>post/list.html</code>：</p>
+<pre>
+{% extends "blog/base.html" %}
+{% block title %}My Blog{% endblock %}
+{% block content %}
+    &lt;h1>My Blog&lt;/h1>
+    {% for post in posts %}
+        &lt;h2>
+            &lt;a href="{{ post.get_absolute_url }}">
+                {{ post.title }}
+            &lt;/a>
+        &lt;/h2>
+        &lt;p class="date">
+        Published {{ post.publish }} by {{ post.author }}
+        &lt;/p>
+        {{ post.body|truncatewords:30|linebreaks }}
+    {% endfor %}
+{% endblock %}
+</pre>
+<p>通过使用<code>{% extends %}</code>，让该模板继承了母版<code>blog/base.html</code>，然后用实际内容填充了<code>title</code>和<code>content</code>块。通过迭代所有的文章，展示文章标题，发布日期，作者、正文及一个链接到文章的规范化URL。在正文部分使用了两个filter：<code>truncatewords</code>用来截断指定数量的文字，<code>linebreaks</code>将结果带上一个HTML换行。filter可以任意连用，每个都在上一个的结果上生效。</p>
+<p>打开系统命令行输入<code>python manage.py runserver</code>启动站点，然后在浏览器中访问<a href="http://127.0.0.1:8000/blog/" target="_blank">http://127.0.0.1:8000/blog/</a>，可以看到如下页面（如果没有文章，通过管理后台添加一些）：</p>
+<p><img src="http://img.conyli.cc/django2/C01-07.png" alt=""></p>
+<p>然后编辑<code>post/detail.html</code>：</p>
+<pre>
+{% extends 'blog/base.html' %}
+{% block title %}
+{{ post.title }}
+{% endblock %}
+
+{% block content %}
+    &lt;h1>{{ post.title }}&lt;/h1>
+    &lt;p class="date">
+    Published {{ post.publish }} by {{ post.author }}
+    &lt;/p>
+    {{ post.body|linebreaks }}
+{% endblock %}
+</pre>
+<p>现在可以回到刚才的页面，点击任何一篇文章可以看到详情页：</p>
+<p><img src="http://img.conyli.cc/django2/C01-08.png" alt=""></p>
+<p>看一下此时的URL，应该类似<code>/blog/2017/12/14/who-was-djangoreinhardt/</code>。这就是我们生成的规范化的URL。</p>
+
+<h2 id="c1-8"><span class="title">8</span>添加分页功能</h2>
+<p>当输入一些文章后，你会很快意识到需要将所有的文章分页进行显示。Django自带了一个分页器可以方便地进行分页。</p>
+<p>编辑<code>blog</code>应用的<code>views.py</code>文件，修改<code>post_list</code>视图：</p>
+<pre>
+<b>from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger</b>
+
+def post_list(request):
+    <b>object_list = Post.published.all()</b>
+    <b>paginator = Paginator(object_list, 3)  # 每页显示3篇文章</b>
+    <b>page = request.GET.get('page')</b>
+    <b>try:</b>
+        <b>posts = paginator.page(page)</b>
+    <b>except PageNotAnInteger:</b>
+        <b># 如果page参数不是一个整数就返回第一页</b>
+        <b>posts = paginator.page(1)</b>
+    <b>except EmptyPage:</b>
+        <b># 如果页数超出总页数就返回最后一页</b>
+        <b>posts = paginator.page(paginator.num_pages)</b>
+    return render(request, 'blog/post/list.html', {<b>'page': page,</b> 'posts': posts})
+</pre>
+<p>分页器相关代码解释如下：</p>
+<ol>
+    <li>使用要分页的内容和每页展示的内容数量，实例化<code>Paginator</code>类得到<code>paginator</code>对象</li>
+    <li>通过<code>get()</code>方法获取<code>page</code>变量，表示当前的页码</li>
+    <li>调用<code>paginator.page()</code>方法获取要展示的数据</li>
+    <li>如果<code>page</code>参数不是一个整数就返回第一页，如果页数超出总页数就返回最后一页</li>
+    <li>把页码和要展示的内容传给页面。</li>
+</ol>
+<p>现在需要为分页功能创建一个单独的模板，以让该模板可以包含在任何使用分页功能的页面中，在<code>blog</code>应用的<code>templates/</code>目录中新建<code>pagination.html</code>，添加如下代码：</p>
+<pre>
+&lt;div class="pagination">
+    &lt;span class="step-links">
+        {% if page.has_previous %}
+        &lt;a href="?page={{ page.previous_page_number }}">Previous&lt;/a>
+        {% endif %}
+    &lt;span class="current">
+        Page {{ page.number }} of {{ page.paginator.num_pages }}.
+    &lt;/span>
+    {% if page.has_next %}
+        &lt;a href="?page={{ page.next_page_number }}">Next&lt;/a>
+    {% endif %}
+    &lt;/span>
+&lt;/div>
+</pre>
+<p>这个用于分页的模板接受一个名称为<code>Page</code>的对象，然后显示前一页，后一页和总页数。为此，回到<code>blog/post/list.html</code>文件，在<code>{% content %}</code>中的最下边增加一行：</p>
+<pre>
+{% block content %}
+    # ......
+    <b>{% include 'pagination.html' with page = posts %}</b>
+{% endblock %}
+</pre>
+<p>由于视图传递给列表页的<code>Page</code>对象的名称叫做<code>posts</code>，所以通过<code>with</code>重新指定了变量名称以让分页模板也能正确接收到该对象。</p>
+<p>打开浏览器到<a href="http://127.0.0.1:8000/blog/" target="_blank">http://127.0.0.1:8000/blog/</a>，可以看到页面如下：</p>
+<p><img src="http://img.conyli.cc/django2/C01-09.png" alt=""></p>
+
+
+<h2 id="c1-9"><span class="title">9</span>使用基于类的视图</h2>
+<p>Python中类可以取代函数，视图是一个接受HTTP请求并返回HTTP响应的可调用对象，所以基于函数的视图（FBV）也可以通过基于类的视图（CBV）来实现。Django为CBV提供了基类<code>View</code>，包含请求分发功能和其他一些基础功能。</p>
+<p>CBV相比FBV有如下优点</p>
+<ul>
+    <li>可编写单独的方法对应不同的HTTP请求类型如GET，POST，PUT等请求，不像FBV一样需要使用分支</li>
+    <li>使用多继承创建可复用的类模块（也叫做<em>mixins</em>）</li>
+</ul>
+<p>可以看一下关于CBV的介绍：<a href="https://docs.djangoproject.com/en/2.0/topics/class-based-views/intro/" target="_blank">https://docs.djangoproject.com/en/2.0/topics/class-based-views/intro/</a>。</p>
+<p>我们用Django的内置CBV类<code>ListView</code>来改写<code>post_list</code>视图，<code>ListView</code>的作用是列出任意类型的数据。编辑<code>blog</code>应用的<code>views.py</code>文件，添加下列代码：</p>
+<pre>
+from django.views.generic import ListView
+class PostListView(ListView):
+    queryset = Post.published.all()
+    context_object_name = 'posts'
+    paginate_by = 3
+    template_name = 'blog/post/list.html'
+</pre>
+<p>这个CBV和<code>post_list</code>视图函数的功能类似，在上边的代码里做了以下工作：</p>
+<ul>
+    <li>使用<code>queryset</code>变量查询所有已发布的文章。实际上，可以不使用这个变量，通过指定<code>model = Post</code>，这个CBV就会去进行<code>Post.objects.all()</code>查询获得全部文章。</li>
+    <li>设置<code>posts</code>为模板变量的名称，如果不设置<code>context_object_name</code>参数，默认的变量名称是<code>object_list</code></li>
+    <li>设置<code>paginate_by</code>为每页显示3篇文章</li>
+    <li>通过<code>template_name</code>指定需要渲染的模板，如果不指定，默认使用<code>blog/post_list.html</code></li>
+</ul>
+<p>打开<code>blog</code>应用的<code>urls.py</code>文件，注释掉刚才的<code>post_list</code> URL pattern，为PostListView类增加一行：</p>
+<pre>
+urlpatterns = [
+    # post views
+    # path('', views.post_list, name='post_list'),
+    <b>path('',views.PostListView.as_view(),name='post_list'),</b>
+    path('&lt;int:year>/&lt;int:month>/&lt;int:day>/&lt;slug:post>/', views.post_detail, name='post_detail'),
+]
+</pre>
+<p>为了正常使用分页功能，需要使用正确的变量名称，Django内置的<code>ListView</code>返回的变量名称叫做<code>page_obj</code>,所以必须修改<code>post/list.html</code>中导入分页模板的那行代码：</p>
+<pre>{% include 'pagination.html' with <b>page=page_obj</b> %}</pre>
+<p>在浏览器中打开<a href="http://127.0.0.1:8000/blog/" target="_blank">http://127.0.0.1:8000/blog/</a>，看一下是否和原来使用<code>post_list</code>的结果一样。这是一个简单的CBV示例，会在<em>第十章</em>更加深入的了解CBV的使用。</p>
+
+<h1 id="summary">总结</h1>
+<p>这一章通过创建一个简单的博客应用，学习了基础的Django框架使用方法：设计了数据模型并且进行了数据模型迁移，创建了视图，模板和URLs，还学习了分页功能。下一章将学习给博客增加评论系统和标签分类功能，以及通过邮件分享文章链接的功能。</p>
+</body>
+</html>

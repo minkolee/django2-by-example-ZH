@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/normalize.min.css">
+    <link rel="stylesheet" href="css/base.css">
+    <title>第三章 扩展博客功能</title>
+
+</head>
+<body>
+<h1 id="top">第三章 扩展博客功能</h1>
+<p>在上一章里，使用了基本的表单提交数据与处理表单，进行复杂的分组查询，还学习了集成第三方应用。</p>
+<p>这一章涵盖如下的内容：</p>
+<ul>
+    <li>自定义模板标签和模板过滤器</li>
+    <li>给站点增加站点地图和订阅功能</li>
+    <li>使用PostgreSQL数据库实现全文搜索</li>
+</ul>
+
+<h2 id="c3-1"><span class="title">1</span>自定义模板标签和过滤器</h2>
+<p>Django提供很多内置的模板标签和过滤器，例如<code>{% if %}</code>或<code>{% block %}</code>，在之前已经在模板中使用过它们。关于完整的内置模板标签和过滤器可以看<a href="https://docs.djangoproject.com/en/2.0/ref/templates/builtins/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/templates/builtins/</a>。</p>
+<p>Django也允许你创建自已的模板标签，用来在页面中进行各种操作。当你想在模板中实现Django没有提供的功能时，自定义模板标签是一个好的选择。</p>
+
+<h3 id="c3-1-1"><span class="title">1.1</span>自定义模板标签</h3>
+<p>Django提供下边的两个函数可以简单快速地创建自定义模板标签：</p>
+<ul>
+    <li><code>simple_tag</code>: 处理数据并且返回字符串</li>
+    <li><code>inclusion_tag</code>: 处理数据并返回一个渲染的模板</li>
+</ul>
+<p>所有的自定义标签，只能够在模板中使用。</p>
+<p>在<code>blog</code>应用目录里新建一个目录<code>templatetags</code>，然后在其中创建一个空白的<code>__init__.py</code>，再创建一个文件<code>blog_tags.py，文件结构如下：</code>。</p>
+<pre>
+blog/
+    __init__.py
+    models.py
+    ...
+    templatetags/
+        __init__.py
+        blog_tags.py
+</pre>
+<p>注意这里的命名很关键，一会在模板内载入自定义标签的时候就需要使用这个包的名称（<code>templatetags</code>）。</p>
+<p>先创建一个简单的标签，在刚刚创建的<code>blog_tags.py</code>里写如下代码：</p>
+<pre>
+from django import template
+from ..models import Post
+
+register = template.Library()
+
+@register.simple_tag
+def total_posts():
+    return Post.published.count()
+</pre>
+<p>我们创建了一个标签返回已经发布的文章总数。每个模板标签的模块内需要一个<code>register</code>变量，是<code>template.Library</code>的实例，用于注册自定义的标签。然后创建了一个Python函数<code>total_posts</code>，用<code>@register.simple_tag</code>装饰器将其注册为一个简单标签。Django会使用这个函数的名称作为标签名称，如果想使用其他的名称，可以通过<code>name</code>属性指定，例如<code>@register.simple_tag(name='my_tag')</code>。</p>
+<p class="hint">在添加了新的自定义模板标签或过滤器之后，必须重新启动django服务才能在模板中生效。</p>
+<p>在模板内使用自定义标签之前，需要使用<code>{% load %}</code>在模板中引入自定义的标签，像之前提到的那样，使用创建的包的名字作为<code>load</code>的参数。</p>
+<p>打开<code>blog/templates/base.html</code>模板，在最上边添加<code>{% load blog_tags %}</code>，然后使用自定义标签<code>{% total_posts %}</code>，这个模板最后看起来像这样：</p>
+<pre>
+<b>{% load blog_tags %}</b>
+{% load static %}
+&lt;!DOCTYPE html>
+&lt;html>
+    &lt;head>
+        &lt;title>{% block title %}{% endblock %}&lt;/title>
+        &lt;link href="{% static "css/blog.css" %}" rel="stylesheet">
+    &lt;/head>
+    &lt;body>
+        &lt;div id="content">
+            {% block content %}
+            {% endblock %}
+        &lt;/div>
+        &lt;div id="sidebar">
+            &lt;h2>My blog&lt;/h2>
+            <b>&lt;p>This is my blog. I've written {% total_posts %} posts so far.&lt;/p></b>
+        &lt;/div>
+    &lt;/body>
+&lt;/html>
+</pre>
+<p>启动站点然后到<code>http://127.0.0.1:8000/blog/</code>，应该可以看到总文章数被显示在了侧边栏：</p>
+<p><img src="http://img.conyli.cc/django2/C03-i01.jpg" alt=""></p>
+<p>自定义标签威力强大之处在于不通过视图就可以处理数据和添加到模板中。</p>
+<p>现在再来创建一个用于在侧边栏显示最新发布的文章的自定义标签。这次通过<code>inclusion_tag</code>渲染一段HTML代码。编辑blog_tags.py文件，添加如下内容：</p>
+<pre>
+@register.inclusion_tag('blog/post/latest_posts.html')
+def show_latest_posts(count=5):
+    latest_posts = Post.published.order_by('-publish')[:count]
+    return {'latest_posts': latest_posts}
+</pre>
+<p>在上边的代码里，使用<code>@register.inclusion_tag</code>装饰器装饰了自定义函数<code>show_latest_posts</code>，同时指定了要渲染的模板为<code>blog/post/latest_posts.html</code>。我们的模板标签还接受一个参数<code>count</code>，通过<code>Post.published.order_by('-publish')[:count]</code>切片得到指定数量的最新发布的文章。注意这个自定义函数返回的是一个字典对象而不是一个具体的值。<code>inclusion_tag</code>必须返回一个类似给模板传入变量的字典，用于在<code>blog/post/latest_posts.html</code>中取得数据并渲染模板。刚刚创建的这一切在模板中以类似<code>{% show_latest_posts 3 %}</code>的形式来使用。</p>
+<p>那么在模板里如何使用呢，这是一个带参数的tag，就像之前使用内置的那样，在标签后边加参数： <code>{% show_latest_posts 3 %}</code></p>
+<p>在<code>blog/post/</code>目录下创建<code>latest_post.html</code>文件，添加下列代码：</p>
+<pre>
+&lt;ul>
+    {% for post in latest_posts %}
+    &lt;li>
+        &lt;a href="{{ post.get_absolute_url }}">{{ post.title }}&lt;/a>
+    &lt;/li>
+    {% endfor %}
+&lt;/ul>
+</pre>
+<p>在上边的代码里，使用<code>lastest_posts</code>显示出了一个未排序的最新文章列表。然后编辑<code>blog/base.html</code>，加入新标签以显示最新的三篇文章：</p>
+<pre>
+&lt;div id="sidebar">
+    &lt;h2>My blog&lt;/h2>
+    &lt;p>This is my blog. I've written {% total_posts %} posts so far.&lt;/p>
+    <b>&lt;h3>Latest posts&lt;/h3></b>
+    <b>{% show_latest_posts 3 %}</b>
+&lt;/div>
+</pre>
+<p>模板中调用了自定义标签，然后传入了一个参数3，之后这个标签的位置会被替换成被渲染的模板。</p>
+<p>现在返回浏览器，刷新页面，可以看到侧边栏显示如下：</p>
+<p><img src="http://img.conyli.cc/django2/C03-01.png" alt=""></p>
+
+<p>最后再来创建一个<code>simple_tag</code>，将数据存放在这个标签内，而不是像我们创建的第一个标签一样直接展示出来。我们使用这种方法来显示评论最多的文章。编辑<code>blog_tags.py</code>，添加下列代码：</p>
+<pre>
+@register.simple_tag
+def get_most_commented_posts(count=5):
+    return Post.published.annotate(total_comments=Count('comments')).order_by('-total_comments')[:count]
+</pre>
+<p>在上边的代码里，使用<code>annotate</code>，对每篇文章的评论进行计数然后按照<code>total_comments</code>字段降序排列，之后使用<code>[:count]</code>切片得到评论数量最多的特定篇文章，</p>
+<p>除了<code>Count</code>之外，Django提供了其他聚合函数<code>Avg</code>，<code>Max</code>，<code>Min</code>和<code>Sum</code>，聚合函数的详情可以查看<a href="https://docs.djangoproject.com/en/2.0/topics/db/aggregation/">https://docs.djangoproject.com/en/2.0/topics/db/aggregation/</a>。</p>
+<p>编辑<code>blog/base.html</code>把以下代码追加到侧边栏<code>&lt;div></code>元素内部：</p>
+<pre>
+&lt;h3>Most commented posts&lt;/h3>
+{% get_most_commented_posts as most_commented_posts %}
+&lt;ul>
+    {% for post in most_commented_posts %}
+        &lt;li>
+            &lt;a href="{{ post.get_absolute_url }}">{{ post.title }}&lt;/a>
+        &lt;/li>
+    {% endfor %}
+&lt;/ul>
+</pre>
+<p>在这里使用了<code>as</code>将我们的模板标签保存在一个叫做<code>most_commented_posts</code>变量中，然后展示其中的内容。</p>
+<p>现在打开浏览器刷新页面，可以看到新的页面如下：</p>
+<p><img src="http://img.conyli.cc/django2/C03-02.png" alt=""></p>
+<p>关于自定义模板标签的详情可以查看<a href="https://docs.djangoproject.com/en/2.0/howto/custom-template-tags/" target="_blank">https://docs.djangoproject.com/en/2.0/howto/custom-template-tags/</a>。</p>
+
+<h3 id="c3-1-2"><span class="title">1.2</span>自定义模板过滤器</h3>
+<p>Djangon内置很多模板过滤器用于在模板内修改变量。模板过滤器实际上是Ptyhon函数，接受1或2个参数-其中第一个参数是变量，第二个参数是一个可选的变量，然后返回一个可供其他模板过滤器操作的值。一个模板过滤器类似这样：<code>{{ variable|my_filter }}</code>，带参数的模板过滤器类似：<code>{{ variable|my_filter:"foo" }}</code>，可以连用过滤器，例如：<code>{{ variable|filter1|filter2 }}</code>。</p>
+<p>我们来通过自定义过滤器使我们的博客文章可以支持Markdown语法，然后将其转换成对应的HTML格式。Markdown是一种易于使用的轻型标记语言而且可以方便的转为HTML。可以在这里查看Markdown语法的详情：<a
+        href="https://daringfireball.net/projects/markdown/basics" target="_blank">https://daringfireball.net/projects/markdown/basics</a>。</p>
+<p>先通过pip安装Python的<code>Markdown</code>模块：</p>
+<pre>
+pip install Markdown==2.6.11
+</pre>
+<p>然后编辑<code>blog_tags.py</code>，添加如下内容：</p>
+<pre>
+from django.utils.safestring import mark_safe
+import markdown
+
+@register.filter(name='markdown')
+def markdown_format(text):
+    return mark_safe(markdown.markdown(text))
+</pre>
+<p>我们使用和模板标签类似的方式注册了模板过滤器，为了不使我们的函数和<code>markdown</code>模块重名，将我们的函数命名为<code>markdown_format</code>，但是指定了模板中的标签名称为<code>markdown</code>，这样就可以通过<code>{{ variable|markdown }}</code>来使用标签了。<code>mark_safe</code>用来告诉Django该段HTML代码是安全的，可以将其渲染到最终页面中。默认情况下，Django对于生成的HTML代码都会进行转义而不会当成HTML代码解析，只有对<code>mark_safe</code>标记的内容才会正常解析，这是为了避免在页面中出现危险代码（如添加外部JavaScript文件的代码）。</p>
+<p>然后在<code>blog/post/list.html</code>和<code>blog/post/detail.html</code>中的<code>{% extends %}</code>之后引入自定义模板的模块：
+<pre>
+{% load blog_tags %}
+</pre>
+<p>在<code>post/detail.html</code>中，找到下边这行：</p>
+<pre>
+{{ post.body|linebreaks }}
+</pre>
+<p>将其替换成：</p>
+<pre>{{ post.body|markdown }}</pre>
+<p>然后在<code>post/list.html</code>中，找到下边这行：</p>
+<pre>{{ post.body|truncatewords:30|linebreaks }}</pre>
+<p>将其替换成：</p>
+<pre>{{ post.body|markdown|truncatewords_html:30 }}</pre>
+<p><code>truncatewords_html</code>过滤器不会截断未闭合的HTML标签。</p>
+<p>浏览器中打开<a href="http://127.0.0.1:8000/admin/blog/post/add/" target="_blank">http://127.0.0.1:8000/admin/blog/post/add/</a>然后写一段使用Markdown语法的正文：</p>
+<pre>
+This is a post formatted with markdown
+--------------------------------------
+*This is emphasized* and **this is more emphasized**.
+Here is a list:
+
+* One
+* Two
+* Three
+
+And a [link to the Django website](https://www.djangoproject.com/)
+</pre>
+<p>然后在浏览器中查看刚添加的文章，可以看到如下的结果：</p>
+<p><img src="http://img.conyli.cc/django2/C03-03.png" alt=""></p>
+<p>可以看到，自定义模板过滤器在需要自定义格式的时候非常好用。可在<a href="https://docs.djangoproject.com/en/2.0/howto/custom-template-tags/#writing-custom-template-filters" target="_blank">https://docs.djangoproject.com/en/2.0/howto/custom-template-tags/#writing-custom-template-filters</a>找到更多关于自定义过滤器的信息。</p>
+
+
+<h2 id="c3-2"><span class="title">2</span>创建站点地图</h2>
+<p>Django带有站点地图功能框架，可以根据网站内容动态的生成站点地图。站点地图是一个XML文件，用于给搜索引擎提供信息，可以帮助搜索引擎爬虫索引站点的内容。</p>
+
+<p>Django的站点地图框架是<code>django.contrib.sites</code>。如果使用同一个Django项目运行多个站点，站点地图功能允许为每个站点创建单独的站点地图。为了使用站点地图功能，需要启用<code>django.contrib.sites</code>和<code>jango.contrib.sitemaps</code>，将这两个应用添加到<code>settings.py</code>的<code>INSTALLED_APPS</code>设置中：</p>
+<pre>
+<b>SITE_ID = 1</b>
+# Application definition
+INSTALLED_APPS = [
+    # ...
+    <b>'django.contrib.sites',</b>
+    <b>'django.contrib.sitemaps',</b>
+]
+</pre>
+<p>由于添加了新应用，需要执行数据迁移。迁移完成之后，在<code>blog</code>应用目录内创建<code>sitemaps.py</code>文件并添加如下代码：</p>
+<pre>
+from django.contrib.sitemaps import Sitemap
+from .models import Post
+
+
+class PostSitemap(Sitemap):
+    changefreq = 'weekly'
+    priority = 0.9
+
+    def items(self):
+        return Post.published.all()
+
+    def lastmod(self, obj):
+        return obj.updated
+</pre>
+<p>我们通过继承<code>django.contrib.sitemaps</code>的<code>Sitemap</code>类创建了一个站点地图对象。<code>changefreq</code>和<code>priority</code>属性表示文章页面更新的频率和这些文章与站点的相关性（最大相关性为1）。使用<code>items()</code>方法返回这个站点地图所需的QuerySet，Django默认会调用数据对象的<code>get_absolute_url()</code>获取对应的URL，如果想手工指定具体的URL，可以为<code>PostSitemap</code>添加一个<code>location</code>方法。<code>lastmod</code>方法接收<code>items()</code>返回的每一个数据对象然后返回其更新时间。<code>changefreq</code>和<code>priority</code>可以通过定义方法也可以作为属性名进行设置。站点地图的详细使用可以看官方文档：<a href="https://docs.djangoproject.com/en/2.0/ref/contrib/sitemaps/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/contrib/sitemaps/</a>。</p>
+<p>最后就是配置站点地图对应的URL，打开项目的根<code>urls.py</code>，添加如下代码：</p>
+<pre>
+from django.urls import path, include
+from django.contrib import admin
+<b>from django.contrib.sitemaps.views import sitemap</b>
+<b>from blog.sitemaps import PostSitemap</b>
+
+<b>sitemaps = {'posts': PostSitemap,}</b>
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('blog/', include('blog.urls', namespace='blog')),
+    <b>path('sitemap.xml', sitemap, {'sitemaps': sitemaps}, name='django.contrib.sitemaps.views.sitemap')</b>
+]
+</pre>
+<p>在上述代码中，导入了需要的库并且定义了一个站点地图的字典。将<code>sitemap.xml</code>的路径匹配到<code>sitemap</code>视图。<code>sitemaps</code>字典会被传递给<code>sitemap</code>视图。现在启动站点然后在浏览器中打开<a
+        href="http://127.0.0.1:8000/sitemap" target="_blank">http://127.0.0.1:8000/sitemap.xml</a>，可以看到如下的输出：
+<pre>
+&lt;?xml version="1.0" encoding="utf-8"?>
+    &lt;urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    &lt;url>
+        &lt;loc>http://example.com/blog/2017/12/15/markdown-post/&lt;/loc>
+        &lt;lastmod>2017-12-15&lt;/lastmod>
+        &lt;changefreq>weekly&lt;/changefreq>
+        &lt;priority>0.9&lt;/priority>
+    &lt;/url>
+    &lt;url>
+        &lt;loc>
+            http://example.com/blog/2017/12/14/who-was-django-reinhardt/
+        &lt;/loc>
+        &lt;lastmod>2017-12-14&lt;/lastmod>
+        &lt;changefreq>weekly&lt;/changefreq>
+        &lt;priority>0.9&lt;/priority>
+    &lt;/url>
+&lt;/urlset>
+</pre>
+<p>其中的每个文章的URL都是由<code>get_absolute_url()</code>方法生成的。<code>lastmod</code>标签的内容是最后更新的时间，和在类中定义的一样。<code>changefreq</code>和<code>priority</code>标签也包含对应的值。可以看到站点名为<code>example.com</code>，这个名称来自于数据库存储的<code>Site</code>对象，这是我们在为站点地图应用进行数据迁移的时候默认生成的一个对象。打开<a href="http://127.0.0.1:8000/admin/sites/site/" target="_blank">http://127.0.0.1:8000/admin/sites/site/</a>，可以看到类似下边的界面：</p>
+<p><img src="http://img.conyli.cc/django2/C03-04.png" alt=""></p>
+<p>上边的截图里包含刚才使用的的主机名，可以修改成自己想要的主机名。可以将其修改成<code>localhost:8000</code>以使用本地地址生成URL。如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C03-05.png" alt=""></p>
+<p>设置之后，URL就会使用本地地址。在生产环境中，需要在此处设置正常的主机和站点名。</p>
+
+<h2 id="c3-3"><span class="title">3</span>创建订阅功能</h2>
+<p>Django内置一些功能，采用和创建站点地图类似的方法为站点增加RSS或者Atom订阅信息。订阅信息是一个特定的数据格式，通常是XML文件，用于向用户提供这个网站的更新数据，用户通过一个订阅代理程序，订阅这个网站的feed，就可以接收到新的内容通知。</p>
+<p>在<code>blog</code>应用目录下新建<code>feeds.py</code>文件并添加如下代码：</p>
+<pre>
+from django.contrib.syndication.views import Feed
+from django.template.defaultfilters import truncatewords
+from .models import Post
+
+class LastestPostFeed(Feed):
+    title = 'My blog'
+    link = '/blog/'
+    description = 'New posts of my blog.'
+
+    def items(self):
+        return Post.published.all()[:5]
+
+    def item_title(self, item):
+        return item.title
+
+    def item_description(self, item):
+        return truncatewords(item.body, 30)
+</pre>
+<p>这段代码首先继承了内置的<code>Feed</code>类，<code>title</code>，<code>link</code>和<code>description</code>属性分别对应XML文件的<code>&lt;title></code>、<code>&lt;link></code>和<code>&lt;description></code>标签。</p>
+<p>items()方法用于获得订阅信息要使用的数据对象，这里只取了最新发布的5篇文章。<code>item_title()</code>和<code>item_description()</code>方法接收每一个数据对象并且分别返回标题和正文前30个字符。</p>
+<p>现在为配置订阅路径，编辑<code>blog/urls.py</code>，导入<code>LatestPostsFeed</code>然后配置一条新路由：</p>
+<pre>
+<b>from .feeds import LatestPostsFeed</b>
+
+urlpatterns = [
+    # ...
+    <b>path('feed/', LatestPostsFeed(), name='post_feed'),</b>
+]
+</pre>
+<p>打开地址<a href="http://127.0.0.1:8000/blog/feed/" target="  ">http://127.0.0.1:8000/blog/feed/</a>即可看到feed内容，包含最新的5篇文章：</p>
+<pre>
+&lt;?xml version="1.0" encoding="utf-8"?>
+    &lt;rss xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+    &lt;channel>
+        &lt;title>My blog&lt;/title>
+        &lt;link>http://localhost:8000/blog/&lt;/link>
+        &lt;description>New posts of my blog.&lt;/description>
+        &lt;atom:link href="http://localhost:8000/blog/feed/" rel="self"/>
+        &lt;language>en-us&lt;/language>
+        &lt;lastBuildDate>Fri, 15 Dec 2017 09:56:40 +0000&lt;/lastBuildDate>
+        &lt;item>
+            &lt;title>Who was Django Reinhardt?&lt;/title>
+            &lt;link>http://localhost:8000/blog/2017/12/14/who-was-djangoreinhardt/&lt;/
+        link>
+        &lt;description>Who was Django Reinhardt.&lt;/description>
+        &lt;guid>http://localhost:8000/blog/2017/12/14/who-was-djangoreinhardt/&lt;/
+        guid>
+        &lt;/item>
+        ...
+    &lt;/channel>
+&lt;/rss>
+</pre>
+<p>如果用一个RSS阅读器打开这个链接，就可以在其界面里看到对应信息。</p>
+<p>最后一步是在侧边栏添加订阅本博客的链接，在<code>blog/base.html</code>里的侧边栏&lt;div&gt;里追加：</p>
+<pre>
+&lt;p>&lt;a href='{% url "blog:post_feed" %}'>Subscribe to my RSS feed&lt;/a>&lt;/p>
+</pre>
+<p>之后就可以在<a href="http://127.0.0.1:8000/blog/" target="_blank">http://127.0.0.1:8000/blog/</a>看到订阅链接，类似下图：</p>
+<p><img src="http://img.conyli.cc/django2/C03-06.png" alt=""></p>
+
+<h2 id="c3-4"><span class="title">4</span>增加全文搜索功能</h2>
+<p>现在可以为博客添加搜索功能。Django ORM可以使用<code>contains</code>或类似的<code>icontains</code>过滤器执行简单的匹配任务。比如：</p>
+<pre>
+from blog.models import Post
+Post.objects.filter(body__contains='framework')
+</pre>
+<p>然而，如果要执行更加复杂的搜索，比如通过权重或者相似性，就必须使用一个<a href="https://en.wikipedia.org/wiki/Full-text_search" target="_blank">全文搜索引擎（full-text search engine）</a>。</p>
+<p>Django的全文检索功能基于PostgreSQL数据库的全文搜索特性，所以这个全文检索功能不能用于Django ORM支持的其他种类的数据库。PostgreSQL的全文搜索介绍在<a href="https://www.postgresql.org/docs/10/static/textsearch.html" target="_blank">https://www.postgresql.org/docs/10/static/textsearch.html</a>。</p>
+<p class="hint">虽然Django ORM通过面向对象抽象，可以不依赖于具体的数据库，但是用于PostgreSQL的一部分功能无法用于其他数据库。</p>
+
+<h3 id="c3-4-1"><span class="title">4.1</span>自定义模板过滤器</h3>
+<p>现在<code>blog</code>项目使用的是Python自带的SQLlite数据库，对于开发而言已经足够。在生产环境中，需要使用诸如MySQL，PostgreSQL和Oracle等更强力的数据库。为了实现全文搜索功能，我们将转而使用PostgreSQL。</p>
+<p>在Linux环境下，需要先安装PostgreSQL和Python的相关依赖：</p>
+<pre>
+sudo apt-get install libpq-dev python-dev
+</pre>
+<p>之后使用下列命令安装PostgreSQL：</p>
+<pre>
+sudo apt-get install postgresql postgresql-contrib
+</pre>
+<p>如果使用MacOS X或者Windows，到<a href="https://www.postgresql.org/download/">https://www.postgresql.org/download/</a>查看安装说明。</p>
+<p>在安装完之后，还需要为python安装<code>psycopg2</code>模块：</p>
+<pre>pip install psycogp2==2.7.4</pre>
+<p class="emp">译者注：使用 <code>pip install psycogp2-binary</code> 命令安装 <code>psycopg2</code> 最新版模块。</p>
+<p>在PostgreSQL中创建一个名叫<code>blog</code>的用户，供项目使用。在系统命令行中输入下列命令：</p>
+<pre>
+su postgres
+createuser -dP blog
+</pre>
+<p>会被提示输入密码。创建用户成功之后，创建一个名叫<code>blog</code>的数据库并将所有权设置给<code>blog</code>用户：</p>
+<pre>createdb -E utf8 -U blog blog</pre>
+<p class="emp">译者注：PostgreSQL在Linux安装后会创建一个postgres用户，使用该用户身份可以登陆PostgreSQL数据库进行操作。</p>
+<p>之后编辑<code>settings.py</code>文件中的<code>DATABASES</code>设置：</p>
+<pre>
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'blog',
+        'USER': 'blog',
+        'PASSWORD': '*****',
+    }
+}
+</pre>
+<p>这里我们将默认的数据库修改成了PostgreSQL，之后执行数据迁移和创建超级用户。然后可以在<a href="http://127.0.0.1:8000/admin/" target="_blank">http://127.0.0.1:8000/admin/</a>登录管理后台。由于更换了数据库，博客应用内没有任何文章数据，录入一些数据，为之后使用全文搜索做准备。</p>
+
+<h3 id="c3-4-2"><span class="title">4.2</span>执行简单搜索</h3>
+<p>编辑<code>settings.py</code>文件，将<code>django.contrib.postgres</code>加入到<code>INSTALLED_APPS</code>中：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    'django.contrib.postgres',
+]
+</pre>
+<p>激活还应用后，现在可以通过search参数进行搜索：</p>
+<pre>
+from blog.models import Post
+Post.objects.filter(body__search='django')
+</pre>
+<p>这个QuerySet会使用PostgreSQL为<code>body</code>字段创建内容是'django'字符串的搜索向量和一个查询，通过匹配查询和结果向量，返回最后的结果。</p>
+
+<h3 id="c3-4-3"><span class="title">4.3</span>执行简单搜索</h3>
+<p>可能想在多个字段中进行检索。在这种情况下，需要定义一个<code>SearchVector</code>搜索向量对象，来创建一个针对<code>Post</code>模型的<code>title</code>和<code>body</code>进行搜索的向量：</p>
+<pre>
+from django.contrib.postgres.search import SearchVector
+from blog.models import Post
+
+Post.objects.annotate(search=SearchVector('title','body'),).filter(search='poem')
+</pre>
+<p>使用分组函数然后定义了两个字段的向量，之后使用查询，就可以得到最终的结果。</p>
+<p class="hint">全文搜索是一个密集计算过程，如果要检索的数据多于几百行，最好创建一个匹配搜索向量的索引，Django提供了一个<code>SearchVectorField</code>字段在模型中定义搜索向量。具体可以参考<a href="https://docs.djangoproject.com/en/2.0/ref/contrib/postgres/search/#performance" target="_blank">https://docs.djangoproject.com/en/2.0/ref/contrib/postgres/search/#performance</a>。</p>
+
+<h3 id="c3-4-4"><span class="title">4.4</span>创建搜索视图</h3>
+<p>现在我们可以创建一个视图用于让用户执行搜索。首先需要一个表单让用户输入要查询的数据，编辑<code>blog</code>应用的<code>forms.py</code>增加下面的表单：</p>
+<pre>
+class SearchForm(forms.Form):
+    query = forms.CharField()
+</pre>
+<p><code>query</code>字段用于输入查询内容，然后编辑<code>blog</code>应用的<code>views.py</code>文件，然后添加如下代码：</p>
+<pre>
+<b>from django.contrib.postgres.search import SearchVector</b>
+from .forms import EmailPostForm, CommentForm, SearchForm
+
+<b>def post_search(request):</b>
+    <b>form = SearchForm()</b>
+    <b>query = None</b>
+    <b>results = []</b>
+    <b>if 'query' in request.GET:</b>
+        <b>form = SearchForm(request.GET)</b>
+        <b>if form.is_valid():</b>
+            <b>query = form.cleaned_data['query']</b>
+            <b>results = Post.objects.annotate(search=SearchVector('title', 'slug', 'body'), ).filter(search=query)</b>
+    <b>return render(request, 'blog/post/search.html', {'query': query, "form": form, 'results': results})</b>
+</pre>
+<p>这个视图先初始化空白<code>SearchForm</code>表单，通过<code>GET</code>请求附加URL参数的方式提交表单。如果<code>request.GET</code>字典中存在<code>query</code>参数且通过了表单验证，就执行搜索并返回结果。</p>
+<p>视图编写完毕，需要编写对应的模板，在<code>/blog/post/</code>目录下创建<code>search.html</code>文件，添加如下代码：</p>
+<pre>
+{% extends 'blog/base.html' %}
+
+{% block title %}
+Search
+{% endblock %}
+
+{% block content %}
+{% if query %}
+    &lt;h1>Post containing {{ query }}&lt;/h1>
+    &lt;h3>
+    {% with results.count as total_results %}
+        Found {{ total_results }} result{{ total_results|pluralize }}
+    {% endwith %}
+    &lt;/h3>
+    {% for post in results %}
+        &lt;h4>
+            &lt;a href="{{ post.get_absolute_url }}">{{ post.title }}&lt;/a>
+        &lt;/h4>
+        {{ post.body|truncatewords:5 }}
+    {% empty %}
+        &lt;p>There are no results for your query.&lt;/p>
+    {% endfor %}
+    &lt;p>&lt;a href="{% url 'blog:post_search' %}">Search again&lt;/a>&lt;/p>
+{% else %}
+    &lt;h1>Search for posts&lt;/h1>
+    &lt;form action="." method="get">
+    {{ form.as_p }}
+        &lt;input type="submit" value="Search">
+    &lt;/form>
+{% endif %}
+{% endblock %}
+</pre>
+<p>就像在视图中的逻辑一样，我们通过query参数存在与否判断表单是否提交。默认不提交表单的页面，显示表单和一个搜索按钮，进行搜索后则显示结果总数和搜索到的文章列表。</p>
+<p>由于表单里配置了反向解析，所以编辑<code>blog</code>应用的<code>urls.py</code>：</p>
+<pre>
+path('search/', views.post_search, name='post_search'),
+</pre>
+<p>现在启动站点，到<a href="http://127.0.0.1:8000/blog/search/" target="_blank">http://127.0.0.1:8000/blog/search/</a>可以看到表单页面如下：</p>
+<p><img src="http://img.conyli.cc/django2/C03-07.png" alt=""></p>
+<p>输入查询内容然后点击搜索按钮，可以看到查询结果，如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C03-08.png" alt=""></p>
+<p>现在我们就创建了全文搜索功能了。</p>
+
+
+<h3 id="c3-4-5"><span class="title">4.5</span>词干提取与搜索排名</h3>
+<p>Django提供了一个<code>SearchQuery</code>类将一个查询词语转换成一个查询对象，默认会通过词干提取算法（stemming algorithms）转换成查询对象，用于更好的进行匹配。在查询时候还可能会依据相关性进行排名。，PostgreSQL提供了一个排名功能，按照被搜索内容在一条数据里出现的次数和频率进行排名。</p>
+<p>编辑<code>blog</code>应用的<code>views.py</code>文件:</p>
+<pre>
+from django.contrib.postgres.search import SearchVector, <b>SearchQuery, SearchRank</b>
+</pre>
+<p>然后找到下边这行：</p>
+<pre>results = Post.objects.annotate(search=SearchVector('title', 'body'),).filter(search=query)</pre>
+<p>替换成如下内容：</p>
+<pre>
+<b>search_vector = SearchVector('title', 'body')</b>
+<b>search_query = SearchQuery(query)</b>
+results = Post.objects.annotate(search=<b>search_vector,</b>
+                <b>rank=SearchRank(search_vector, search_query)</b>
+          ).filter(search=<b>search_query</b>)<b>.order_by('-rank')</b>
+</pre>
+<p>在上边的代码中，先创建了一个<code>SearchQuery</code>对象，用其过滤结果。之后使用SearchRank方法将结果按照相关性排序。打开<a
+        href="http://127.0.0.1:8000/blog/search/" target="_blank">http://127.0.0.1:8000/blog/search/</a>并且用不同的词语来测试搜索。下边是使用'django'搜索的示例：</p>
+<p><img src="http://img.conyli.cc/django2/C03-i02.jpg" alt=""></p>
+
+<h3 id="c3-4-6"><span class="title">4.6</span>搜索权重</h3>
+<p>当按照相关性进行搜索时，可以给不同的向量赋予不同的权重，从而影响搜索结果。例如，可以对在标题中搜索到的结果给予比正文中搜索到的结果更大的权重。编辑<code>blog</code>应用的<code>views.py</code>文件：</p>
+<pre>
+<b>search_vector = SearchVector('title', weight='A') + SearchVector('body', weight='B')</b>
+results = Post.objects.annotate(
+                search=search_vector,
+                rank=SearchRank(search_vector, search_query)
+            ).filter(<b>rank__gte=0.3</b>).order_by('-rank')
+</pre>
+<p>在上边的代码中，给title和body字段的搜索向量赋予了不同的权重。默认的权重<code>D</code>，<code>C</code>，<code>B</code>，<code>A</code>分别对应
+    <code>0.1</code>, <code>0.2</code>, <code>0.4</code>和<code>1</code>。我们给<code><code>title</code></code>字段的搜索向量赋予权重<code>1.0</code>，给<code>body</code>字段的搜索向量的权重是<code>0.4</code>，说明文章标题的重要性要比正文更重要，最后设置了只显示综合权重大于<code>0.3</code>的搜索结果。</p>
+
+<h3 id="c3-4-7"><span class="title">4.7</span>三元相似性搜索</h3>
+<p>还有一种搜索方式是三元相似性搜索。三元指的是三个连续的字符。通过比较两个字符串里，有多少个三个连续的字符相同，可以检测这两个字符串的相似性。这种搜索方式对于不同语言中的相近单词很高效。</p>
+<p>如果要在PostgreSQL中使用三元检索，必须安装一个<code>pg_trgm</code>扩展。</p>
+<p>在系统命令行执行下列命令连接到数据库：</p>
+<pre>psql blog</pre>
+<p>然后输入下列数据库指令：</p>
+<pre>CREATE EXTENSION pg_trgm</pre>
+<p>然后编辑视图来增加三元相似搜索功能，编辑<code>blog</code>应用的<code>views.py</code>，这一次需要导入的新组件：</p>
+<pre>
+from django.contrib.postgres.search import TrigramSimilarity
+</pre>
+<p>然后将Post搜索查询对象替换成如下这样：</p>
+<pre>
+results = Post.objects.annotate(
+              <b>similarity=TrigramSimilarity('title',query),</b>
+              ).filter(<b>similarity__gte=0.1</b>).order_by('<b>-similarity</b>')
+</pre>
+<p>打开<a href="http://127.0.0.1:8000/blog/search/" target="_blank">http://127.0.0.1:8000/blog/search/</a>，然后试验不同的三元相似锁边，下边的例子显示了使用<code>yango</code>想搜索<code>django</code>的结果：</p>
+<p><img src="http://img.conyli.cc/django2/C03-i03.jpg" alt=""></p>
+<p>现在就为我们的博客创建了一个强力的搜索引擎。关于在Django中使用PostgreSQL的全文搜索，可以参考<a href="https://docs.djangoproject.com/en/2.0/ref/contrib/postgres/search/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/contrib/postgres/search/</a>。</p>
+
+
+<h3 id="c3-4-8"><span class="title">4.8</span>使用其他全文搜索引擎</h3>
+<p>除了常用的PostgreSQL之外，还有Solr和Elasticsearch等常用的全文搜索引擎，可以使用Haystack来将其集成到Django中。Haystack是一个Django应用，作为一个搜索引擎的抽象层工作。提供了与Django的QuerySet非常类似的API供执行搜索操作。关于Haystack的详情可以查看：<a href="http://haystacksearch.org/" target="_blank">http://haystacksearch.org/</a>。</p>
+
+<h1>总结</h1>
+<p>在这一章学习了创建自定义的模板标签和过滤器，用于提供自定义的功能。还创建了站点地图用于搜索引擎优化和RSS feed为用户提供订阅功能。之后将站点数据库改用PostgreSQL从而实现了全文搜索功能。</p>
+<p>在下一章中，将使用Django内置验证模块创建一个社交网站，创建用户信息和进行第三方认证登录。</p>
+</body>
+</html>
