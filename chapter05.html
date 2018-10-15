@@ -570,11 +570,9 @@ INSTALLED_APPS = [
 <p><code>sorl-thumbnail</code>可以使用很多算法生成各种缩略图。如果生成不了缩略图，在<code>settings.py</code>里增加一行<code>THUMBNAIL_DEBUG=True</code>，之后在命令行窗口中可以看到debug信息。具体文档可以看<a href="https://sorl-thumbnail.readthedocs.io/" target="_blank">https://sorl-thumbnail.readthedocs.io/</a>。</p>
 
 <h2 id="c5-5"><span class="title">5</span>使用jQuery发送AJAX请求</h2>
-<p>这是本章的第二个大内容。AJAX对于有基础的我们不再赘述了。有兴趣的读者可以看本站<a href="http://www.conyli.cc/archives/1309" target="_blank">在Django中使用jQuery发送AJAX请求</a>和<a href="http://www.conyli.cc/archives/1517" target="_blank">使用原生JS发送AJAX请求的方法</a>。</p>
-<p>这里要实现的功能，就是用户在图片详情页点击喜欢和不喜欢。之前你可能已经注意到了，image_detail视图并没有使用@login_required装饰器，这是为了让所有用户都可以看到别人上传的图片然后来点赞。</p>
-<p>点赞和取消赞是一个经常进行的动作，没有必要多次重载这个页面，这种只更新页面中的一小部分的功能，都可以用AJAX来实现。</p>
-<h2><b>编写视图</b></h2>
-<p>每个AJAX功能，都需要一个后台的视图来处理，所以需要在images的views.py中编写一个新的视图：</p>
+<p>现在要给站点增加AJAX相关的功能，AJAX是<b>Asynchronous JavaScript and XML</b>的简称，这个技术使用一系列方式实现异步HTTP请求，可以从服务器异步取得数据并无需重载全部页面。不像名字里边必须采取XML格式，发送和收取数据可以采用JSON，HTML甚至纯文本。</p>
+<p class="emp">AJAX的相关内容可以参考<a href="http://www.conyli.cc/archives/1309" target="_blank">在Django中使用jQuery发送AJAX请求</a>和<a href="http://www.conyli.cc/archives/1517" target="_blank">使用原生JS发送AJAX请求的方法</a>。</p>
+<p>我们将要给图片详情页面增加一个按钮，让用户可以点击该按钮表示喜欢该图片，之后再点击该按钮可以取消喜欢该图片。首先我们先为这个功能建立视图函数，编写<code>images</code>应用的<code>views.py</code>文件，添加如下代码：</p>
 <pre>
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
@@ -596,38 +594,23 @@ def image_like(request):
             pass
     return JsonResponse({'status': 'ko'})
 </pre>
-<p>这里要解释几点：</p>
+<p>这个视图使用了两个装饰器，<code>@login_required</code>的作用是仅供已登录用户使用，<code>@require_POST</code>的作用是让该视图仅接受<code>POST</code>请求，否则返回一个<code>HttpResponseNotAllowed</code>对象，即HTTP 405错误。Django还提供了一个<code>@require_GET</code>装饰器用于只接受<code>GET</code>请求，还提供了一个<code>@require_http_methods</code>装饰器，可以指定允许哪些类型的HTTP请求。</p>
+<p>在这个视图中，我们还是用了两个<code>Post.get</code>取得数据：</p>
 <ul>
-    <li>导入了 JsonResponse，作用是把一串字符串格式化成JSON格式，返回给前端。AJAX一般都用来发送和接收JSON格式的字符串。</li>
-    <li>require_POST是一个装饰器，限制视图只接受POST请求，比自己写判断要方便一些</li>
-    <li>前端我们用AJAX准备发过来两个东西，一个是当前图片的id，一个是当前的动作，其中动作打算发的是like和unlike</li>
-    <li>视图的其余逻辑很简单，如果一个用户点赞，就在Image类里多对多关系里增加这个用户，如果点了不喜欢，就去掉这个用户。</li>
-    <li>最后根据操作成功与否，返回ok或者ko。</li>
-    <li>多说一下的就是多对多关系的字段更新，有add,remove和clear三个方法，clear是清除该行数据的所有多对多关系。</li>
+    <li><code>image_id</code>：用户正在喜欢/不喜欢的图片的ID</li>
+    <li><code>action</code>：用户执行的动作，用字符串<code>like</code>表示喜欢，<code>unlike</code>表示不喜欢</li>
 </ul>
-<p>通过后端的逻辑，我们就可以推断一下前端的逻辑：</p>
-<ul>
-    <li>一个用户打开图片详情页，如果他之前没有喜欢过这个图片，那么应该给他展示一个点喜欢的按钮，只要点了这个按钮，就会发送AJAX的like到后端去。如果他已经喜欢过了这个图片，那么显示一个取消喜欢的按钮，只要点了这个按钮，就发送AJAX请求到后端。</li>
-    <li>这个时候AJAX根据成功或者失败会返回不同的两个字符串，前端根据这个结果，相应的修改页面。如果成功了，就把原来的按钮变更另外一个按钮，如果失败，就显示错误信息但不修改按钮。</li>
-</ul>
-<p>搞清楚了逻辑，下边来修改images/urls.py：</p>
+<p>这里还使用了多对多字段的管理器<code>users_like</code>查询图片与喜欢用户之间的关系，然后使用<code>add()</code>和<code>remove()</code>方法用于添加和去除多对多关系。<code>add()</code>方法即使传入已经存在的数据对象，也不会重复建立关系，<code>remove()</code>即使传入不存在的对象，也不会报错。还有一个<code>clear()</code>方法可以快速的从关联表中全部清除多对多关系。</p>
+<p>最后，使用了<code>JsonResponse</code>类，这个类的作用是将一个HTTP请求附加上<code>application/json</code>请求头，并将其中的内容序列化为JSON格式的字符串</p>
+<p>编辑<code>images</code>应用的<code>urls.py</code>，为该视图配置URL：</p>
 <pre>
     path('like/', views.image_like, name='like'),
 </pre>
-<p>这个path就是用来接受AJAX请求的地址。</p>
 
-<h2><b>编写前端页面</b></h2>
-<p>这里我们还会解决几个小问题：</p>
-<ul>
-    <li>页面内导入jQuery</li>
-    <li>页面内增加JS代码</li>
-    <li>页面内处理AJAX请求头增加CSRF</li>
-    <li>修改页面元素的内容</li>
-</ul>
-<p>前端页面打算使用jQuery来发送请求，所以需要引入jQuery，可见学后端也必须精通前端是多么的重要。</p>
-<p>修改base.html，在body标签内的最下边加上这些内容：</p>
+<h3 id="c5-5-1"><span class="title">5.1</span>加载jQuery</h3>
+<p>我们将使用jQuery来发送AJAX请求，为此需要在页面内加载jQuery，为了可以让jQuery在所有的模板内都生效，将其加载代码放入base.html文件中，编辑account应用的base.html文件，在&lt;/body&gt;之前增加下列代码：</p>
 <pre>
-&lt;script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js">&lt;/script>
+&lt;script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js">&lt;/script>
 &lt;script>
     $(document).ready(function () {
         {% block domready %}
@@ -635,68 +618,94 @@ def image_like(request):
     });
 &lt;/script>
 </pre>
-<p>原书是用了googleCDN的jQuery，这里为了方便，采用了国内bootCDN的jQuery。之后下边代码用了<a href="http://jquery.cuishifeng.cn/ready.html" target="_blank">ready函数</a>内写了一个块，用于在DOM加载完毕的时候运行其中的代码。</p>
-<p>接下来的一个问题是处理CSRF，由于后端我们接受的是POST请求，为了安全起见不可能去关闭CSRF中间件，所以需要jQuery发送请求时将CSRF信息一起发送过来。为此，常用的做法是在页面上埋一个CSRF_TOKEN，然后通过jQuery拿到这个token，将其中的数据包含在请求中一起发送。</p>
-<p>书里的方法更加硬核一些，找了一个依赖于jQuery的第三方库JS.cookie，从cookie中取CSRF。这是因为只要启用了CSRF中间件，每次cookie中都会有CSRF数据。由于这段代码也是每次必须执行的，所以直接写在base.html中：</p>
+<p>我们从Google CDN中加载了jQuery，可以直接在<a href="https://jquery.com/" target="_blank">https://jquery.com/</a>下载jQuery并将其放入本应用的<code>static</code>文件夹内。</p>
+<p>在引入jQuery之后，增加了一个<code>&lt;script&gt;</code>标签，定义了一个<code>$(document).ready()</code>，这是一个jQuery方法，在DOM加载完毕后会执行该方法。<b>DOM</b>是<b>Document Object Model</b>的简称，由浏览器在加载页面时生成，以树形结构保存当前页面的所有节点数据。这样保证了JS代码执行时，其要操作的对象已经全部生成。</p>
+<p><code>domready</code>块，用于存放在DOM加载完毕后执行的JS代码，我们将在需要执行JS代码的具体模板中编写该块内容。</p>
+<p>注意不要混淆JavaScript代码和Djanog模板标签。Django的模板语言在服务端进行处理，转换最终的HTML字节流，浏览器取得HTML字节流创建页面和DOM对象，并执行JavaScript代码。有时候动态的生成JavaScript代码非常方便。</p>
+<p>在这一章里，我们直接将JS代码通过模板内块的形式编写进来，这是为了教学方便。最好的方式是从静态文件中导入<code>.js</code>文件，以做到有效解耦HTML与JS。</p>
+
+<h3 id="c5-5-2"><span class="title">5.2</span>AJAX中使用CSRF</h3>
+<p>在第二章中已经了解到<code>POST</code>请求中需要包含<code>{% csrf_token %}</code>生成的token数据，以防止跨站伪造请求攻击。不过在AJAX中发送CRSF token有点不方便，所以Django允许在AJAX请求中设置一个<code>X-CSRFToken</code>请求头，其中包含CSRF token的数据。jQuery在发送AJAX请求的时候设置上该请求头，就可以完成CRSF的发送了。</p>
+<p>为了在AJAX请求中设置CSRF token，需要做如下事情：</p>
+<ol>
+    <li>从<code>csrftoken</code> cookie中取得CSRF token，如果开启了CSRF中间件，cookie中一直会有CSRF token数据</li>
+    <li>将CSRF token数据设置在AJAX请求的<code>X-CSRFToken</code>请求头中</li>
+</ol>
+<p>可以在<a href="https://docs.djangoproject.com/en/2.0/ref/csrf/#ajax" target="_blank">https://docs.djangoproject.com/en/2.0/ref/csrf/#ajax</a>阅读更多关于Django中CSRF与AJAX的信息。</p>
+<p>修改刚刚在<code>base.html</code>中增加的JS代码部分，修改成下边这样：</p>
 <pre>
-{#在导入jQuery后增加#}
-&lt;script src="https://cdn.bootcss.com/js-cookie/latest/js.cookie.min.js">&lt;/script>
+&lt;script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js">&lt;/script>
+<b>&lt;script src="https://cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js">&lt;/script></b>
 &lt;script>
-    let csrftoken = Cookies.get('csrftoken');
+    <b>let csrftoken = Cookies.get('csrftoken');</b>
 
-    function csrfSafeMethon(method) {
-        // these HTTP methods do not require CSRF protection
-        return (/^(GET|HEAD|OPTIONS|TRACE)$/.test(method));
-    }
+    <b>function csrfSafeMethon(method) {</b>
+        <b>// 如下的HTTP请求不需要设置CRSF信息</b>
+        <b>return (/^(GET|HEAD|OPTIONS|TRACE)$/.test(method));</b>
+    <b>}</b>
 
-    $.ajaxSetup({
-        beforeSend: function (xhr, settings) {
-            if (!csrfSafeMethon(settings.type) && !this.crossDomain) {
-                xhr.setRequestHeader("X-CSRFToken", csrftoken);
-            }
-        }
+    <b>$.ajaxSetup({</b>
+        <b>beforeSend: function (xhr, settings) {</b>
+            <b>if (!csrfSafeMethon(settings.type) && !this.crossDomain) {</b>
+                <b>xhr.setRequestHeader("X-CSRFToken", csrftoken);</b>
+            <b>}</b>
+        <b>}</b>
+    <b>});</b>
+        $(document).ready(function () {
+        {% block domready %}
+        {% endblock %}
     });
+&lt;/script>
 </pre>
-<p>这里解释一下几个要点：</p>
-<ul>
-    <li>首先导入第三方库js-cookie，为了方便依然从国内BootCDN导入，js-cookie的<a href="https://github.com/js-cookie/js-cookie" target="_blank">源码地址</a>。</li>
-    <li>通过Cookies.get方法拿到csrftoken 的值</li>
-    <li>建立了一个函数使用正则验证去测试HTTP请求，一般GET，HEAD，OPTIONS和TRACE请求无需使用CSRF</li>
-    <li>调用<a href="http://jquery.cuishifeng.cn/jQuery.ajaxSetup.html" target="_blank">jQuery.ajaxSetup</a>来对ajax做全局设置。</li>
-    <li>AJAX设置中的beforesend设置了一个回调函数，第一个参数一定是XHR对象，第二个就是settings，从中可以取得HTTP的请求类型，只要不属于这些类型，就给XHR的请求头设置上CSRF键值对。</li>
-    <li>当然，还有很多方法可以设置请求头，在发送的时候使用beforesend和header属性都可以。</li>
-</ul>
-<p>这样只要在点赞的时候发送AJAX的POST请求，其预先都设置好了请求头中包含CSRF信息。剩下的核心问题就是编写前端页面与发送AJAX请求相关的部分了：</p>
+<p>以上代码解释如下：：</p>
+<ol>
+    <li>通过外部CDN导入了一个JS库<code>js-cookie</code>--一个轻量级的操作cookie的第三方库，可以在<a href="https://github.com/js-cookie/js-cookie" target="_blank">https://github.com/js-cookie/js-cookie</a>找到该库的详细信息。</li>
+    <li>通过<code>Cookies.get()</code>方法拿到<code>csrftoken</code>的值</li>
+    <li>创建<code>csrfSafeMethod()</code>函数，使用正则验证HTTP请求种类，GET，HEAD，OPTIONS和TRACE类型的请求无需添加CSRF信息</li>
+    <li>调用<a href="http://jquery.cuishifeng.cn/jQuery.ajaxSetup.html" target="_blank">$.ajaxSetup()</a>方法，在AJAX请求发送之前，为请求设置<code>X-CSRFToken</code>请求头信息，这个设置会影响到所有jQuery发送的AJAX请求。</li>
+</ol>
+<p>这样所有的不安全的HTTP请求，比如<code>GET</code>或<code>PUT</code>，都会被添加上CRSF信息。</p>
 
-<p>修改detail.html页面，有几个地方需要修改：</p>
+<h3 id="c5-5-3"><span class="title">5.3</span>jQuery发送AJAX请求</h3>
+<p>编辑<code>images</code>应用的<code>images/image/detail.html</code>文件，找到下边这行：</p>
 <pre>
-1 把 {% with total_likes=image.users_like.count %} 这一行修改成：
+{% with total_likes=image.users_like.count %}
+</pre>
+<p>将其修改成：</p>
+<pre>
 {% with total_likes=image.users_like.count users_like=image.users_like.all %}
-
-2 修改CSS类为image-info的div标签内的内容为：
+</pre>
+<p>然后修改<code>&lt;div class="image-info"></code>其中的内容，如下：</p>
+<pre>
 &lt;div class="image-info">
     &lt;div>
         &lt;span class="count">
-             &lt;span class="total">{{ total_likes }}&lt;/span> like{{ total_likes|pluralize }}
+             <b>&lt;span class="total">{{ total_likes }}&lt;/span></b>
+             like{{ total_likes|pluralize }}
         &lt;/span>
-        &lt;a href="#" data-id="{{ image.id }}" data-action="{% if request.user in users_like %}un{% endif %}like"
-           class="like button">
-            {% if request.user not in users_like %}
-                Like
-            {% else %}
-                Unlike
-            {% endif %}
-        &lt;/a>
+        <b>&lt;a href="#" data-id="{{ image.id }}" data-action="{% if request.user in users_like %}un{% endif %}like" class="like button"></b>
+            <b>{% if request.user not in users_like %}</b>
+                <b>Like</b>
+            <b>{% else %}</b>
+                <b>Unlike</b>
+            <b>{% endif %}</b>
+        <b>&lt;/a></b>
     &lt;/div>
     {{ image.description|linebreaks }}
 &lt;/div>
 </pre>
-<p>页面内的逻辑是:</p>
+<p>模板内首先通过<code>{% with %}</code>指定了新的变量<code>users_like</code>，用于存放所有喜欢该图片的用户，可以避免反复查询。然后显示总的喜欢该图片的人数，还包含一个按钮样式的<code>&lt;a></code>标签。这个按钮根据当前用户是否在<code>users_like</code>中，显示<em>like</em>或<em>unlike</em>，还为<code>&lt;a></code>标签设置了两个HTML5自定义属性：</p>
 <ol>
-    <li>新引入users_like变量保存所有喜欢该图片的用户，然后检测当前登录用户是不是在users_like中。</li>
-    <li>定义一个外观为按钮的A标签，其中有两个符合HTML5标准的自定义数据属性data-id和data-action，其中data-action的内容和A标签的文本属性根据第一条逻辑的结果而变化。</li>
+    <li><code>data-id</code>：当前页面显示图片的ID</li>
+    <li><code>data-action</code>：用户的动作，喜欢或者不喜欢，值是<code>like</code>或<code>unlike</code></li>
 </ol>
-<p>剩下的工作就交给前端代码了，AJAX做的工作已经很明显了，就是发送A标签的自定义数据属性，然后根据返回的结果，来更新A标签和页面内人数相关的内容。在detail.html里增加一段：</p>
+<p>我们将把这两个HTML5自定义属性的值通过AJAX发送给<code>image_like</code>视图，当用户点击喜欢/不喜欢按钮的时候，我们需要在客户端做如下操作：</p>
+<ol>
+    <li>调用AJAX视图，传入两个参数：<code>id</code>和<code>action</code></li>
+    <li>如果AJAX请求成功返回，更新按钮的<code>data-action</code>属性为相反的操作（原来是<code>like</code>则更新为<code>unlike</code>，反之亦反）</li>
+    <li>更新喜欢当前图片的用户总数</li>
+</ol>
+<p>为此来编写页面所需的JS代码，在<code>images/image/detail.html</code>中添加<code>domready</code>块的内容：</p>
 <pre>
 {% block domready %}
 $('a.like').click(function (e) {
@@ -709,11 +718,11 @@ $('a.like').click(function (e) {
         function (data) {
             if (data['status'] === 'ok') {
                 let previous_action = $('a.like').data('action');
-                //toggle data-action
+                //切换 data-action 属性
                 $('a.like').data('action', previous_action === 'like' ? 'unlike' : 'like');
-                //toggle link text
+                //切换按钮文本
                 $('a.like').text(previous_action === 'like' ? 'Unlike' : 'Like');
-                //update total_likes
+                //更新总的喜欢人数
                 let previous_likes = parseInt($('span.count.total').text());
                 $('span.count.total').text(previous_action === 'like' ? previous_likes + 1 : previous_likes - 1);
             }
@@ -722,22 +731,37 @@ $('a.like').click(function (e) {
 });
 {% endblock %}
 </pre>
-<p>这段代码说实在写的挺简单粗暴：</p>
-<ul>
-    <li>首先是给按钮绑定事件，事件里先停止按钮的默认功能，然后使用jQuery.post方法向反向解析的 'images:like' URL发送POST AJAX请求,请求内容就是通过data取到的自定义属性id和action</li>
-    <li>回调函数是匿名函数function(data)，后边的逻辑判断很简单，就是返回数据的status为OK的时候，先拿到原来的A标签的action和内容，如果是unlike就变like，如果是like就变unlike</li>
-    <li>最后还要处理人数，这个也很简单，如果原来是like就加1，原来是unlike就减1。</li>
-</ul>
-<p>为什么说简单粗暴，是因为点赞之后处理人数增加或者减少1的逻辑太过于粗暴，由于可以多用户登录，每个用户点过赞以后，未必只会变动1，完善的处理应该是每次点赞之后，后端应该返回实际当前喜欢的人数以及这些人的列表，然后再去填充相关的页面。这里估计作者也是为了简化一些处理，让用户立竿见影的看到结果吧。</p>
-<p>现在可以到detail页面看一看效果了。可以手工增加赞了。</p>
-<p>不过现在还有一个问题是，图片详情页面添加了多对多关系的时候，一刷新就提示一个The 'photo' attribute has no file associated with it.错误，这个估计是作者在这里没有讲清楚，因为detail.html 的页面用了user.profile.photo.url，但没有上传用户头像所致。在管理后台给每个用户上几个头像，再任意按照生成detail URL的方式访问任意详情图片页，就不会报错了。直接修改多对多的关系再查看这张表，就能发现显示出同样喜欢了这张图的用户头像和名称。这里如果要完善的话，应该判断用户是否上传头像，如果没有就用默认头像代替。</p>
-<p>点击变化的示例如下：</p>
-<img src="http://img.conyli.cc/django2/C05-07.png" alt="">
+<p>这段代码的逻辑解释如下：</p>
+<ol>
+    <li>使用<code>$('a.like')</code>选择所有属于<code>like</code>类的<code>&lt;a&gt;</code>标签</li>
+    <li>给<code>&lt;a&gt;</code>标签绑定<code>click</code>事件，每次点击就发送AJAX请求。</li>
+    <li>在事件处理函数内，使用<code>e.preventDefault()</code>阻止<code>&lt;a&gt;</code>的默认功能，即阻止打开新的超链接</li>
+    <li>使用<code>$.post()</code>发送异步的<code>POST</code>请求。jQuery还提供了<code>$.get()</code>用于发送异步的<code>GET</code>请求，和一个更底层的<code>$.ajax()</code>方法。</li>
+    <li>使用<code>{% url %}</code>反向解析出AJAX的请求目标地址</li>
+    <li>创建要发送的数据字典，通过<code>&lt;a&gt;</code>标签的<code>data-id</code>和<code>data-action</code>设置<code>id</code>和<code>action</code>键值对。</li>
+    <li>设置回调函数，当成功收到AJAX响应时执行，响应数据被包含在对象<code>data</code>中。</li>
+    <li>根据<code>data</code>中的<code>status</code>判断值是否为<code>ok</code>，如果是则切换<code>data-action</code>和按钮文本。</li>
+    <li>根据刚才执行的结果，对总喜欢人数增加1或者减少1</li>
+</ol>
+<p class="emp">译者注：原书这里的逻辑是为了让读者可以迅速看出操作结果。在多用户的环境中，不能如此简单的增减1，因为每次执行动作后，该人数的变化未必是1。</p>
+<p>打开任意图片详情页，可以看到新增的总人数和按钮，如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C05-i05.jpg" alt=""></p>
+<p>点击一下LIKE按钮，可以看到如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C05-i06.jpg" alt=""></p>
+<p>如果再点击UNLIKE按钮，可以看到按钮变回LIKE，人数也减少1</p>
+<p class="emp">如果提示<code>The 'photo' attribute has no file associated with it</code>错误，原书作者在这里没有讲清楚，错误原因是<code>detail.html</code>页面用了<code>user.profile.photo.url</code>，但没有上传用户头像。在管理后台给每个用户上传头像，再访问任意详情图片页，就不会报错了。直接修改多对多的关系再查看这张表，就能发现显示出同样喜欢了这张图的用户头像和名称。这里如果要完善的话，应该判断用户是否上传头像，如果没有就用默认头像代替。</p>
+<p>当编写JavaScript代码发送AJAX请求时，为了方便调试，推荐使用开发工具而不是在Django中编写代码。现代浏览器都带有开发工具用于调试页面和JavaScript代码，通常可以按F12或者在页面上右击选“检查”来启动开发工具。</p>
 
-
-<h2><b>自定义装饰器限制AJAX视图的使用</b></h2>
-<p>随着网站功能的增多，问题是一个接一个的出现。思考一下接受AJAX请求的后端，只是一个普通的处理POST请求和返回JSON字符串的后端。一般来说，需要明确的区分普通的后端与AJAX的后端。Django里对于request对象内置了一个.is_ajax()方法来判断视图接受的请求是否是一个AJAX请求（AJAX请求是一个XMLHttpRequest，有着特殊的报头HTTP_X_REQUESTED_WITH HTTP）</p>
-<p>为了实现这个功能，我们就自行编写一个装饰器，用来让AJAX视图只接受AJAX请求，相信<a href="https://www.python.org/dev/peps/pep-0318/" target="_blank">装饰器</a>对于我们已经不陌生了。我们的装饰器打算用于任何一个视图，因此就在项目目录里建立一个叫common的包（带有__init__.py）的目录，下边建立一个decorators.py，编写其中的内容：</p>
+<h2 id="c5-6"><span class="title">6</span>创建自定义装饰器</h2>
+<p>在AJAX视图中使用了<code>@require_POST</code>装饰器以限制视图仅接受<code>POST</code>请求，这显然还不够，需要让这个视图仅接受AJAX请求才行。Django对于HTTP请求对象提供了一个<code>is_ajax()</code>方法，通过HTTP请求头部字段<code>HTTP_X_REQUESTED_WITH HTTP</code>判断该请求是否是一个<code>XMLHttpRequest</code>对象，即一个AJAX请求。</p>
+<p>我们准备自行编写一个装饰器，用于检查HTTP请求的<code>HTTP_X_REQUESTED_WITH</code>头部信息，从而限制我们的视图仅接受AJAX请求。Python中的装饰器是接受一个函数为参数的函数，为参数函数附加执行额外功能而不改变原函数的功能。 如果对装饰器不太了解，可以参考Python官方文档：<a href="https://www.python.org/dev/peps/pep-0318/" target="_blank">https://www.python.org/dev/peps/pep-0318/</a>。</p>
+<p>我们准备编写的装饰器是通用的，所以在<code>bookmarks</code>项目根目录下建立一个<code>common</code>包，其中的文件如下：</p>
+<pre>
+common/
+    __init__.py
+    decorators.py
+</pre>
+<p>编辑<code>decorators.py</code>文件，添加下列代码：</p>
 <pre>
 from django.http import HttpResponseBadRequest
 
@@ -752,23 +776,29 @@ def ajax_required(func):
     wrap.__name__ = func.__name__
     return wrap
 </pre>
-<p>这里导入了HttpResponseBadRequest，这个的意思是返回一个400错误。如果是AJAX请求，则原来视图的功能正常执行。</p>
-<p>想使用装饰器，就在views.py里像导入包然后像其他装饰器一样使用即可：</p>
+<p>这段代码就是自定义的<code>ajax_required</code>装饰器函数。其中定义了一个<code>wrap</code>函数，如果请求不是AJAX请求，就返回<code>HttpResponseBadRequest</code>即HTTP 400错误。如果是AJAX请求，则原来视图的功能正常执行。</p>
+<p>然后编辑<code>images</code>应用的<code>views.py</code>文件，导入新的包然后为视图添加自定义装饰器：</p>
 <pre>
-from common.decorators import ajax_required
+<b>from common.decorators import ajax_required</b>
 
-@ajax_required
+<b>@ajax_required</b>
 @login_required
 @require_POST
 def image_like(request):
-    ......
+    # ......
 </pre>
-<p>之后试试直接访问：/images/like/，得到的是一个400错误。之前直接访问，得到的是一个405错误。</p>
+<p>如果用浏览器直接访问<a href="http://127.0.0.1:8000/images/like/" target="_blank">http://127.0.0.1:8000/images/like/</a>，会得到400错误。（未添加该装饰器之前，得到的是由<code>@require_POST</code>返回的405错误）。</p>
+<p class="hint">如果你发现项目中的很多视图对同一个条件做判断，可以考虑将该判断逻辑编写为一个自定义装饰器。</p>
 
-<h2><b>建立图片列表页并且使用AJAX分页</b></h2>
-<p>AJAX分页实现的一个功能是，当页面滚动到底部的时候，就会继续去发送请求拿到新的数据。我们准备建立一个新页面，用于展示当前用户所有上传的图片，但是只动态加载其中的一部分，当用户向下滚动的时候，会显示其他的图片。当达到预先设置好的最大值的时候，才算完整的一页。</p>
-<p>先来写视图，这次依然用到内置的分页器：</p>
+
+<h2 id="c5-7"><span class="title">7</span>AJAX分页</h2>
+<p>我们将制作一个图片列表页，用于列出我们网站所有的图片。这里将使用AJAX动态的发送图片数据，即当页面滚动到底部的时候，就会继续显示新的图片，直到全部图片都显示完毕。</p>
+<p>为此我们将编写一个图片列表视图，同时处理普通的HTTP请求和AJAX请求。当用户一开始以<code>GET</code>请求方式访问图片列表页时，会显示第一页图片。当用户滚动到页面底部时，通过AJAX发送请求给该视图，返回下一页图片显示在页面底部；如此反复直到所有图片都显示完毕。</p>
+<p>编辑<code>images</code>应用的v<code>iews.py</code>文件，创建一个新的视图：</p>
 <pre>
+from django.http import HttpResponse
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+
 @login_required
 def image_list(request):
     images = Image.objects.all()
@@ -777,26 +807,28 @@ def image_list(request):
     try:
         images = paginator.page(page)
     except PageNotAnInteger:
+        # 如果页数不是整数，就返回第一页
         images = paginator.page(1)
     except EmptyPage:
-        # 如果是AJAX发送的分页请求，空白页就只返回空字符串，即什么也不做
+        # 如果是不存在的页数，而且请求是AJAX请求，返回空字符串
         if request.is_ajax():
             return HttpResponse('')
+        # 如果页数超范围，显示最后一页
         images = paginator.page(paginator.num_pages)
-    # 如果是AJAX请求，向下滚动的时候页数加了1，就再传页数加1的页面进到页面上渲染。
     if request.is_ajax():
-        return render(request,
-                      'images/image/list_ajax.html',
-                      {'section': 'images', 'images': images})
+        return render(request, 'images/image/list_ajax.html', {'section': 'images', 'images': images})
     return render(request, 'images/image/list.html', {'section': 'images', 'images': images})
 </pre>
-<p>视图的逻辑比较简单，按照8个图片一页，滚动的时候触发事件，设置了几个变量防止反复提交请求和返回空白页（分页已经到最后一页）块就不再发送AJAX请求，这里唯一要注意的就是，如果是普通请求超出了范围，那么就返回最后一页，如果是AJAX请求超出了范围，就意味着到了页面底部，那么就返回空字符串，什么也不干。其他情况下对于普通请求和AJAX请求都一视同仁。</p>
-<p>但是下边为了实现滚动的要求，采用了一些小技巧，对于AJAX请求我们来渲染list_ajax.html，对于普通请求渲染list.html，但是其中包含list_ajax.html。现在先把URL配置好：</p>
+<p>在这个视图中，先查询所有图片，然后使用内置的分页功能创建<code>Paginator</code>对象，按照8个图片一页进行分组。当HTTP请求的页面不存在的时候捕捉<code>EmptyPage</code>异常，判断此时请求的种类，如果是AJAX请求，说明页面到了底部，返回空字符串即可。我们将结果渲染到两个不同的模板中：</p>
+<ol>
+    <li>对于AJAX请求，渲染<code>list_ajax.html</code>模板，这个模板仅包含图片内容。</li>
+    <li>对于普通请求，渲染<code>list.html</code>，这个模板会继承<code>base.html</code>，并且<code>include</code><code>list_ajax.html</code>模板</li>
+</ol>
+<p>编辑<code>images</code>应用的<code>urls.py</code>文件，为新视图添加一行URL：</p>
 <pre>
     path('', views.image_list, name='list'),
 </pre>
-<p>通过URL可以看出，我们把图片列表页作为images/的默认页面。</p>
-<p>之后先来编写list_ajax.html:</p>
+<p>最后来创建前述的两个模板，在<code>images/image/</code>模板目录下创建<code>list_ajax.html</code>，添加如下代码：</p>
 <pre>
 {% load thumbnail %}
 
@@ -817,8 +849,7 @@ def image_list(request):
   &lt;/div>
 {% endfor %}
 </pre>
-<p>这个页面的逻辑比较简单，就是拿到当前的image然后挨个展示。</p>
-<p>再编写list.html：</p>
+<p>上述模板显示图片列表，将使用这个模板渲染AJAX请求返回的结果。在相同目录下创建<code>list.html</code>文件并添加如下代码：</p>
 <pre>
 {% extends 'base.html' %}
 
@@ -833,8 +864,9 @@ Images bookmarked
 &lt;/div>
 {% endblock %}
 </pre>
-<p>这个页面包含了ajax请求展示的页面，但是关键是在于其中的JS代码，还记得我们在base.html里定义了domready 这个块专门用于执行DOM加载完毕的代码，现在继续在list.html中编写JS代码：</p>
+<p>这个页面继承<code>base.html</code>，同时包含了<code>list_ajax.html</code>，这个模板中还必须包含发送AJAX的JS代码，所以继续在其中编写<code>domready</code>块的内容：</p>
 <pre>
+{% block domready %}
 let page = 1;
 let empty_page = false;
 let block_request = false;
@@ -856,26 +888,40 @@ $(window).scroll(
         }
     }
 );
+{% endblock %}
 </pre>
-<p>这段JS代码是用了滚动事件，设置了一个margin变量为页面实际的高（超出当前窗口也算上）减去-整个视口的高再减去200。向下滑动距离底部小于200像素的时候的时候就会触发这个事件。同时设置回调函数，如果还能拿到新页面，则阻止请求的函数再改成false。回调函数里的data就是HTML字节流，直接添加在#image-list的标签之内即可。</p>
-<p>最后还有一点要修改的，就是把base.html里的Images链接修改成"images:list"即可。</p>
-<p>还有一个地方是，当分页的时候console 里会提示，Image的查询没有排序，进行分页可能会造成不一致的结果，这个在image_list的视图中增加一个按照create排序即可。created字段在建立模型的时候已经设置过索引</p>
-<p>还有一点要说的就是我们用了同一个视图处理ajax请求和普通请求，所以ajax不用设置目标url，只需要直接发送即可，默认就是当前页面的URL。例子中的$,get方法的第一个参数直接使用了GET请求的附加数据，AJAX实际发送到的URL地址就是当前页面地址加上后边的附加参数。</p>
-<p>带有动态加载功能的图片列表页的示例如下：</p>
-<img src="http://img.conyli.cc/django2/C05-08.png" alt="">
+<p>这段代码实现了滚动加载功能，其中的逻辑解释如下：</p>
+<ol>
+    <li>首先创建如下变量：
+        <ol>
+            <li><code>page</code>：存储当前页数</li>
+            <li><code>empty_page</code>：判断是否已经到达页面底部。如果已经到达底部，阻止发送AJAX请求</li>
+            <li><code>block_request</code>：在已经发送AJAX请求但还未收到响应时阻止再发送AJAX请求</li>
+        </ol>
+    </li>
+    <li>使用<code>$(window).scroll()</code>方法监听滚动事件</li>
+    <li>计算页面高度和窗口高度的差，记录在<code>margin</code>变量中，表示未显示的页面的高度。再减去200表示当滚动到离窗口底部还有200像素的时候发送AJAX请求。</li>
+    <li>判断<code>block_request</code>和<code>empty_page</code>同时为<code>False</code>的情况下发送AJAX请求。</li>
+    <li>发送AJAX请求之后将<code>block_request</code>设置为<code>True</code>，避免再次发送，同时将<code>page</code>增加1，下一次发送的时候就获取下一个分页结果。</li>
+    <li>使用<code>$.get()</code>方法发送类型为<code>GET</code>的AJAX请求，将响应数据保存到<code>data</code>中，然后处理以下两种情况：
+    <ol>
+        <li>响应数据中无内容：说明视图返回了空字符串，已经没有更多的分页结果可以加载，此时将<code>empty_page</code>设置为<code>True</code>，阻止后续所有AJAX请求发送</li>
+        <li>响应数据中有数据：说明得到了新的分页结果，将其中的内容追加到id属性为<code>image-list</code>的元素内部，页面下方增加出新的图片。</li>
+    </ol></li>
+</ol>
+<p>在浏览器中打开<a href="http://127.0.0.1:8000/images/" target="_blank">http://127.0.0.1:8000/images/</a>，可以看到如下页面（需要自行添加一些图片）：</p>
+<p><img src="http://img.conyli.cc/django2/C05-08.png" alt=""></p>
+<p>滚动该页面到底部，确保在数据库中添加了超过8张图片，会看到额外的图片被加载并显示出来</p>
+<p>最后修改<code>base.html</code>文件中顶部导航栏的连接，添加下列代码：</p>
+<pre>
+&lt;li {% if section == "images" %}class="selected"{% endif %}>
+    &lt;a href="{% url "images:list" %}">Images&lt;/a>
+&lt;/li>
+</pre>
+<p>现在就可以通过用户首页访问图片清单页面了。</p>
 
 <h1><b>总结</b></h1>
-<p>这一章的开发难度比起上一个项目有着明显的提升，而且使用了前后端的的各种技术和第三方插件：</p>
-<ul>
-    <li>建立包含有文件字段的数据类</li>
-    <li>重新model和form类的save方法，用来完善一些字段</li>
-    <li>form.save()方法返回model类的对象。而Imagefield也有save方法和.url属性</li>
-    <li>小书签的JS启动器编写</li>
-    <li>使用JS动态加载CSS和JS文件</li>
-    <li>sorl模块生成缩略图</li>
-    <li>使用AJAX发送请求和更新页面</li>
-    <li>自定义装饰器控制视图只能接受AJAX请求</li>
-    <li>滚动加载图片的技巧：使用AJAX从分页器中获得数据。</li>
-</ul>
+<p>这一章建立了一个小书签程序，用于分享图片到本站，还实现了jQuery发送AJAX请求和使用AJAX动态加载页面。</p>
+<p>下一章将学习建立关注系统，涉及到模型的通用关系，信号功能和数据库的非规范化等知识，还将学习到在Django中使用Redis数据库。</p>
 </body>
 </html>
