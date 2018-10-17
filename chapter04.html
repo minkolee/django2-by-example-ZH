@@ -643,7 +643,7 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 </pre>
 <p><code>MEDIA_URL</code>表示存放和提供用户上传文件的URL路径，<code>MEDIA_ROOT</code>表示实际媒体文件的存放目录。这里都采用相对地址动态生成URL。</p>
-<p>来编辑一下<code>bookmarks</code>项目的根urls.py，修改其中的代码如下:</p>
+<p>来编辑一下<code>bookmarks</code>项目的根<code>urls.py</code>，修改其中的代码如下:</p>
 <pre>
 from django.contrib import admin
 from django.urls import path, include
@@ -659,7 +659,7 @@ urlpatterns = [
     <b>urlpatterns += static(settings.MEDIA_URL,document_root=settings.MEDIA_ROOT)</b>
 </pre>
 <p>这样设置后，Django开发服务器在<code>DEBUG=True</code>的情况下会提供媒体文件服务。</p>
-<p class="hint"><code>static</code>方法仅用于开发环境，在生产环境中，不要用Django提供静态文件服务（而是用Web服务程序比如NGINX等提供静态文件服务）。</p>
+<p class="hint"><code>static()</code>方法仅用于开发环境，在生产环境中，不要用Django提供静态文件服务（而是用Web服务程序比如NGINX等提供静态文件服务）。</p>
 <p>建立了新的模型之后需要执行数据迁移过程。之后将新的模型加入到管理后台，编辑<code>account</code>应用的<code>admin.py</code>文件，将<code>Profile</code>模型注册到管理后台中：</p>
 <pre>
 from django.contrib import admin
