@@ -265,12 +265,17 @@ $('a.follow').click(function (e) {
 
 
 <h2 id="c6-2"><span class="title">2</span>创建通用行为流应用</h2>
-<p>很多网站可以给用户提供一个他们关注的人的最近行为，比如你看到你的朋友关注了某某，为某某的图片点赞，发表了某某内容。这些内容都是对用户行为的一种追踪记录和展示。我们通过建立一个新应用来实现这个功能。</p>
-<p>启动一个叫 actions 的新应用然后添加到settings.py里，之后开始最先一步也是非常重要的一步就是设计数据模型。针对某个用户的行为该如何设计模型呢，一个总体的思路是将用户的行为分为若干类型，然后建立一个数据库保存用户每次行为的类型和内容。在用户完成这些动作，也就是视图函数进行成功操作的时候，就去修改这个数据库。</p>
-<p>在action应用中编辑models.py：</p>
+<p>许多社交网站向其用户展示其他用户的行为流，供用户追踪其他用户最近在网站中做了什么。一个行为流是一个用户或者一组用户最近进行的所有活动的列表。例如Facebook界面的News Feed就是一个行为流。对于我们的网站来说，X用户上传了Y图片或者X用户关注了Y用户，都是行为流中的一个数据。我们也准备创建一个行为流应用，让用户可以看到他们所关注的用户最近的所有活动。为了实现这个功能，我们需要建立一个模型，用于保存一个用户最近在网站上做过的所有事情，及向模型中添加行为记录的方法。</p>
+<p>新建一个叫<code>actions</code>应用然后添加到<code>settings.py</code>里，如下所示：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    <b>'actions.apps.ActionsConfig',</b>
+]
+</pre>
+<p>在<code>action</code>应用中编辑<code>models.py</code>：</p>
 <pre>
 from django.db import models
-
 
 class Action(models.Model):
     user = models.ForeignKey('auth.user', related_name='actions', db_index=True, on_delete=models.CASCADE)
@@ -280,39 +285,53 @@ class Action(models.Model):
     class Meta:
         ordering = ('-created',)
 </pre>
-<p>这个类为用户表建立了一个一对多的关系，用户就是指动作的主体，然后定义了一个动作字段verb用于保存具体的行为，然后就是进行动作的时间。这个模型建立了一个最简单也是最抽象的数据关系：一个用户对应一系列的动作。</p>
-
-<h2><b>使用The contenttypes framework</b></h2>
-<p>在之前的社交网站里，我们定义了用户的很多行为。可以说，凡是带有@login_required的每一个视图函数进行的操作，都可以视为该用户的一个行为，比如分享外部图片链接进来 ，保存图片，喜欢/不喜欢某个图片，关注/取关某个用户等。</p>
-<p>在继续编写程序之前，需要想一下Action类到底应该存放些什么。目前的Action类里有两个实质性字段，一个是用户，一个是行为。但是好像还不够，因为每一个用户行为实际上可以由三部分构成：行为的主体，行为的客体和动作。初步的想一下，我们只要在Action类里针对每次行为保存这三个内容就可以了。行为的主体和行为的客体，一定都是其他数据表的某一行数据，而动作可以事先归类好。这看上去似乎要修改每一个视图函数，让其在完成功能的同时修改Action类，将自己刚刚完成的行为保存到数据库中去。</p>
-<p>通过刚才的分析可以知道，主体一定是用户，就代表这一个外键连到User类，但是客体怎么办呢？关注行为的客体是User类的实例，和图片相关的行为客体是Image类的实例，难道要建立很多列外键链接到不同的数据类里去吗？</p>
-<p>还好django提供了一个 <code>django.contrib.contenttypes</code> 模块用于追踪所有在项目里定义的数据模型类，提供了接口和数据模型进行互动。这个模块在默认建立项目的时候已经被添加在 settings.py里，内置的验证模块和管理后台都会使用到它。简单的说，就是用一个字段就能够找到所有的模型，如果再知道那个模型的id，就能够将这个行为对应到任何一个数据表的任何一条记录，也就意味着这个字段可以方便的设置为客体。</p>
-<p><code>django.contrib.contenttypes</code>提供了一个数据模型类叫做 <code>ContentType</code>，这个类的实例的代表了应用里实际的类，在项目里每添加一个数据模型类的时候，<code>ContentType</code>类里就自动增加一个实例。 <code>ContentType</code>类有如下的字段：</p>
+<p>上边的代码建立了一个<code>Action</code>模型，用于存放用户的所有行为记录，模型的字段有这些：</p>
 <ul>
-    <li>app_label 数据模型所属的app名称，这个来自模型内的Meta类里的对应属性。</li>
-    <li>model 数据类的名称。</li>
-    <li>name 给人类阅读的名称，这个来自模型内的Meta类的verbose_name属性。</li>
+    <li><code>user</code>：进行行为的主体，即用户，采用了<code>ForeignKey</code>关联至内置的<code>User</code>模型</li>
+    <li><code>verb</code>：行为的动词，描述用户进行了什么行为</li>
+    <li><code>created</code>：记录用户执行行为的时间，采用<code>auto_now_add=True</code>自动记录创建该条数据的时间</li>
 </ul>
-<p>讲了一些抽象的东西，来看一下初步如何使用这个模块，进入命令行模式：</p>
+<p>使用这个模型，我们目前只能记录行为的主体和行为动词，即<em>用户X关注了...</em>或者<em>用户X上传了...</em>，还缺少行为的目标对象。显然我们还需要一个外键关联到用户操作的具体对象上，这样才能够展示出类似<em>用户X关注了用户Y</em>这样的行为流。在之前我们已经知道，一个<code>ForeignKey</code>字段只能关联到一个模型，很显然无法满足我们的需求。目标对象必须可以是任意一个已经存在的模型的对象，这个时候Django的content types框架就该登场了。</p>
+
+
+
+<h3 id="c6-2-1"><span class="title">2.1</span>使用contenttypes框架</h3>
+<p><code>django.contrib.conttenttypes</code>模块中提供了一个contenttypes框架，这个框架可以追踪当前项目内所有已激活的应用中的所有模型，并且提供一个通用的接口可以操作模型。</p>
+<p><code>django.contrib.conttenttypes</code>同时也是一个应用，在默认设置中已经包含在<code>INSTALLED_APPS</code>中，其他<code>contrib</code>包中的程序也使用这个框架，比如内置认证模块和管理后台。</p>
+<p><code>conttenttypes</code>应用中包含一个<code>ContentType</code>模型。这个模型的实例代表项目中一个实际的数据模型。当项目中每新建一个模型时，<code>ContentType</code>的新实例会自动增加一个，对应该新增模型。<code>ContentType</code>模型包含如下字段：</p>
+<ul>
+    <li><code>app_label</code>：数据模型所属的应用名称，这个来自模型内的<code>Meta</code>类里的<code>app_label</code>属性。我们的<code>Image</code>模型就属于<code>images</code>应用</li>
+    <li><code>model</code>：模型的名称</li>
+    <li><code>name</code>：给人类阅读的名称，这个来自模型内的<code>Meta</code>类的<code>verbose_name</code>属性。</li>
+</ul>
+<p>来看一下如何使用<code>ContentType</code>对象，打开系统命令行窗口，可以通过指定<code>app_label</code>和<code>model</code>属性，在<code>ContentType</code>模型中查询得到一个具体对象：</p>
 <pre>
 >>> from django.contrib.contenttypes.models import ContentType
 >>> image_type = ContentType.objects.get(app_label='images', model='image')
 >>> image_type
 &lt;ContentType: image>
+</pre>
+<p>还可以对刚获得的<code>ContentType</code>对象调用<code>model_class()</code>方法查看类型：</p>
+<pre>
 >>> image_type.model_class()
 &lt;class 'images.models.Image'>
 </pre>
-<p>这几个操作的意思是先导入了这个ContentType，然后像操作数据库一样，从里边取出了一条符合images应用里叫image的类。这个类是ContentType的实例。而调用.model_class()方法可以看到，取出来的东西就是Image类。</p>
-<p>ContentType还可以直接通过具体的类拿对象：</p>
+<p>还可以直接通过具体的类名获取对应的<code>ContentType</code>对象：</p>
 <pre>
 >>> from images.models import Image
 >>> ContentType.objects.get_for_model(Image)
 &lt;ContentType: image>
 </pre>
-<p>这是几个例子，Django关于这个类的官方文档<a href="https://docs.djangoproject.com/en/2.0/ref/contrib/contenttypes/">在此</a>。</p>
-<p>那么这个玩意到底有什么用呢？先停下来想一想，我们的action是一个数据表，ContentType也是一个数据表，里边放着每个数据类。如果我们的action想追踪某个表，可以怎么做呢？应该想到了，就是到ContentType里去查就行了。一个数据模型在我们的Action类里也可以有多个动作，所以只要在Action类里建立一个外键连接到ContentType就可以了。</p>
-<p>再进一步想，如果要知道Action与某一个model里的具体哪一条记录发生关系呢？那就再找一个字段放那个model的id。然后Django还内置了一个字段，就将外键和id联系起来，作为一个管理器。</p>
-<p>这样就建立了项目里每一个模型的每一条记录与action里每一条记录的关系。有点抽象，查表的关系可以这么理解：Action表--ContentType表--某一个类表--具体某一行。来看一看修改后的Action类：</p>
+<p>这是几个简单的例子，还有更多的方法可以操作，详情可以阅读官方文档：<a href="https://docs.djangoproject.com/en/2.0/ref/contrib/contenttypes/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/contrib/contenttypes/</a>。</p>
+
+<h3 id="c6-2-2"><span class="title">2.2</span>为模型添加通用关系</h3>
+<p>通常来说，通过获取ContentType模型的实例，就可以与整个项目中任何一个模型建立关系。为了建立通用关系，需要如下三个字段：</p>
+<ul>
+    <li>一个关联到<code>ContentType</code>模型的<code>ForeignKey</code>，这会用来反映与外键所在模型关联的具体模型。</li>
+    <li>一个存储具体的模型的主键的字段，通常采用<code>PositiveIntegerField</code>字段，以匹配主键自增字段，这个字段用于从相关的具体模型中确定一个对象。</li>
+    <li>一个使用前两个字段，用于管理通用关系的字段，content types框架提供了一个<code>GenericForeignKey</code>专门用于管理通用关系。</li>
+</ul>
+<p>编辑<code>actions</code>应用的<code>models.py</code>文件：</p>
 <pre>
 from django.db import models
 from django.contrib.contenttypes.models import ContentType
@@ -322,21 +341,24 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 class Action(models.Model):
     user = models.ForeignKey('auth.user', related_name='actions', db_index=True, on_delete=models.CASCADE)
     verb = models.CharField(max_length=255)
-    target_ct = models.ForeignKey(ContentType, blank=True, null=True, related_name='target_obj',
-                                  on_delete=models.CASCADE)
-    target_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
-    target = GenericForeignKey('target_ct', 'target_id')
+    <b>target_ct = models.ForeignKey(ContentType, blank=True, null=True, related_name='target_obj',
+                                      on_delete=models.CASCADE)</b>
+    <b>target_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)</b>
+    <b>target = GenericForeignKey('target_ct', 'target_id')</b>
     created = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
         ordering = ('-created',)
 </pre>
-<p>如前边所述，target_ct是连接到ContentType的一个外键，用于确定对应哪个模型。</p>
-<p>target_id由于用来存放主键id，所以采用内置的PositiveIntegerField</p>
-<p>最后的target属性就是通过前边两个属性，建立起通用对应关系的特殊字段。</p>
-<p>在这里我们都设置了blank 和 null 为 True，表示写入Action表的时候可以不用特意指定与某条数据相关。在实际migrate的时候，只会有target_ct和target_id两个字段会生成数据库内的字段，GenericForeignKey不会生成，其实是通过django来控制的</p>
-<p>这里也提供了一个思路，可以用这种通用的方式建立更弹性的关系，而不像外键那样约束比较大。</p>
-<p>然后就makemigration和migrate之后将Action类加入管理后台：</p>
+<p>我们将下列字段增加到了<code>Action</code>模型中：</p>
+<ul>
+    <li><code>target_ct</code>：一个外键字段，关联到<code>ContentType</code>模型</li>
+    <li><code>target_id</code>：一个<code>PositiveIntegerField</code>字段，用于存储相关模型的主键</li>
+    <li><code>target</code>：一个<code>GenericForeignKey</code>字段，通过组合前两个字段得到</li>
+</ul>
+<p>Django并不会为<code>GenericForeignKey</code>创建数据表中的字段，只有<code>target_ct</code>和<code>target_id</code>会被写入数据表。这两个字段都设置了<code>blank=True</code>和<code>null=True</code>，这样新增<code>Action</code>对象的时候不会强制要有关联的目标对象。</p>
+<p class="hint">如果确实需要的话，建立通用关系比使用外键可以创建更灵活的关系。</p>
+<p>创建完模型之后，执行数据迁移程序，然后将Action模型添加到管理后台中，编辑<code>actions</code>应用的<code>admin.py</code>文件：</p>
 <pre>
 from django.contrib import admin
 from .models import Action
@@ -348,135 +370,142 @@ class ActionAdmin(admin.ModelAdmin):
     list_filter = ('created',)
     search_fields = ('verb',)
 </pre>
-<p>加入管理后台之后，可以看到Action出现在后台中，点进去然后点击Add，出现如下界面：</p>
-<img src="http://img.conyli.cc/django2/C06-05.jpg" alt="">
-<p>这里可以看到，GenericForeignKey并没有出现在表中，只有target_id 和 target_ct出现。点开target_ct可以发现，这个项目使用的所有类都可以作为选项。截至目前我们定义过的类有：</p>
-<ul>
-    <li>account应用中的 Profile, Contact</li>
-    <li>actions应用中的 Action</li>
-    <li>images应用中的 Image</li>
-</ul>
-<p>这些类在这里全部都有，还包括了外置的类。</p>
-<p>然后在actions应用中新建一个utils.py，写一个函数用来快捷的建立新Action对象：</p>
+<p>加入管理后台之后，打开<a href="http://127.0.0.1:8000/admin/actions/action/add/" target="_blank">http://127.0.0.1:8000/admin/actions/action/add/</a>，可以看到如下界面：</p>
+<p><img src="http://img.conyli.cc/django2/C06-05.jpg" alt=""></p>
+<p>这里可以看到，只有<code>target_id</code>和<code>target_ct</code>出现，<code>GenericForeignKey</code>并没有出现在表单中。<code>target_ct</code>字段允许选择项目中的所有模型，可以使用<code>limit_choices_to</code>属性来限制可以选择的模型。</p>
+
+<p>在<code>actions</code>应用中新建<code>utils.py</code>文件，在其中将编写一个函数用来快捷的建立新<code>Action</code>对象：</p>
 <pre>
 from django.contrib.contenttypes.models import ContentType
 from .models import Action
+
 def create_action(user, verb, target=None):
     action = Action(user=user, verb=verb, target=target)
     action.save()
 </pre>
-<p>这里需要理解的是：这个函数的target参数，就是具体的数据表某一行，将其保存在Action的target字段里。<strong>target字段是不存在于实际的数据库中的，而是django整合两个字段target_id和target_ct之后生成的Action类的字段，用来管理实际对应的某个数据类的实例（某行数据）</strong>。所以三个参数里user很简单，就是一个User实例，verb后边会看到，是预定义好的字符串，而target属性，就是某一个数据类的实例。</p>
+<p>这个<code>create_action()</code>函数的参数有一个<code>target</code>，就是行为所关联的目标对象，可以在任意地方导入该文件然后使用这个函数来快速为行为流添加新行为对象。</p>
 
-<h2><b>避免重复添加相同的行为</b></h2>
-<p>有些时候，用户可能在短期内连续点击同一类型的事件，比如取消又关注，关注再取消，如果把这些都保存好，那会造成大量重复的数据。为了避免这个，需要修改一下刚刚建立的utils.py：</p>
+<h3 id="c6-2-3"><span class="title">2.3</span>避免添加重复的行为</h3>
+<p>有些时候，用户可能在短期内连续点击同一类型的事件，比如取消又关注，关注再取消，如果即使保存所有的行为，会造成大量重复的数据。为了避免这种情况，需要修改一下刚刚建立的<code>utils.py</code>文件中的<code>create_action()</code>函数：</p>
 <pre>
+<b>import datetime</b>
+<b>from django.utils import timezone</b>
 from django.contrib.contenttypes.models import ContentType
 from .models import Action
-import datetime
-from django.utils import timezone
+
 
 
 def create_action(user, verb, target=None):
     # 检查最后一分钟内的相同动作
-    now = timezone.now()
-    last_minute = now - datetime.timedelta(seconds=60)
-    similar_actions = Action.objects.filter(user_id=user.id, verb=verb, created__gte=last_minute)
+    <b>now = timezone.now()</b>
+    <b>last_minute = now - datetime.timedelta(seconds=60)</b>
+    <b>similar_actions = Action.objects.filter(user_id=user.id, verb=verb, created__gte=last_minute)</b>
 
-    if target:
-        target_ct = ContentType.objects.get_for_model(target)
-        similar_actions = similar_actions.filter(target_ct=target_ct, target_id=target.id)
+    <b>if target:</b>
+        <b>target_ct = ContentType.objects.get_for_model(target)</b>
+        <b>similar_actions = similar_actions.filter(target_ct=target_ct, target_id=target.id)</b>
 
-    if not similar_actions:
-        # 找不到相似的记录
+    <b>if not similar_actions:</b>
+        <b># 最后一分钟内找不到相似的记录</b>
         action = Action(user=user, verb=verb, target=target)
         action.save()
-        return True
-    return False
+        <b>return True</b>
+    <b>return False</b>
 </pre>
-<p>这个函数的逻辑是先算出来一分钟之前是什么时候，然后拿着给的用户和动作去找之前一分钟内相似的行为。如果传入了对象类，就去拿到那个类，然后从相似的行为里，再去找和这个类相关联的行为。如果没有传入target，就不执行额外动作，之后判断是否存在相似行为，如果有就不保存然后返回False，如果没有就保存然后返回True。</p>
-<p>这里还一个知识点就是通过外键到user表里查id，字段名是user，要写成user_id。</p>
+<p>我们修改了<code>create_action()</code>函数避免在一分钟内重复保存相同的动作，并且返回一个布尔值以表示是否成功保存。这个函数的逻辑解释如下：</p>
+<ul>
+    <li>首先，通过<code>timezone.now()</code>获取当前的时间，这个方法与<code>datetime.datetime.now()</code>相同，但是返回一个<code>timezone-aware</code>对象。Django使用<code>USE_TZ</code>设置控制是否支持时区，使用<code>startapp</code>命令建立的项目默认<code>USE_TZ=True</code></li>
+    <li>使用<code>last_minute</code>变量保存之前一分钟，然后获取之前一分钟到现在，当前用户进行的所有动词相同的行为。</li>
+    <li>如果没有找到任何相同的行为，就直接创建<code>Action</code>对象，并返回<code>True</code>，否则返回<code>False</code>。</li>
+</ul>
 
-<h2><b>添加用户行为</b></h2>
-<p>用户行为之前说了后很多类型，比如用户传入一个图片，用户点赞一个图片，用户建立一个账户，用户关注另外一个用户。很显然按照我们之前的分析，还是得需要完成动作的视图函数来操作增加这个活动。以图片相关的视图为例，修改images应用里的views.py里的image_create视图：</p>
+<h3 id="c6-2-4"><span class="title">2.4</span>向行为流中添加行为</h3>
+<p>现在需要编辑视图，添加一些功能来创建行为流。我们将对下边的行为创建行为流：</p>
+<ul>
+    <li>任意用户上传了图片</li>
+    <li>任意用户喜欢了一张图片</li>
+    <li>任意用户创建账户</li>
+    <li>任意用户关注其他用户</li>
+</ul>
+<p>编辑<code>images</code>应用的<code>views.py</code>文件：</p>
 <pre>
 from actions.utils import create_action
-# 在保存图片的语句之后添加
-    ...
-    new_item.save()
-    <b>create_action(request.user, 'bookmarked image', new_item)</b>
 </pre>
-<p>这里联系上下文看，user就是当前进行操作的用户，第二个参数是行为，就是保存了图片。最后一个是参数是Image类的一个实例。这样就在action里保存了一条记录。</p>
-<p>在image_like视图里，在完成了操作之后也添加一行：</p>
+<p>在<code>image_create</code>视图中，在保存图片之后添加<code>create_action()</code>语句：</p>
+<pre>
+new_item.save()
+<b>create_action(request.user, 'bookmarked image', new_item)</b>
+</pre>
+<p>在<code>image_like</code>视图中，在将用户添加到<code>users_like</code>关系之后添加<code>create_action()</code>语句：</p>
 <pre>
 image.users_like.add(request.user)
 <b>create_action(request.user, 'likes', image)</b>
 </pre>
-<p>然后到account应用里的views.py里也导入create_action，之后在register视图里添加：</p>
+<p>编辑<code>account</code>应用的<code>views.py</code>文件，添加如下导入语句：</p>
+<pre>from actions.utils import create_action</pre>
+<p>在<code>register</code>视图里，在创建<code>Profile</code>对象之后添加<code>create_action()</code>语句：</p>
 <pre>
 Profile.objects.create(user=new_user)
 <b>create_action(new_user, 'has created an account')</b>
 </pre>
-<p>在user_follow视图里添加：</p>
+<p>在<code>user_follow</code>视图里也添加<code>create_action()</code>：</p>
 <pre>
-Contact.objects.get_or_create(user_from=request.user,
-user_to=user)
+Contact.objects.get_or_create(user_from=request.user, user_to=user)
 <b>create_action(request.user, 'is following', user)</b>
 </pre>
-<p>我们一共添加了四个行为，分别是</p>
-<ul>
-    <li>1 用户上传了一个图片</li>
-    <li>2 用户点赞一个图片</li>
-    <li>3 新注册一个用户</li>
-    <li>4 用户新关注一个用户</li>
-</ul>
-<p>其中1,2,4都是有行为的客体存在，所以调用create_action方法传入了三个参数，分别是当前的用户，描述动作的字符串，和动作的客体。3是单独的主体行为，就没有传入客体。</p>
+<p>从上边的代码中可以看到，由于建立好了<code>Aciton</code>模型，可以方便的添加各种行为。</p>
 
-<h2><b>修改展示用户行为所用的视图</b></h2>
-<p>前边说了这么多业务逻辑，其实就是一句话，通过ContentType类，可以取到整个项目里任意一个数据库的任意一行。利用这个功能，我们就做出来了Action表与具体某一行关联。</p>
-<p>剩下的问题就是展示页面了，为此先要修改account应用里的dashboaard视图，空白了这么久的dahsboard视图函数终于要发挥作用了：</p>
+<h3 id="c6-2-5"><span class="title">2.5</span>展示用户行为流</h3>
+<p>最后，需要展示每个用户的行为流，我们将在用户的登录后页面中展示行为流。编辑<code>account</code>应用的<code>views.py</code>文件，修改<code>dashboard</code>视图，如下：</p>
 <pre>
+<b>from actions.models import Action</b>
+
 @login_required
 def dashboard(request):
-    # 展示用户行为
-    # 不取当前用户相关的字段
-    actions = Action.objects.exclude(user=request.user)
-    # 列出当前用户所有关注的用户的ID
-    following_ids = request.user.following.value_list('id', flat=True)
-    # 如果存在关注的用户，挑出这些人的行为，然后取前十个
-    if following_ids:
-        actions = actions.objects.filter(user_id__in=following_ids)
-    actions = actions[:10]
+    <b># 默认展示所有行为，不包含当前用户</b>
+    <b>actions = Action.objects.exclude(user=request.user)</b>
+    <b>following_ids = request.user.following.value_list('id', flat=True)</b>
+
+    <b>if following_ids:</b>
+        # 如果当前用户有关注的用户，仅展示被关注用户的行为
+        <b>actions = actions.objects.filter(user_id__in=following_ids)</b>
+    <b>actions = actions[:10]</b>
     return render(request, 'account/dashboard.html', {'section': 'dashboard', 'actions': actions})
 </pre>
-<p>这里要解释的就是通过连接到User表的外键字段名user，再去查id，要写成user_id，通过这个查询将属于当前用户关注的用户们的行为都查询出来。</p>
+<p>在上边代码中，首先从数据库中获取除了当前用户之外的全部行为流数据。如果当前用户有关注其他用户，则在所有的行为流中筛选出属于关注用户的行为流。最后限制展示的数量为10条。在QuerySet中我们并没有使用<code>order_by()</code>方法，因为默认已经按照<code>ordering=('-created')</code>进行了排序。</p>
 
-<h2><b>提高QuerySet查询效率</b></h2>
-<p>下一步不是要建立模板了吗？别着急，这里作者估计是有意考验大家的耐心，前边业务逻辑讲了这么多，就是不给大家展示。当然真正的原因还是现在对于ORM的操作要求越来越高，还是有必要讲一下深入的操作。</p>
-<p>现在的dashboard视图中，由于在页面里还需要展示用户的头像等存在Profile类中的数据，因此针对每个用户还需要再用外键查询，如果转换成SQL语句，会发现每一次通过外键查询都会去进行一次SQL查询。但实际上在学习数据库的时候大家学习过使用INNERJOIN来连表查询，这样会生成一张虚拟表，通过这个表再查，就会速度快很多。</p>
-<p>如果想在ORM中使用连表查询提高效率，避免反复查询数据库，就需要两个特别的方法：<code>select_related()</code> 和 <code>prefetch_related()</code>。</p>
+<h3 id="c6-2-6"><span class="title">2.6</span>优化QuerySet查询关联对象</h3>
+<p>现在我们每次获取一个<code>Action</code>对象时，都会去查询关联的<code>User</code>对象，然后还会去查询User对象关联的<code>Profile</code>对象，要查询两次。Django ORM提供了一种简便的方法获取相关联的对象，而无需反复查询数据库。</p>
 
-<h3><b><code>select_related()</code></b></h3>
-<p>这个方法用于<b>一对一</b>和<b>一对多中一的那一方</b>查询，其本质就是数据库的连表查询。SQL语句中需要指定查哪张表和连哪张表，在这个方法中也是一样，通过实际例子来看一下：</p>
+<h4 id="c6-2-6-1"><span class="title">2.6.1</span>使用<code>select_related()</code></h4>
+<p>Django提供了<code>select_related()</code>方法用于一对多字段查询关联对象。这个方法实际上会得到一个更加复杂的QuerySet，然而却避免了反复查询关联对象。<code>select_related()</code>方法仅能用于<code>ForeignKey</code>和<code>OneToOneField</code>，其实际生成的SQL语句是<code>JOIN</code>连表查询，方法的参数则是<code>SELECT</code>语句之后的字段名。</p>
+<p>为了使用<code>select_related()</code>，修改下边这行代码：</p>
 <pre>
-    # 修改dashboard视图中的 actions = actions[:10]为：
-    actions = actions.select_related('user', 'user__profile')[:10]
+actions = actions[:10]
 </pre>
-<p><code>select_related()</code>的第一个参数是外键字段名称，这里就是Action表的user字段，表示通过这个外键字段去连接。第二个参数表示连哪个表，这里要传入一个具体的外键字段对应的外键字段（这里是因为Action表没有直接关联到Profile表，所以无法使用related_name。user名就相当于通过user外键找到了User表，后边加的__profile表示在User表里再去找profile字段对应的Profile类。），就传入了user__profile。如果有连续多个外键，可以一直这样加下去。</p>
-<p>如果单独调用<code>select_related()</code>，不传入任何参数，则结果就是一个将Action里的所有外键都进行连表操作的一个大表，有的时候会查询非常慢，所以尽量还是指定参数比较好。</p>
+<p>将其修改成：</p>
+<pre>actions = actions<b>.select_related('user', 'user__profile')</b>[:10]</pre>
+<p>我们使用<code>user__profile</code>在查询中将Profile数据表进行了连表查询。如果不给<code>select_related()</code>传任何参数，会将所有该表外键关联的表格都进行连表操作。最好每次都指定具体要关联的表。</p>
+<p class="hint">进行连表操作的时候注意避免不需要的额外连表，以减少查询时间。</p>
 
-<h3><b><code>prefetch_related()</code></b></h3>
-<p>这个方法是专门用于<b>多对多</b>和<b>多对一中多的那一方进行连表查询</b>。而且还支持通过<code>GenericRelation</code>和<code>GenericForeignKey</code>字段进行查询。</p>
+
+<h4 id="c6-2-6-2"><span class="title">2.6.2</span>使用<code>prefetch_related()</code></h4>
+<p><code>select_related()</code>仅能用于一对一和一对多关系，不能用于多对多（<code>ManyToMany</code>）和多对一关系（反向的<code>ForeignKey</code>关系）。Django提供了QuerySet的<code>prefetch_related()</code>方法用于多对多和多对一关系查询，这个方法会对每个对象的关系进行一次单独查询，然后再把结果连接起来。这个方法还支持查询<code>GenericRelation</code>和<code>GenericForeignKey</code>字段。</p>
+<p>编辑<code>account</code>应用的<code>views.py</code>文件，为<code>GenericForeignKey</code>增加<code>prefetch_related()</code>方法：</p>
 <pre>
-    # 修改dashboard视图中刚刚修改的最后一行：
-    actions = actions.select_related('user', 'user__profile').prefetch_related('target')[:10]
+    actions = actions.select_related('user', 'user__profile')<b>.prefetch_related('target')</b>[:10]
 </pre>
-<p>其中的参数是<code>GenericForeignKey</code> target，表示通过这个键去进行多对多查询。</p>
-<p>在这样执行了查询之后，目前的actions查询结果集，用数据库的说法来说的话，是actions里的所有只属于当前用户关注的用户的记录，再连上Profile表和所有的关联模型的具体数据行的表。</p>
-<p>这个表里的字段，实际上除了action表里的字段之外，还可以使用profile表的字段，以及具体的对应的字段。</p>
-<p>有了这样一个内容丰富的查询结果集之后，就可以来展示用户行为了。</p>
+<p>现在我们就完成了优化查询的工作。</p>
 
-<h3><b>建立模板</b></h3>
-<p>现在来建立展示用户行为的页面，在actions应用下建立templates/actions/action/detail.html：</p>
+
+<h3 id="c6-2-7"><span class="title">2.7</span>创建行为流模板</h3>
+<p>现在来创建展示用户行为的页面，在<code>actions</code>应用下创建<code>templates</code>目录，添加如下文件结构：</p>
+<pre>
+actions/
+    action/
+        detail.html
+</pre>
+<p>编辑<code>actions/action/detail.html</code>模板，添加如下内容：</p>
 <pre>
 {% load thumbnail %}
 {% with user=action.user profile=action.user.profile %}
@@ -520,8 +549,8 @@ def dashboard(request):
     &lt;/div>
 {% endwith %}
 </pre>
-<p>这块东西的核心逻辑就是展示主体，动作和客体，对于主体和客体判断了一下是否存在图，有图就显示图。对于客体判断了一下是否存在，不存在就不展示。</p>
-<p>之后修改一下account应用里的dashboard.html，把这个页面包含到content块的底部：</p>
+<p>这是展示<code>Action</code>对象的模板。首先我们使用<code>{% with %}</code>标签存储当前用户和当前用户的<code>Profile</code>对象；然后如果<code>Action</code>对象存在关联的目标对象而且有图片，就展示这个目标对象的图片；最后，展示执行这个行为的用户的链接，动词，和目标对象。</p>
+<p>然后编辑<code>account</code>应用里的<code>dashboard.html</code>，把这个页面包含到<code>content</code>块的底部：</p>
 <pre>
 &lt;h2>What's happening&lt;/h2>
 &lt;div id="action-list">
@@ -530,12 +559,12 @@ def dashboard(request):
     {% endfor %}
 &lt;/div>
 </pre>
-<p>之后就可以启动服务到用户dashboard来看了：</p>
-<img src="http://img.conyli.cc/django2/C06-06.jpg" alt="">
-<p>最简明的回顾一下这个功能：通过ContentType和GenericForeignKey，实现了将Action类与所有的类的任意一行关联的功能。让视图函数在动作成功的时候在Aciton里保存一条记录，就可以展示出用户行为。完成了本章的第二个大任务。</p>
+<p>启动站点，打开<a href="http://127.0.0.1:8000/account/" target="_blank">http://127.0.0.1:8000/account/</a>，使用已经存在的用户登录，然后进行一些行为。再更换另外一个用户登录，关注之前的用户，然后到登录后页面看一下行为流，如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C06-06.jpg" alt=""></p>
+<p>我们就建立了一个完整的行为流应用，可以方便的添加用户行为。还可以为这个页面添加之前的AJAX动态加载页面的效果。</p>
 
 
-<h1><b>使用Signal 非规范化数据</b></h1>
+<h2 id="c6-3"><span class="title">3</span>使用signals非规范化数据</h2>
 <p>所谓<a href="https://en.wikipedia.org/wiki/Denormalization" target="_blank">非规范化（Denormalization）</a>是一种数据库方面的名词，与之对应的是规范化。</p>
 <p>规范化指的是在建立关系型数据库的时候，合理拆分关系，消除存储冗余。而非规范化就是反其道而行之，添加冗余数据，让数据变得更加易于查询。</p>
 <p>在日常应用的很多场景来说，可能需要非规范化数据，添加冗余字段，让数据更易于查询，也减少设计数据库的时间。</p>
