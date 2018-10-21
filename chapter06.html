@@ -565,181 +565,218 @@ actions/
 
 
 <h2 id="c6-3"><span class="title">3</span>使用signals非规范化数据</h2>
-<p>所谓<a href="https://en.wikipedia.org/wiki/Denormalization" target="_blank">非规范化（Denormalization）</a>是一种数据库方面的名词，与之对应的是规范化。</p>
-<p>规范化指的是在建立关系型数据库的时候，合理拆分关系，消除存储冗余。而非规范化就是反其道而行之，添加冗余数据，让数据变得更加易于查询。</p>
-<p>在日常应用的很多场景来说，可能需要非规范化数据，添加冗余字段，让数据更易于查询，也减少设计数据库的时间。</p>
-<p>在之前的项目中，我们都尽量使用了规范化的设计手段，从模型建立到视图编写大家可以看到，所有的字段都通过用户操作和后端视图得到了操作，没有添加什么不需要的冗余字段。</p>
-<p>当然，与之对应的就是ORM查询会比较复杂，尤其在用户行为这一章，还采用了整合外键字段的方式和多表连接的方式进行操作数据库。</p>
-<p>如果能有一些额外的字段，会加速数据库的查找。但是增加额外字段的最大问题就是，这些字段在目前的视图函数里没有得到操作，就算我们手工添加了，以后数据变更的时候，很可能就失效了。所以非规范化的最大问题就是如何保持数据的时效性。</p>
-<p>这一小节里就来看看如何使用Django 的signal 功能，来对数据库进行非规范化修改，以加速查询。</p>
+<p>有些时候你可能需要非规范化数据库。<a href="https://en.wikipedia.org/wiki/Denormalization" target="_blank">非规范化（Denormalization）</a>是一种数据库方面的名词，指通过向数据库中添加冗余数据以提高效率。非规范化只有在确实必要的情况下再考虑使用。使用非规范化数据的最大问题是如何保持非规范化数据始终更新。</p>
+<p>我们将通过一个例子展示如何通过非规范化数据提高查询效率，缺点就是必须额外编写代码以保持数据更新。我们将非规范化<code>Image</code>模型并通过Django的信号功能保持数据更新。</p>
+<p class="emp">译者注：规范化简单理解就是不会存储对象非必要的额外信息，就像我们现在为止的所有设计，来自于对象基础信息以外的额外信息（如求和，分组）都通过设计良好的表间关系和查询手段获得，而且这些基础信息都在对应的视图内得到操作和更新。非规范化是与规范化相反的手段，添加冗余数据用于提高数据库的效率。这是结构化程序设计思想中的运行时间与占用空间关系在数据库结构方面的反映。</p>
 
-<h2><b>使用Signal</b></h2>
-<p>Django有一个信号模块，专门在某个事件发生的时候，产生信号通知其他程序。django为ORM类提供了一个信号功能的类，位于django.db.models.signals，有这么几个方法：</p>
+<h3 id="c6-3-1"><span class="title">3.1</span>使用signal功能</h3>
+<p>Django提供一个信号模块，可以让receiver函数在某种动作发生的时候得到通知。信号功能在实现每当发生什么动作就执行一些代码的时候很有用，也可以创建自定义的信号用于通知其他程序</p>
+<p>Django在<code>django.db.models.signals</code>中提供了一些信号功能，其中有如下的信号：</p>
 <ul>
-    <li><code>pre_save</code> 和 <code>post_save</code>，在调用save()方法之前和之后发送信号</li>
-    <li><code>pre_delete</code> 和 <code>post_delete</code>，在调用delete()方法之前和之后发送信号</li>
-    <li><code>m2m_changed</code> 在 多对多字段发生变动的时候发送信号</li>
+    <li><code>pre_save</code>和<code>post_save</code>，在调用<code>save()</code>方法之前和之后发送信号</li>
+    <li><code>pre_delete</code>和<code>post_delete</code>，在调用<code>delete()</code>方法之前和之后发送信号</li>
+    <li><code>m2m_changed</code>在多对多字段发生变动的时候发送信号</li>
 </ul>
-<p>有关singal的<a href="https://docs.djangoproject.com/en/2.1/ref/signals/" target="_blank">官方文档</a></p>
-<p>举个例子来看如何使用signal：</p>
-<p>如果在图片列表页，想给图片按照受欢迎的程度排序，我们的做法一般是使用聚合函数，对喜欢该图片的用户合计总数，然后按照总数分开排列。这一个操作在数据库里需要先连表，再分组计数，生成中间表后再排序后返回具体对象，开销很大。写出的代码大概是这样：</p>
+<p>这只是部分信号功能，完整的内置信号功能见官方文档<a href="https://docs.djangoproject.com/en/2.0/ref/signals/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/signals/</a>。</p>
+<p>举个例子来看如何使用信号功能。如果在图片列表页，想给图片按照受欢迎的程度排序，可以使用聚合函数，对喜欢该图片的用户合计总数，代码是这样：</p>
 <pre>
 from django.db.models import Count
 from images.models import Image
 images_by_popularity = Image.objects.annotate(total_likes=Count('users_like')).order_by('-total_likes')
 </pre>
-
-<p>如果咱们的图片类能有一个整型字段，里边就写着喜欢这个图片的人数，那查询只需将当前表排个序立刻就出来结果了，无需查其他表，效率肯定大幅提升。这个想法，就是要对数据库进行非规范化操作。</p>
-<p>那么接下来的问题就变成了，如何让这个字段在用户进行喜欢/不喜欢操作的时候能够自动更新呢？</p>
-<p>先到images应用的models.py里修改Image类增加一个字段total_likes：</p>
+<p>在性能上来说，通过合计<code>users_like</code>字段，生成临时表再进行排序的操作，远没有直接通过一个字段排序的效率高。我们可以直接在<code>Image</code>模型上增加一个字段，用于保存图片的被喜欢数合计，这样虽然使数据库非规范化，但显著的提高了查询效率。现在的问题是，如何保持这个字段始终为最新值？</p>
+<p>先到<code>images</code>应用的<code>models.py</code>中，为<code>Image</code>模型增加一个字段<code>total_likes</code>：</p>
 <pre>
-    total_likes = models.PositiveIntegerField(default=0, db_index=True)
+class Image(models.Model):
+    # ...
+    <b>total_likes = models.PositiveIntegerField(db_index=True, default=0)</b>
 </pre>
-<p>然后makemigration和migrate一下。</p>
-<p>添加了这个默认为0的正整形字段以后，就要想办法来更新它。之前说过。signal可以发信号，逻辑就变成其实只要在用户喜欢成功之后将这个字段加1，不喜欢之后减1就行了。User和Image类之间是多对多的关系，下边就来实现这个逻辑：</p>
-<p>在images应用目录内新建一个signals.py：</p>
+<p><code>total_likes</code>用来存储喜欢该图片的用户总数，这个非规范化的字段在查询和排序的时候非常简便。</p>
+<p class="hint">在使用非规范化手段之前，还有几种方法可以提高效率，比如使用索引，优化查询和使用缓存。</p>
+<p>添加完字段之后执行数据迁移程序。</p>
+<p>之后需要给<code>m2m_changed</code>信号设置一个<code>receiver</code>函数，在<code>images</code>应用目录内新建一个<code>signals.py</code>文件，添加如下代码：</p>
 <pre>
 from django.db.models.signals import m2m_changed
 from django.dispatch import receiver
 from .models import Image
-
 
 @receiver(m2m_changed, sender=Image.users_like.through)
 def users_like_changed(sender, instance, **kwargs):
     instance.total_likes = instance.users_like.count()
     instance.save()
 </pre>
-<p>这段代码的意思是：设置了一个发送信号的事件，是Image.users_like.through的变化。变化的时候发送m2m_changed信号。被装饰成这个信号的接收器的函数是自定义的函数，每次接收信号的时候，就去更新total_likes字段。</p>
-<p>除了装饰器之外，还有一种注册接收器的方式是使用signals.connect()。不再详述。</p>
-<p>DJango的信号是同步阻塞的，不要异步发送信号，会造成错乱。想要实现异步，最好是在信号接收器的那一端用异步。</p>
-<p>有了发送器和接收器之后，剩下的事情就是要在合适的时候执行。编写好signals.py之后，要让其在应用中发挥作用，肯定需要在某个地方运行signals.py才行。对于这种在应用一开始就要发挥作用的功能，必须要在应用配置类内注册该功能。</p>
+<p>首先，使用<code>@receiver</code>装饰器，将<code>users_like_changed</code>函数注册为一个事件的接收<code>receiver</code>函数，然后将其设置为监听<code>m2m_changed</code>类型的信号，并且设置信号来源为<code>Image.users_like.through</code>，这表示来自于<code>Image.users_like</code>字段的变动会触发该接收函数。除了如此设置之外，还可以采用<code>Signal</code>对象的<code>connect()</code>方法进行设置。</p>
+<p class="hint">DJango的信号是同步阻塞的，不要将信号和异步任务的概念搞混。可以将二者有效结合，让程序在收到某个信号的时候启动异步任务。</p>
+<p>配置好<code>receiver</code>接收函数之后，还必须将函数导入到应用中，这样就可以在每次发送信号的时候调用函数。推荐的做法是在应用配置类的<code>ready()</code>方法中，导入接收函数。这就需要再了解一下应用配置类。</p>
 
-<h2><b>使用应用配置类</b></h2>
-<p>还记得每次增加一个应用，都要到settings.py里增加<code>appname.apps.AppConfig</code>吗？</p>
-<p>在每次新建一个应用的时候，django会在应用目录里新增一个apps.py,其中可以编写一个继承Appconfig类的设置类，这个类就是当前应用的应用配置类。新创建的应用的应用配置类只有一个属性就是name。</p>
-<p>使用应用配置类可以存储这个应用的元数据，初始化配置和自省功能。应用配置类的官方文档<a href="https://docs.djangoproject.com/en/2.1/ref/applications/" target="_blank">在此</a>。</p>
-<p>由于我们的信号收发功能是应用一旦运行就要开始的功能，所以要注册在应用配置类中。修改apps.py</p>
+<h3 id="c6-3-2"><span class="title">3.2</span>应用配置类</h3>
+<p>Django允许为每个应用设置一个单独的应用配置类。当使用<code>startapp</code>命令创建一个应用时，Django会在应用目录下创建一个<code>apps.py</code>文件，并在其中自动设置一个名称为“首字母大写的应用名+Config”并继承<code>AppConfig</code>类的应用配置类。</p>
+<p>使用应用配置类可以存储这个应用的元数据，应用配置和提供自省功能。应用配置类的官方文档<a href="https://docs.djangoproject.com/en/2.0/ref/applications/" target="_blank">https://docs.djangoproject.com/en/2.0/ref/applications/</a>。</p>
+<p>我们已经使用<code>@receiver</code>装饰器注册好了信号接收函数，这个函数应该在应用一启动的时候就可以进行调用，所以要注册在应用配置类中，其他类似的需要在应用初始化阶段就调用的功能也要注册在应用配置类中。编辑<code>images</code>应用的<code>apps.py</code>文件：</p>
 <pre>
 from django.apps import AppConfig
-
 
 class ImagesConfig(AppConfig):
     name = 'images'
 
     def ready(self):
-        import images.signals
+        <b># 导入信号接收函数</b>
+        <b>import images.signals</b>
 </pre>
-<p>之后这个功能就被添加到了应用配置类中，启动应用的时候就会执行signals.py里的内容。应用配置类的name表示该app的名称，可以用来在项目中进行索引。还可以配置verbose_name用来命名给人读的名称。</p>
-<p>启动程序，到管理后台admin/images/image/XX/change/看一下（XX为某个图片的ID），可以看到新增的total_likes字段，在其上边的users_like字段中随便选择用户，点击save以后再到这个页面来，注意看total_likes字段的变化：</p>
-<img src="http://img.conyli.cc/django2/C06-07.jpg" alt="">
-<p>现在新增的total_likes字段正常工作了。回到文章开头的查询需求，现在就通过这个字段就简单搞定了：</p>
+<p>通过<code>ready()</code>方法导入之后，在<code>images</code>应用加载的时候该函数就会被导入。</p>
+<p>启动程序，选中一张图片并点击LIKE按钮，然后到管理站点查看该图片，例如<a href="http://127.0.0.1:8000/admin/images/image/1/change/" target="_blank">http://127.0.0.1:8000/admin/images/image/1/change/</a>，可以看到新增的<code>total_likes</code>字段。还可以看到<code>total_likes</code>字段已经得到了更新，如图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C06-07.jpg" alt=""></p>
+<p>现在可以用<code>total_likes</code>字段排序图片并且显示总数量，避免复杂的查询。看一下本章开头的查询语句：</p>
 <pre>
-images_by_popularity = Image.objects.order_by('-total_likes')
+from django.db.models import Count
+
+images_by_popularity = Image.objects.annotate(likes=Count('users_like')).order_by('-likes')
 </pre>
-<p>还有一点要注意的是，对于已经存在表内的数据，total_likes字段中还没有任何数据，如果排序会报错，处理方法也很简单，只需要在命令行里循环处理一下Image类中的所有对象即可：</p>
+<p>现在上边的查询可以改成下边这样：</p>
+<pre>images_by_popularity = Image.objects.order_by('-total_likes')</pre>
+<p>现在这个查询的开销要比原来小很多，这是一个使用信号的例子。</p>
+<p class="hint">使用信号功能会让控制流变得更加难以追踪，在很多情况下，如果明确知道需要进行什么操作，无需使用信号功能。</p>
+<p>对于已经存在表内的对象，<code>total_likes</code>字段中还没有任何数据，需要为所有对象设置当前的值，通过<code>python manage.py shell</code>进入带有当前Django环境的Python命令行，并输入下列命令：</p>
 <pre>
 >>>from images.models import Image
 >>>for image in Image.objects.all():
 >>>    image.total_likes = image.users_like.count()
 >>>    image.save()
 </pre>
-<p>这样就添加了可以随时更新的冗余数据行，用于快速按照数量排序。注意，这并不是说今后都可以按此操作，ORM的高级使用技巧还是需要牢牢掌握。设计数据库的时候也尽可能按照规范化设计，以此来锻炼解耦能力。</p>
+<p>现在每个图片的<code>total_likes</code>字段已被更新。</p>
 
 
-<h1><b>使用Redis数据库</b></h1>
-<p>Redis数据库的内容不再赘述了。优点可以看<a href="http://www.runoob.com/redis/redis-intro.html" target="_blank">这里</a>。虽然大量存储结构化数据显然还是需要大型数据库，但Redis对于反复访问而且查询简单的数据效率非常高，或者作为数据缓存辅助大型数据库使用。</p>
-<p>这一节就编写一个功能在我们的站点里使用Redis数据库。</p>
+<h2 id="c6-4"><span class="title">4</span>使用Redis数据库</h2>
+<p>Redis是一个先进的键值对数据库，可以存储多种类型的数据并提供高速存取服务。Redis运行时的数据保存在内存中，也可以定时将数据持久化到磁盘中或者通过日志输出。Redis相比普通的键值对存储，具有一系列强力的命令支持不同的数据格式，比如字符串、哈希值、列表、集合和有序集合，甚至是位图或HyperLogLogs数据。</p>
+<p>尽管SQL数据库依然是保存结构化数据的最佳选择，对于迅速变化的数据、反复使用的数据和缓存需求，采用Redis有着独特的优势。本节来看一看如何通过Redis为我们的项目增加一个新功能。</p>
 
-<h2><b>Redis数据库的安装和基础使用</b></h2>
-<p>同PostgreSQL一样，Redis也是开源的，其官方网站是<a href="https://redis.io/" target="_blank">https://redis.io/</a>，在其官网下载目前的稳定版4.0.11。注意，官网的Redis只能在Linux下使用，在<a
-        href="http://www.runoob.com/redis/redis-install.html" target="_blank">这里</a>可以找到windows 和 Linux 下使用Redis的教程。</p>
-<p>这里介绍windows下的使用。安装好Redis之后会默认添加Redis服务，之后在cmd里启动redis-cli进入数据库命令行界面，默认端口号是6379，可以测试一下Redis的基本命令 ：</p>
+<h3 id="c6-4-1"><span class="title">4.1</span>安装Redis</h3>
+<p>在<a href="https://redis.io/download" target="_blank">https://redis.io/download</a>下载最新的Redis数据库，解压<code>tar.gz</code>文件，进入<code>redis</code>目录，然后使用<code>make</code>命令编译安装Redis：</p>
 <pre>
-# 存入一个键name，值是字符串Peter
+cd redis-4.0.9
+make
+</pre>
+<p>在安装完成后，在命令行中输入如下命令来初始化Redis服务：</p>
+<pre>
+src/redis-server
+</pre>
+<p>可以看到如下输出：</p>
+<pre>
+# Server initialized
+* Ready to accept connections
+</pre>
+<p>说明Redis服务已经启动。Redis默认监听<a href="http://oldblog.antirez.com/post/redis-as-LRU-cache.html" target="_blank">6379</a>端口。可以使用<code>--port</code>参数指定端口，例如<code>redis-server --port 6655</code>。</p>
+<p>保持Redis服务运行，新开一个系统终端窗口，启动Redis客户端：</p>
+<pre>
+src/redis-cli
+</pre>
+<p>可以看到如下提示：</p>
+<pre>
+127.0.0.1:6379>
+</pre>
+<p>说明已经进入Redis命令行模式，可以直接执行Redis命令，我们来试验一些命令：</p>
+<p class="emp">译者注：Redis官方未提供Windows版本，可以在<a href="https://github.com/MicrosoftArchive/redis/releases" target="_blank">https://github.com/MicrosoftArchive/redis/releases</a>找到Windows版，安装好之后默认已经添加Redis服务，默认端口号和Linux系统一样是6379。进入cmd，输入<code>redis-cli</code>进入Redis命令行模式。</p>
+<p>使用<code>SET</code>命令保存一个键值对：</p>
+<pre>
 127.0.0.1:6379> SET name "Peter"
 OK
-
-# 取键name的值，如果不存在会返回(nil)，类似于python里的None
+</pre>
+<p>上边的命令创建了一个<code>name</code>键，值是字符串<code>"Peter"</code>。<code>OK</code>表示这个键值对已被成功存储。可以使用<code>GET</code>命令取出该键值对：</p>
+<pre>
+127.0.0.1:6379> GET name
+"Peter"</pre>
+<p>使用<code>EXIST</code>命令检测某个键是否存在，返回整数1表示True，0表示False：</p>
+<pre>127.0.0.1:6379> EXISTS name
+(integer) 1</pre>
+<p>使用<code>EXPIRE</code>设置一个键值对的过期秒数。还可以使用<code>EXPIREAT</code>以UNIX时间戳的形式设置过期时间。过期时间对于将Redis作为缓存时很有用：</p>
+<pre>
 127.0.0.1:6379> GET name
 "Peter"
-
-# 检测某个键是否存在，返回整数1或0,1表示True，0表示False
-127.0.0.1:6379> EXISTS name
+127.0.0.1:6379> EXPIRE name 2
 (integer) 1
-
-# 设置一个键值对的过期秒数，成功返回1，失败返回0。还可以使用
-127.0.0.1:6379> EXPIRE name 3
-(integer) 1
-
-# 设置过期时间，采用UNIX时间戳
-127.0.0.1:6379> EXPIREAT name 3
-(integer) 1
-
-# 删除键值对
-127.0.0.1:6379> DEL name
-(integer) 1
-
 </pre>
-<p>Redis的命令看<a href="https://redis.io/commands" target="_blank">这里</a>，支持的数据格式看<a href="https://redis.io/topics/data-types" target="_blank">这里</a>。</p>
+<p>等待超过2秒钟，然后尝试获取该键：</p>
+<pre>
+127.0.0.1:6379> GET name
+(nil)
+</pre>
+<p><code>(nil)</code>说明是一个null响应，即没有找到该键。使用<code>DEL</code>命令可以删除键和值，如下：</p>
+<pre>
+127.0.0.1:6379> SET total 1
+OK
+127.0.0.1:6379> DEL total
+(integer) 1
+127.0.0.1:6379> GET total
+(nil)
+</pre>
+<p>这是Redis的基础操作，Redis对于各种数据类型有很多命令，可以在<a href="https://redis.io/commands" target="_blank">https://redis.io/commands</a>查看命令列表，Redis所有支持的数据格式在<a href="https://redis.io/topics/data-types" target="_blank">https://redis.io/topics/data-types</a>。</p>
+<p class="emp">译者注：特别要看一下Redis中有序集合这个数据类型，以下会使用到。</p>
 
-<h2><b>Python和Django中操作Redis</b></h2>
-<p>同PostgreSQL一样，想让Django操作该数据库，Python必须安装支持该数据库的模块redis-py：</p>
+
+<h3 id="c6-4-2"><span class="title">4.2</span>通过Python操作Redis</h3>
+<p>同使用PostgreSQL一样，在Python安装支持该数据库的模块<code>redis-py</code>：</p>
 <pre>
 pip install redis==2.10.6
 </pre>
-<p>该模块的文档可以在<a href="https://redis-py.readthedocs.io/en/latest/" target="_blank">这里</a>找到。</p>
-<p>redis-py提供了两个大功能模块，StrictRedis和Redis，功能完全一样。区别是前者只支持标准的Redis命令和语法，后者进行了一些扩展。由于不是深入研究Redis，我们就使用StrictRedis模块。</p>
-<p>使用Python命令行来试验：</p>
+<p>该模块的文档可以在<a href="https://redis-py.readthedocs.io/en/latest/" target="_blank">https://redis-py.readthedocs.io/en/latest/</a>找到。</p>
+<p><code>redis-py</code>提供了两大功能模块，<code>StrictRedis</code>和<code>Redis</code>，功能完全一样。区别是前者只支持标准的Redis命令和语法，后者进行了一些扩展。我们使用严格遵循标准Redis命令的<code>StrictRedis</code>模块，打开Python命令行界面，输入以下命令：</p>
 <pre>
 >>> import redis
-
-    # 用本机地址和端口实例化数据库连接对象
 >>> r = redis.StrictRedis(host='localhost', port=6379, db=0)
-
-    # 新建键值对
+</pre>
+<p>上述命令使用本机地址和端口和数据库编号实例化数据库连接对象，在Redis内部，数据库的编号是一个整数，共有0-16号数据库，默认客户端连接到的数据库是<code>0</code>号数据库，可以通过修改<code>redis.conf</code>更改默认数据库。</p>
+<p>通过Python存入一个键值对：</p>
+<pre>
 >>> r.set('foo', 'bar')
 True
-
+</pre>
+<p>返回<code>True</code>表示成功存入键值对，通过<code>get()</code>方法取键值对：</p>
+<pre>
 >>> r.get('foo')
 b'bar'
 </pre>
-<p>知道了Python 中如何使用Redis，就把Redis集成到Django中来。编辑settings.py：</p>
+<p>可以看到，这些方法源自同名的标准Redis命令。</p>
+<p>了解Python中使用Redis之后，需要把Redis集成到Django中来。编辑<code>bookmarks</code>应用的<code>settings.py</code>文件，添加如下设置：</p>
 <pre>
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
 REDIS_DB = 0
 </pre>
+<p>这是Redis服务的相关设置。</p>
 
-<h2><b>在Redis中进行存储</b></h2>
-<p>这里我们需要通过Redis存储一个图片总共被浏览的次数。如果我们使用Django ORM，对于一个访问量大的站点来说，Image类上的某行数据会被反复的查询，其中的计数字段会被频繁的update。</p>
-<p>对于这种情况，最好的方式就是采用像Redis这样的存储方式，在内存里存一个整数，然后频繁的通过视图去+1就行了。在images应用的views.py里增加如下内容：</p>
+<h3 id="c6-4-3"><span class="title">4.3</span>在Redis中存储图片浏览次数</h3>
+<p>我们需要存储一个图片被浏览过的总数。如果我们使用Django ORM来实现，每次展示一个图片时，需要通过视图执行SQL的<code>UPDATE</code>语句并写入磁盘。如果我们使用Redis，只需要每次对保存在内存中的一个数字增加1，相比之下Redis的速度要快很多。</p>
+<p>编辑<code>images</code>应用的<code>views.py</code>文件，在最上边的导入语句后边添加如下内容：</p>
 <pre>
 import redis
 from django.conf import settings
 
-# 连接redis数据库
 r = redis.StrictRedis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DB)
-
-# 修改image_detail视图：
+</pre>
+<p>通过上述语句，在视图文件中实例化了一个Redis数据库连接对象，等待其他视图的调用。编辑image_detail视图，让其看起来如下：</p>
+<pre>
 @login_required
 def image_detail(request, id, slug):
     image = get_object_or_404(Image, id=id, slug=slug)
+    <b># 浏览数+1</b>
     <b>total_views = r.incr('image:{}:views'.format(image.id))</b>
     return render(request, 'images/image/detail.html',
                   {'section': 'images', 'image': image, <b>'total_views': total_views</b>})
 
 </pre>
-<p>这里需要解释的是incr方法，表示将该键对应的值增加1。键的名称则通过图片id自动生成。</p>
-<p>既然给模板传了一个新参数也就是redis对象，修改images/image/detail.html，在<code>&lt;span class="count"></code>之后追加：</p>
+<p>这个视图使用了<code>incr</code>命令，将该键对应的值增加1。如果键不存在，会自动创建该键（初始值为0）然后将值加1。incr()方法返回增加1这个操作之后的结果，也就是最新的浏览总数。然后用<code>total_views</code>存储浏览总数并传入模板。我们采用Redis的常用格式创建键名，如<code>object-type:id:field</code>（例如<code>image:33:id</code>)。</p>
+<p class="hint">Redis数据库的键常用冒号分割的字符串来创建类似于带有命名空间一样的键值，这样的键名易于阅读，而且在其名字中有共同的部分，便于对应至具体对象和查找。</p>
+<p>编辑<code>images/image/detail.html</code>，在<code>&lt;span class="count"></code>之后追加：</p>
 <pre>
 &lt;span class="count">
     {{ total_views }} view{{ total_views|pluralize }}
 &lt;/span>
 </pre>
-<p>之后打开一个图片的详情页面，然后按F5刷新，能够看到访问数“ * views”不断上升。</p>
-<img src="http://img.conyli.cc/django2/C06-08.jpg" alt="">
+<p>打开一个图片的详情页面，然后按F5刷新几次，能够看到访问数“ * views”不断上升，如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C06-08.jpg" alt=""></p>
+<p>现在我们就将Redis集成到Django中并用其显示数量了。</p>
 
-<h2><b>用Redis保存一个排名</b></h2>
+<h3 id="c6-4-4"><span class="title">4.4</span>在Redis中存储排名</h3>
 <p>现在再用Redis来实现一个更复杂一些的功能，就是将图片按照访问量排名。</p>
 <p>回想一下上一个功能，每一个图片，在Redis里都保存了image:xx:views这样一个名称的键值对。对于这个需求，初步的想法可能是将所有图片遍历一下，然后拿到访问量，再进行排名。</p>
 <p>这么做固然可以，但是这里可以依赖Redis 的sorted sets 有序集合。所谓有序集合，就是一个不重复的键的集合，每个键对应一个值，键是按照值的顺序排列的。</p>
@@ -802,7 +839,7 @@ def image_ranking(request):
 <p>之后启动站点，images/ranking 下即可看到排名页面：</p>
 <img src="http://img.conyli.cc/django2/C06-09.jpg" alt="">
 
-<h2><b>Redis的使用展望</b></h2>
+<h3 id="c6-4-5"><span class="title">4.5</span>进一步使用Redis</h3>
 <p>Redis无法替代SQL数据库，而是扩展了站点后台所使用的数据功能。在如下需求出现的时候，可以考虑使用Redis：</p>
 <ul>
     <li>计数：使用Redis非常方便和快速，使用incr和incrby方法即可</li>
