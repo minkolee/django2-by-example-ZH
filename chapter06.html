@@ -777,43 +777,39 @@ def image_detail(request, id, slug):
 <p>现在我们就将Redis集成到Django中并用其显示数量了。</p>
 
 <h3 id="c6-4-4"><span class="title">4.4</span>在Redis中存储排名</h3>
-<p>现在再用Redis来实现一个更复杂一些的功能，就是将图片按照访问量排名。</p>
-<p>回想一下上一个功能，每一个图片，在Redis里都保存了image:xx:views这样一个名称的键值对。对于这个需求，初步的想法可能是将所有图片遍历一下，然后拿到访问量，再进行排名。</p>
-<p>这么做固然可以，但是这里可以依赖Redis 的sorted sets 有序集合。所谓有序集合，就是一个不重复的键的集合，每个键对应一个值，键是按照值的顺序排列的。</p>
-<p>在images应用里的views.py里继续修改image_detail视图：</p>
+<p>现在用Redis来实现一个更复杂一些的功能：创建一个排名，按照图片的访问量将图片进行排名。为了实现这个功能，将使用Redis的有序集合数据类型。有序集合是一个不重复的字符串集合，其中的每一个字符串都对应一个分数，按照分数的大小进行排序。</p>
+<p>编辑<code>images</code>应用里的<code>views.py</code>文件，继续修改<code>image_detail</code>视图：</p>
 <pre>
 @login_required
 def image_detail(request, id, slug):
     image = get_object_or_404(Image, id=id, slug=slug)
     total_views = r.incr('image:{}:views'.format(image.id))
-    # 在有序集合image_ranking里，把image.id键的值增加1
+    <code># 在有序集合image_ranking里，把image.id的分数增加1</code>
     <b>r.zincrby('image_ranking', image.id, 1)</b>
     return render(request, 'images/image/detail.html',
                   {'section': 'images', 'image': image, 'total_views': total_views})
 </pre>
-<p>这里可以理解为：通过zincrby方法，向Redis中存了一个image_ranking键，这个键对应的是一系列的键值对，将其中的名为image.id的键对应的值增加1。</p>
-<p>有了有序集合之后，我们来建立一个视图专门显示图片排名，就在当前的views.py里继续编写：</p>
+<p>使用<code>zincrby</code>方法创建一个<code>image_ranking</code>有序集合对象，在其中存储图片的id，然后将对应的分数加1。这样就可以在每次图片被浏览之后，更新该图片被浏览的次数以及所有图片被浏览的次数的排名。</p>
+<p>在当前的<code>views.py</code>文件里创建一个新的视图用于展示图片排名：</p>
 <pre>
-# 显示图片排名的视图函数
 @login_required
 def image_ranking(request):
-    # 获得最高10个图片排名的ids
+    <b># 获得排名前十的图片ID列表</b>
     image_ranking = r.zrange('image_ranking', 0, -1, desc=True)[:10]
     image_ranking_ids = [int(id) for id in image_ranking]
-    # 取最高的图片然后排序
+    # 取排名最高的图片然后排序
     most_viewed = list(Image.objects.filter(id__in=image_ranking_ids))
     most_viewed.sort(key=lambda x: image_ranking_ids.index(x.id))
     return render(request, 'images/image/ranking.html', {'section': 'images', 'most_viewed': most_viewed})
 
 </pre>
-<p>这里要解释的有：</p>
-<ul>
-    <li>zrange方法用于从有序集合中取元素，后边的两个参数表示开始和结束的范围，给出0到-1的范围表示取全部元素，后边的desc=True表示将这些元素降序排列。之后切了这个列表的前10个。</li>
-    <li>之后用列表生成式，取得了键名对应的整数构成的列表。由于之前生成有序集合时候的键名就是image.id，这里就得到了访问最多的10个图片的id组成的列表。</li>
-    <li>然后从Image类中拿到了前10个id组成的结果集，然后列表化。</li>
-    <li>调用列表的.sort方法，自定义排序函数返回每个图片的id在id列表中的索引，也就是按照image_ranking_ids的顺序排序。</li>
-</ul>
-<p>之后要建立ranking.html：</p>
+<p>这个<code>image_ranking</code>视图工作逻辑如下：</p>
+<ol>
+    <li>使用<code>zrange()</code>命令从有序集合中取元素，后边的两个参数表示开始和结束索引，给出<code>0</code>到<code>-1</code>的范围表示取全部元素，<code>desc=True</code>表示将这些元素降序排列。最后使用<code>[:10]</code>切片列表前10个元素。</li>
+    <li>使用列表推导式，取得了键名对应的整数构成的列表，存入<code>image_ranking_ids</code>中。然后查询id属于该列表中的所有<code>Image</code>对象。由于要按照<code>image_ranking_ids</code>中的顺序对查询结果进行排序，所以使用<code>list()</code>将查询结果列表化。</li>
+    <li>按照每个<code>Image</code>对象的id在<code>image_ranking_ids</code>中的顺序，对查询结果组成的列表进行排序。</li>
+</ol>
+<p>在<code>images/image/</code>模板目录内创建<code>ranking.html</code>，添加下列代码：</p>
 <pre>
 {% extends 'base.html' %}
 {% block title %}
@@ -831,40 +827,29 @@ def image_ranking(request):
     &lt;/ol>
 {% endblock %}
 </pre>
-<p>页面很简单，不赘述，之后配置好images应用的URL：</p>
+<p>这个页面很简单，迭代<code>most_viewed</code>中的每个<code>Image</code>对象，展示图片内容、名称和对应的详情链接。</p>
+<p>最后为新的视图配置URL，编辑<code>images</code>应用的<code>urls.py</code>文件，增加一行：</p>
 <pre>
-    path('ranking/', views.image_ranking, name='ranking'),
+path('ranking/', views.image_ranking, name='ranking'),
 </pre>
-<p style="color:red;">注意，原书这里有误，name的值设置成了create，按作者的一贯写法，应该为'ranking'</p>
-<p>之后启动站点，images/ranking 下即可看到排名页面：</p>
-<img src="http://img.conyli.cc/django2/C06-09.jpg" alt="">
+<p class="emp">译者注：原书此处有误，<code>name</code>参数的值设置成了<code>create</code>，按作者的一贯写法，应该为<code>'ranking'</code>。</p>
+<p>之后启动站点，访问不同图片的详情页，反复刷新拖杆次，然后打开<a href="http://127.0.0.1:8000/images/ranking/" target="_blank">http://127.0.0.1:8000/images/ranking/</a>，即可看到排名页面：</p>
+<p><img src="http://img.conyli.cc/django2/C06-09.jpg" alt=""></p>
 
 <h3 id="c6-4-5"><span class="title">4.5</span>进一步使用Redis</h3>
-<p>Redis无法替代SQL数据库，而是扩展了站点后台所使用的数据功能。在如下需求出现的时候，可以考虑使用Redis：</p>
+<p>Redis无法替代SQL数据库，但其使用内存存储的特性可以用来完成模型具体任务，把Redis加入到你的工具库里，在必要的时候就可以使用它。下边是一些适合使用Redis的场景：</p>
 <ul>
-    <li>计数：使用Redis非常方便和快速，使用incr和incrby方法即可</li>
-    <li>存储最新的项目：lpush()和rpush()从字面意思就能看出来是从开始和末尾追加东西，lpop()和rpop()则是从开始和末尾弹出元素。如果造成数量有变化，可以用ltrim()保持队列数量</li>
-    <li>队列：除了上边的pop和push方法，Redis还提供了阻塞队列的方法</li>
-    <li>缓存：expire和expireat让用户可以把Redis当做缓存来使用</li>
-    <li>订阅/发布：频繁的向频道发布消息，这些消息就可以用Redis存储</li>
-    <li>排名和排行榜：动态和实时更新的排名类应用，为了避免反复大量查询数据库，可以将这些功能的数据建立在Redis中</li>
-    <li>实时跟踪：比如社交网站中一些大V的实时动态，可以用Redis进行存放，方便大量关注大V的人以较快速度获取内容。</li>
+    <li>计数：从我们的例子可以看出，使用Redis管理计数非常便捷，<code>incr()</code>和<code>incrby()</code>方法可以方便的实现计数功能。</li>
+    <li>存储最新的项目：使用<code>lpush()</code>和<code>rpush()</code>可以向一个队列的开头和末尾追加数据，<code>lpop()</code>和<code>rpop()</code>则是从队列开始和末尾弹出元素。如果操作造成队列长度改变，还可以用<code>ltrim()</code>保持队列长度。</li>
+    <li>队列：除了上边的<code>pop</code>和<code>push</code>系列方法，Redis还提供了阻塞队列的方法</li>
+    <li>缓存：<code>expire()</code>和<code>expireat()</code>方法让用户可以把Redis当做缓存来使用，还可以找到一些第三方开发的将Redis配置为Django缓存后端的模块。</li>
+    <li>订阅/发布：Redis提供订阅/发布消息模式，可以向一些频道发送消息，订阅该频道的Redis客户端可以接受到该消息。</li>
+    <li>排名和排行榜：Redis的有序集合可以方便的创建排名相关的数据。</li>
+    <li>实时跟踪：Redis的高速I/O可以用在实时追踪并更新数据方面。</li>
 </ul>
 
 <h1><b>总结</b></h1>
-<p>这一章到现在，其实主要是两大任务，一个是用户之间的互相关注系统，一个是追踪所有用户行为的系统。这一章给人的最大启发其实还是Web开发虽然用户交互等前端很重要，但对于后端来说，最核心的还是数据结构的处理。</p>
-<p>要实现一个功能，如果设计合理的数据结构，然后数据结构落实到数据库上，是编写视图等业务逻辑的基础。这个能力还得在今后不断锻炼。</p>
-<p>总结一下本章的要点：</p>
-<ul>
-    <li>多对多关系字段的建立和使用</li>
-    <li>与上一章类似，采用AJAX发送小功能的请求</li>
-    <li>使用ContentType类操作项目中所有的数据类</li>
-    <li>GenericForeignKey的使用</li>
-    <li>select_related() 和 prefetch_related()的使用</li>
-    <li>使用应用配置类</li>
-    <li>用signal更新非规范化字段（而不是通过视图）</li>
-    <li>Redis数据库的安装和使用</li>
-    <li>通过Redis应对大量的简单重复查询</li>
-</ul>
+<p>这一章里完成了两大任务，一个是用户之间的互相关注系统，一个是用户行为流系统。还学习了使用Django的信号功能，和将Redis集成至Django。</p>
+<p>在下一章，我们将开始一个新的项目，创建一个电商网站。将学习创建商品类别，通过session创建购物车，以及使用Celery启动异步任务。</p>
 </body>
 </html>
