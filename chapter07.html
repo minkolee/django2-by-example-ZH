@@ -315,193 +315,204 @@ urlpatterns = [
 <p>现在已经将商品品类和展示功能创建完毕。</p>
 
 <h2 id="c7-2"><span class="title">2</span>创建购物车功能</h2>
-<p>在开始做之前依然要思考一下，常见网站的购物车，在浏览整个网站，离开又返回的时候，购物车中的内容都可以保持原来的状态，那么其中的数据一定也是保存在某处。</p>
-<p>购物车还一个突出的特点就是，如果将购物车中的商品下了订单，该商品就会从购物车中消失。</p>
-<p>将购物车抽象成一个对象的话，这个对象很像一个数据库，挑选商品的时候往其中加入商品以及数量，下订单的时候减少商品和对应的数量。那么这个数据库应该保存在哪里呢？</p>
-<p>答案就是session里，session很适合用来存储当前用户的一些小数据。</p>
+<p>在建立商品品类之后，下一步是创建一个购物车，让用户可以将指定的商品及数量加入购物车，而且在浏览整个网站并且下订单之前，购物车都会维持其中的信息。为此，我们需要将购物车数据存储在当前用户的session中。</p>
+<p class="emp">由于session通用翻译成会话，而在本章中很多时候session指的是Django的session模块或者session对象，所以不再进行翻译。</p>
+<p>我们将使用Django的session框架来存储购物车数据。直到用户生成订单，商品信息都存储在购session中，为此我们还需要为购物车和其中的商品创建一个模型。</p>
 
-<h3 id="c7-2-1"><span class="title">2.1</span>Django的session模块</h3>
-<p>Django 的session模块在默认建立一个应用的时候，已经包含在settings.py里启用的中间件<code>'django.contrib.sessions.middleware.SessionMiddleware'</code>中。这个中间件会让所有的request都具有session属性。</p>
-<p>request.session可以把它想象成是一个Python字典，可以存储任何Python的数据并且序列化我Json格式。简单的操作如下：</p>
+<h3 id="c7-2-1"><span class="title">2.1</span>使用Django的session模块</h3>
+<p>Django 提供了一个session模块，用于进行匿名或登录用户会话，可以为每个用户保存独立的数据。session数据存储在服务端，通过在cookie中包含session ID就可以获取到session，除非将session存储在cookie中。session中间件管理具体的cookie信息，默认的session引擎将session保存在数据库内，也可以切换不同的session引擎。</p>
+<p>要使用session，需要在<code>settings.py</code>文件的<code>MIDDLEWARE</code>设置中启用<code>'django.contrib.sessions.middleware.SessionMiddleware'</code>，这个管理session中间件在使用<code>startproject</code>命令创建项目时默认已经被启用。</p>
+<p>这个中间件在<code>request</code>对象中设置了<code>session</code>属性用于访问session数据，类似于一个字典一样，可以存储任何可以被序列化为JSON的Python数据类型。可以像这样存入数据：</p>
 <pre>
-# 向session里存数据
 request.session['foo'] = 'bar'
-
-# 从session里取数据
+</pre>
+<p>获取键对应的值：</p>
+<pre>
 request.session.get('foo')
-
-# 删除session中的键值对
+</pre>
+<p>删除一个键值对：</p>
+<pre>
 del request.session['foo']
 </pre>
-<p>session的详细介绍和命令可以参考本站的<a href="http://www.conyli.cc/archives/1283" target="_blank">django 中使用session</a>，该文章对应的版本是django 1.11.14，但与2.1没有区别。</p>
-<p>这里需要注意一点的是，当用户先浏览站点再登录的时候，原来作为匿名用户的session会被一个新的认证用户的session所替代。很多电商网站有这样的功能：在未登录的情况下将商品加入购物车，在购买的时候进行登录，则购物车中的内容还在。这是因为后端在登录的时候，将匿名用户的session里的购物车数据复制到了登录用户的session中。</p>
+<p>可以将<code>request.session</code>当成字典来操作。</p>
+<p class="hint">当用户登录到一个网站的时候，服务器会创建一个新的用于登录用户的session信息替代原来的匿名用户session信息，这意味着原session信息会丢失。如果想保存原session信息，需要在登录的时候将原session信息存为一个新的session数据。</p>
 
 <h3 id="c7-2-2"><span class="title">2.2</span>session设置</h3>
-<p>django中可以配置session模块的一些参数，其中最重要的是 <code>SESSION_ENGINE</code>设置，设置session具体存储在何处。默认情况下，django.contrib.session模块将session数据保存在默认生成的django_session表中。</p>
-<p>Django提供了如下几种类型的session可供选择：</p>
+<p>Django中可以配置session模块的一些参数，其中最重要的是<code>SESSION_ENGINE</code>设置，即设置session数据具体存储在何处。默认情况下，Django通过<code>django.contrib.session</code>应用的<code>Session</code>模型，将session数据保存在数据库中的<code>django_session</code>数据表中。</p>
+<p>Django提供了如下几种存储session数据的方法：</p>
 <ul>
-<li>存放于数据库中的session：默认设置，即将session数据存放到settings.py中的DATABASES设置中的数据库内。</li>
-<li>基于文件的session：保存在一个具体的文件中</li>
-<li>缓存的session：存储在django 的缓存系统中，可以通过CACHES设置缓存。这种情况下速度最快。（怀念Redis了吗？）</li>
-<li>缓存与数据库结合的方式：先存到缓存再持久化到数据库中。取数据时如果缓存内无数据，就从数据库中取。</li>
-<li>Cookie方式：session存放在cookie中。</li>
+<li>Database sessions：session数据存放于数据库中，为默认设置，即将session数据存放到settings.py中的DATABASES设置中的数据库内。</li>
+<li>File-based sessions：保存在一个具体的文件中</li>
+<li>Cached sessions：基于缓存的session存储，使用Django的缓存系统，可以通过CACHES设置缓存后端。这种情况下效率最高。</li>
+<li>Cached database sessions：先存到缓存再持久化到数据库中。取数据时如果缓存内无数据，再从数据库中取。</li>
+<li>Cookie-based sessions：基于cookie的方式，session数据存放在cookie中。</li>
 </ul>
-
+<p>为了提高性能，使用基于缓存的session是好的选择。Django直接支持基于Memcached的缓存和如Redis的第三方缓存后端。</p>
+<p>还有其他一系列的session设置，以下是一些主要的设置：</p>
+<ul>
+<li><code>SESSION_COOKIE_AGE</code>：session过期时间，为秒数，默认为<code>1209600</code>秒，即两个星期。</li>
+<li><code>SESSION_COOKIE_DOMAIN</code>：默认为<code>None</code>，设置为某个域名可以启用跨域cookie。</li>
+<li><code>SESSION_COOKIE_SECURE</code>：布尔值，默认为<code>False</code>，表示是否只允许HTTPS连接下使用session</li>
+<li><code>SESSION_EXPIRE_AT_BROWSER_CLOSE</code>：布尔值，默认为<code>False</code>，表示是否一旦浏览器关闭，session就失效</li>
+<li><code>SESSION_SAVE_EVERY_REQUEST</code>：布尔值，默认为<code>False</code>，设置为<code>True</code>表示每次HTTP请求都会更新session，其中的过期时间相关设置也会一起更新。 </li>
+</ul>
+<p>可以在<a href="https://docs.djangoproject.com/en/2.0/ref/settings/#sessions" target="_blank">https://docs.djangoproject.com/en/2.0/ref/settings/#sessions</a>查看所有的session设置和默认值。</p>
 
 <h3 id="c7-2-3"><span class="title">2.3</span>session过期</h3>
-
-
-<p>所有session相关的设置需要写在settings.py中，主要的设置有：</p>
-<ul>
-<li>SESSION_COOKIE_AGE 为秒数，默认为1209600（两个星期）</li>
-<li>SESSION_COOKIE_DOMAIN 默认是none，设置为某个主机名可以启用跨域cookie。</li>
-<li>SESSION_COOKIE_SECURE 布尔值，默认为False，设置为True表示只允许HTTPS下使用session</li>
-<li>SESSION_EXPIRE_AT_BROWSER_CLOSE 布尔值，默认为False，设置为True表示浏览器关闭就失效</li>
-<li>SESSION_SAVE_EVERY_REQUEST 布尔值，默认为False，设置为True表示每次HTTP请求都会更新session，其中的过期时间相关设置也会一起更新。该项可以考虑修改成True。</li>
-</ul>
-<p>详细内容当然还是要去看django的<a href="https://docs.djangoproject.com/en/2.1/ref/settings/#sessions" target="_blank">session 文档</a>。</p>
-<p>这里特别要提一下的就是session的过期控制。在之前做两个项目的时候应该也会注意到，当我登录之后关闭页面的时候，下次再打开页面，依然处于登录状态，这就是因为session保存了登录状态。</p>
-<p><code>SESSION_EXPIRE_AT_BROWSER_CLOSE</code>默认为False，如果设置为True，则 <code>SESSION_COOKIE_AGE</code>中的设置不起作用。</p>
-<p>在需要延长session过期的情况下，可以使用<code>request.session.set_expiry()</code>设置过期时间。</p>
+<p>特别需要提的是<code>SESSION_EXPIRE_AT_BROWSER_CLOSE</code>设置。该设置默认为<code>False</code>，此时session有效时间采用<code>SESSION_COOKIE_AGE</code>中的设置。</p>
+<p>如果将<code>SESSION_EXPIRE_AT_BROWSER_CLOSE</code>设置为<code>True</code>，则session在浏览器关闭后就失效，<code>SESSION_COOKIE_AGE</code>设置不起作用。</p>
+<p>还可以使用<code>request.session.set_expiry()</code>方法设置过期时间。</p>
 
 <h3 id="c7-2-4"><span class="title">2.4</span>在session中存储购物车数据</h3>
-<p>存储购物车数据的关键有两个：一是确定存储内容，二是确定存储的方式。从前边session的介绍来看，存储方法打算采用JSON格式，而存储内容是：</p>
+<p>我们需要创建一个简单的数据结构，可以被JSON序列化，用于存放购物车数据。购物车中必须包含如下内容：</p>
 <ul>
-<li>商品的id字段数据</li>
+<li><code>Product</code>对象的ID</li>
 <li>商品的数量</li>
 <li>商品的单位价格</li>
 </ul>
-<p>这里有个问题是，商品的价格会变化。这里为了简便，我们在将商品加入购物车的同时存储当时商品的价格，如果商品价格之后再变动，也不去管了。（当然这和普通的电商网站是有区别的）</p>
-<p>然后我们需要来实现购物车的功能，在这之前需要更细致的分析一下业务逻辑：</p>
+<p>由于商品的价格会变化，我们在将商品加入购物车的同时存储当时商品的价格，如果商品价格之后再变动，也不进行处理。</p>
+<p>现在需要实现创建购物车和为session添加购物车的功能，购物车按照如下方式工作：</p>
 <ol>
-<li>先检查session中是否存在购物车键，如果存在说明当前用户已经使用了购物车，如果不存在，就新建一个购物车键。</li>
-<li>用户每次HTTP请求，都要重复第一步。</li>
-<li>之后根据用户提交的操作，向购物车内添加或者删除数据。</li>
+<li>当需要创建一个购物车的时候，先检查session中是否存在自定义的购物车键，如果存在说明当前用户已经使用了购物车，如果不存在，就新建一个购物车键。</li>
+<li>对于接下来的HTTP请求，都要重复第一步，并且从购物车中保存的商品ID到数据库中取得对应的<code>Product</code>对象数据。</li>
 </ol>
-<p>下边来实现功能。先到settings.py里新增一行：</p>
+<p>编辑<code>settings.py</code>里新增一行：</p>
 <pre>CART_SESSION_ID = 'cart'</pre>
 <p>这就是我们的购物车键名称，由于session对于每个用户都通过中间件管理，所以可以在所有用户的session里都使用统一的这个名称。</p>
-<p>然后新建一个应用专门来控制购物车，启动新应用 cart，然后加入到settings.py中。在cart应用目录下新建cart.py然后编写：</p>
+<p>然后新建一个应用来管理购物车，启动系统命令行并创建新应用<code>cart</code>：</p>
+<pre>
+python manage.py startapp cart
+</pre>
+<p>然后在<code>settings.py</code>中激活该应用：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    'shop.apps.ShopConfig',
+    <b>'cart.apps.CartConfig',</b>
+]
+</pre>
+<p>在<code>cart</code>应用中创建<code>cart.py</code>，添加如下代码：</p>
 <pre>
 from decimal import Decimal
 from django.conf import settings
 from shop.models import Product
 
-
-class Cart(object):
-def __init__(self):
-"""
-Initialize the cart.
-"""
-self.session = request.session
-cart = self.session.get(settings.CART_SESSION_ID)
-if not cart:
-cart = self.session[settings.CART_SESSION_ID] = {}
-self.cart =cart
-</pre>
-<p>这里先编写了一个用来管理cart的类，考虑到每个用户都会有session，可以编写一个类，对应每个用户就实例化一个管理类。目前这个类只编写了初始化函数，里边的逻辑是判断request中是否有cart键，有就取过来，没有就新建一个空白键cart。</p>
-<p>初始化了cart之后，下一步就是对cart进行修改。我们打算把商品ID作为键名，将数量和价格作为对应的值。这样可以保证不会重复添加相同的商品，同一个商品只会有一个唯一的键。</p>
-<p>继续编写Cart类里的修改购物车功能：</p>
-<pre>
-class Cart(object):
-
-def add(self, product, quantity=1, update_quantity=False):
-"""
-向购物车中增加商品或者更新购物车中的数量
-:param product: Product实例对象
-:param quantity: 增加商品的数量，为整数，默认为1
-:param update_quantity: False 表示在原有数量上增加，True表示覆盖原有数量
-:return: None
-"""
-
-product_id = str(product.id)
-if product_id not in self.cart:
-self.cart[product_id] = {'quantity': 0, 'price': str(product.price)}
-if update_quantity:
-self.cart[product_id]['quantity'] = quantity
-else:
-self.cart[product_id]['quantity'] += quantity
-self.save()
-
-def save(self):
-# 设置session.modified的值为True，中间件在看到这个属性的时候，就会保存session
-self.session.modified = True
-</pre>
-<p>新增了add和save两个方法。add的功能在注释里已经基本写清楚了，具有设置新数量或增加数量的功能。对于每个session，建立一个cart键，然后其中的套一个product_id键，然后又有两个键price和quantity。一共是三层字典嵌套。</p>
-
-<p>还需要编写从购物车中去掉商品的方法，逻辑比较简单，判断要删除的东西存在于购物车里，就删掉：</p>
-<pre>
 class Cart:
 
-def remove(self, product):
-"""
-从购物车中删除商品
-:param product: 要删除的Product实例
-:return: None
-"""
-product_id = str(product.id)
-if product_id in self.cart:
-del self.cart[product_id]
-self.save()
+    def __init__(self):
+        """
+        初始化购物车对象
+        """
+        self.session = request.session
+        cart = self.session.get(settings.CART_SESSION_ID)
+        if not cart:
+            # 向session中存入空白购物车数据
+            cart = self.session[settings.CART_SESSION_ID] = {}
+        self.cart =cart
 </pre>
-<p>在后边展示购物车的界面中，很容易就想到需要遍历购物车内的所有商品。因此现在先写一个__iter()__方法，生成迭代器，供将for循环使用。</p>
+<p>这是我们用于管理购物车的Cart类，使用request对象进行初始化，使用<code>self.session = request.session</code>让类中的其他方法可以访问session数据。首先，使用<code>self.session.get(settings.CART_SESSION_ID)</code>尝试获取购物车对象。如果不存在购物车对象，通过为购物车键设置一个空白字段对象从而新建一个购物车对象。我们将使用商品ID作为字典中的键，其值又是一个由数量和价格构成的字典，这样可以保证不会重复生成同一个商品的购物车数据，也简化了取出购物车数据的方式。</p>
+<p>创建将商品添加到购物车和更新数量的方法，为Cart类添加<code>add()</code>和<code>save()</code>方法：</p>
 <pre>
 class Cart:
+    # ......
+    <b>def add(self, product, quantity=1, update_quantity=False):</b>
+    <b>"""</b>
+    <b>向购物车中增加商品或者更新购物车中的数量</b>
+    <b>"""</b>
 
-def __iter__(self):
-"""
-迭代所有购物车内的商品
-:return: 迭代器对象
-"""
-product_ids = self.cart.keys()
-products = Product.objects.filter(id__in=product_ids)
-cart = self.cart.copy()
-for product in products:
-cart[str(product.id)]['product'] = product
+    <b>product_id = str(product.id)</b>
+    <b>if product_id not in self.cart:</b>
+        <b>self.cart[product_id] = {'quantity': 0, 'price': str(product.price)}</b>
+    <b>if update_quantity:</b>
+        <b>self.cart[product_id]['quantity'] = quantity</b>
+    <b>else:</b>
+        <b>self.cart[product_id]['quantity'] += quantity</b>
+    <b>self.save()</b>
 
-for item in cart.values():
-item['price'] = Decimal(item['price'])
-item['total_price'] = item['price'] * item['quantity']
-yield item
+    <b>def save(self):</b>
+    <b># 设置session.modified的值为True，中间件在看到这个属性的时候，就会保存session</b>
+        <b>self.session.modified = True</b>
 </pre>
-<p>这段代码的逻辑是：取到所有购物车内商品的QuerySet，然后对购物车对象进行了一个浅拷贝。浅拷贝之后的局部变量cart的第一级键不会再变化，但是其中嵌套的字典依然可以变化。原来我们购物车的结构是<code>{'cart': {'product_id': {'quantity': quantity, 'price': price}}}</code>，并且里边都是字符串。但是现在需要迭代其中的商品，就不能简单的返回字符串。</p>
-<p>在浅拷贝之后，给这个购物车新增加了product键对应Product实例。</p>
-<p>之后用临时变量item返回每个对象的内容，把item键price的值设置为Decimal类型，然后新增了一个总价字段，最后用yield返回每个item。此时每个item的结构是这样的：<code>{'quantity': quantity, 'price': new_price, 'product': product, 'total_price': total_price}</code>，可以想象，未来通过for循环遍历的时候，只需要将这几个键的内容取出来就可以了。</p>
-<p>考虑到购物车还需要显示其中一共有几件商品，因此再写一个__len__()方法，以让我们的类可以通过内置方法len来显示长度，实现逻辑就是遍历所有购物车内商品的quantity然后求和：</p>
+<p><code>add()</code>方法接受以下参数：</p>
+<ul>
+    <li><code>product</code>：要向购物车内添加或更新的<code>product</code>对象</li>
+    <li><code>quantity</code>：商品数量，为整数，默认值为1</li>
+    <li><code>update_quantity</code>：布尔值，为<code>True</code>表示要将商品数量更新为<code>quantity</code>参数的值，为<code>False</code>表示将当前数量增加<code>quantity</code>参数的值。</li>
+</ul>
+<p>我们把商品的ID转换成字符串形式然后作为购物车中商品键名，这是因为Django使用JSON序列化session数据，而JSON只允许字符串作为键名。商品价格也被从<code>decimal</code>类型转换为字符串，同样是为了序列化。最后，使用<code>save()</code>方法把购物车数据保存进session。</p>
+<p><code>save()</code>方法中修改了<code>session.modified = True</code>，中间件通过这个判断session已经改变然后存储session数据。</p>
+<p>我们还需要从购物车中删除商品的方法，为<code>Cart</code>类添加以下方法：</p>
 <pre>
 class Cart:
-
-def __len__(self):
-"""
-购物车内一共有几种商品
-:return: INT
-"""
-return sum(item['quantity'] for item in self.cart.values())
+    # ......
+    <b>def remove(self, product):</b>
+        <b>"""</b>
+        <b>从购物车中删除商品</b>
+        <b>"""</b>
+        <b>product_id = str(product.id)</b>
+        <b>if product_id in self.cart:</b>
+            <b>del self.cart[product_id]</b>
+            <b>self.save()</b>
 </pre>
-<p>与这个方法相同的思路，再编写一个计算总价的方法：</p>
+<p><code>remove()</code>根据id从购物车中移除对应的商品，然后调用<code>save()</code>方法保存session数据。</p>
+<p>为了使用方便，我们会需要遍历购物车内的所有商品，用于展示等操作。为此需要在<code>Cart</code>类内定义<code>__iter()__</code>方法，生成迭代器，供将for循环使用。</p>
 <pre>
 class Cart:
-def get_total_price(self):
-return sum(Decimal(item['price']*item['quantity']) for item in self.cart.values())
+    # ......
+    <b>def __iter__(self):</b>
+        <b>"""</b>
+        <b>遍历所有购物车中的商品并从数据库中取得商品对象</b>
+        <b>"""</b>
+        <b>product_ids = self.cart.keys()</b>
+        <b># 获取购物车内的所有商品对象</b>
+        <b>products = Product.objects.filter(id__in=product_ids)</b>
+
+        <b>cart = self.cart.copy()</b>
+        <b>for product in products:</b>
+            <b>cart[str(product.id)]['product'] = product</b>
+
+        <b>for item in cart.values():</b>
+            <b>item['price'] = Decimal(item['price'])</b>
+            <b>item['total_price'] = item['price'] * item['quantity']</b>
+            <b>yield item</b>
 </pre>
-<p>最后，再编写一个清空购物车的功能。</p>
+<p>在<code>__iter()__</code>方法中，获取了当前购物车中所有商品的Product对象。然后浅拷贝了一份<code>cart</code>购物车数据，并为其中的每个商品添加了键为<code>product</code>，值为商品对象的键值对。最后迭代所有的值，为把其中的价格转换为<code>decimal</code>类，增加一个<code>total_price</code>键来保存总价。这样我们就可以迭代购物车对象了。</p>
+<p>还需要显示购物车中有几件商品。当执行<code>len()</code>方法的时候，Python会调用对象的<code>__len__()</code>方法，为<code>Cart</code>类添加如下的<code>__len__()</code>方法：</p>
 <pre>
 class Cart:
-
-def clear(self):
-del self.session[settings.CART_SESSION_ID]
-self.save()
+    # ......
+    <b>def __len__(self):</b>
+        <b>"""</b>
+        <b>购物车内一共有几种商品</b>
+        <b>"""</b>
+        <b>return sum(item['quantity'] for item in self.cart.values())</b>
 </pre>
-<p>这样就编写完了这个类。这里的知识其实和session没有很大的关系，主要还是Python中编写类的特殊方法的知识。</p>
-<p style="color: red;">这里还要提一下的是，原书的代码定义Cart类的时候是 <code>class Cart(object):</code>可能是作者为了兼容Python2的代码。这里没有按照原书的代码，而是统一按照Python3的新式类方法来编写。</p>
+<p>这个方法返回所有商品的数量的合计。</p>
+<p>再编写一个计算购物车商品总价的方法：</p>
+<pre>
+class Cart:
+    # ......
+    <b>def get_total_price(self):</b>
+        <b>return sum(Decimal(item['price']*item['quantity']) for item in self.cart.values())</b>
+</pre>
+<p>最后，再编写一个清空购物车的方法：</p>
+<pre>
+class Cart:
+    # ......
+    <b>def clear(self):</b>
+        <b>del self.session[settings.CART_SESSION_ID]</b>
+        <b>self.save()</b>
+</pre>
+<p>现在就编写完了用于管理购物车的<code>Cart</code>类。</p>
+<p class="emp">译者注，原书的代码采用<code>class Cart(object)</code>的写法，译者将其修改为Python 3的新式类编写方法。</p>
 
-<h3 id="c7-2-5"><span class="title">2.4</span>创建购物车视图</h3>
+<h3 id="c7-2-5"><span class="title">2.5</span>创建购物车视图</h3>
 <p>建立完了管理购物车的类之后，就可以来编写视图了。购物车还记得最开始说类似一个小数据库，所以功能不外乎增删改查。视图的作用，就是将用户前端的增删改查动作获取到，然后调用购物车类来进行增删改查。</p>
 <p>针对购物车类的功能，显然我们需要编写3个视图函数：</p>
 <ul>
-<li>一个视图函数用来增加或者更新购物车内的商品和数量（增和改）</li>
-<li>一个视图删除购物车内的商品（删）</li>
-<li>一个视图显示购物车内的详细内容和总价（查）</li>
+    <li>一个视图函数用来增加或者更新购物车内的商品和数量（增和改）</li>
+    <li>一个视图删除购物车内的商品（删）</li>
+    <li>一个视图显示购物车内的详细内容和总价（查）</li>
 </ul>
 <p>现在就来编写这三个视图。首先是增加和更新商品的视图。</p>
 <p>为了把商品增加到购物车，除了具体商品的实例肯定在页面中获取了之外，还必须要让用户选择增加的数量。因此先到cart应用中建立form.py，在其中编写一个表单类：</p>
@@ -512,12 +523,12 @@ PRODUCT_QUANTITY_CHOICES = [(i, str(i)) for i in range(1, 21)]
 
 
 class CartAddProductForm(forms.Form):
-quantity = forms.TypedChoiceField(choices=PRODUCT_QUANTITY_CHOICES, coerce=int)
-update = forms.BooleanField(required=False, initial=False, widget=forms.HiddenInput)
+    quantity = forms.TypedChoiceField(choices=PRODUCT_QUANTITY_CHOICES, coerce=int)
+    update = forms.BooleanField(required=False, initial=False, widget=forms.HiddenInput)
 
 </pre>
 <p>这个表单包括两个字段，第一个字段是给用户进行选择数量，这里我们通过choices限定了用户选择的数量为1-20，使用了coerce=int表示将该字段的数据转换成整型。coerce参数只能使用在<a href="https://docs.djangoproject.com/en/2.1/ref/forms/fields/#typedchoicefield" target="_blank">TypedChoiceField</a>和<a
-    href="https://docs.djangoproject.com/en/2.1/ref/forms/fields/#typedmultiplechoicefield" target="_blank">TypedMultipleChoiceField</a>上。</p>
+        href="https://docs.djangoproject.com/en/2.1/ref/forms/fields/#typedmultiplechoicefield" target="_blank">TypedMultipleChoiceField</a>上。</p>
 <p>第二个字段update，用于确认用户是增加数量还是覆盖原来的数量。如果为True，则覆盖，如果为False则增加，这里用了HiddeInput就不想给用户看了。</p>
 <p>有了表单以后来建立视图，编写cart应用中的views.py：</p>
 <pre>
@@ -530,32 +541,32 @@ from .form import CartAddProductForm
 
 @require_POST
 def cart_add(request, product_id):
-# 实例化购物车对象
-cart = Cart(request)
-# 取得当前商品
-product = get_object_or_404(Product, id=product_id)
-# 取得POST表单对象
-form = CartAddProductForm(request.POST)
-# 如果表单验证通过，调用cart类的add方法然后跳转到购物车详情页面
-if form.is_valid():
-cd = form.cleaned_data
-cart.add(product=product, quantity=cd['quantity'], update_quantity=cd['update'])
-return redirect('cart:cart_detail')
+    # 实例化购物车对象
+    cart = Cart(request)
+    # 取得当前商品
+    product = get_object_or_404(Product, id=product_id)
+    # 取得POST表单对象
+    form = CartAddProductForm(request.POST)
+    # 如果表单验证通过，调用cart类的add方法然后跳转到购物车详情页面
+    if form.is_valid():
+        cd = form.cleaned_data
+        cart.add(product=product, quantity=cd['quantity'], update_quantity=cd['update'])
+    return redirect('cart:cart_detail')
 </pre>
 <p>业务逻辑已经写在了注释里，这个视图的功能非常类似京东的商品详情页面，点击加入购物车的按钮，之后会跳转到另外一个界面，可以返回商品页或者查看购物车，这里我们就直接跳转到了购物车详情页。</p>
 <p>再来编写删除商品的视图：</p>
 <pre>
 def cart_remove(request, product_id):
-cart = Cart(request)
-product = get_object_or_404(Product, id=product_id)
-cart.remove(product)
-return redirect('cart:cart_detail')
+    cart = Cart(request)
+    product = get_object_or_404(Product, id=product_id)
+    cart.remove(product)
+    return redirect('cart:cart_detail')
 </pre>
 <p>删除方法很简单，继续来编写展示视图：</p>
 <pre>
 def cart_detail(request):
-cart = Cart(request)
-return render(request, 'cart/detail.html', {'cart': cart})
+    cart = Cart(request)
+    return render(request, 'cart/detail.html', {'cart': cart})
 </pre>
 <p>视图都编写好了之后，在cart应用里新建urls.py：</p>
 <pre>
@@ -564,9 +575,9 @@ from . import views
 
 app_name = 'cart'
 urlpatterns = [
-path('', views.cart_detail, name='cart_detail'),
-path('add/&lt;int:product_id>/', views.cart_add, name='cart_add'),
-path('remove/&lt;int:product_id>/', views.cart_remove, name='cart_remove'),
+    path('', views.cart_detail, name='cart_detail'),
+    path('add/&lt;int:product_id>/', views.cart_add, name='cart_add'),
+    path('remove/&lt;int:product_id>/', views.cart_remove, name='cart_remove'),
 ]
 </pre>
 <p>在项目的一级路由内增加一条，将cart路径转发到cart应用的二级路由里：</p>
@@ -584,73 +595,73 @@ path('cart/', include('cart.urls', namespace='cart')),
 {% load static %}
 
 {% block title %}
-Your shopping cart
+    Your shopping cart
 {% endblock %}
 
 {% block content %}
-&lt;h1>Your shopping cart&lt;/h1>
-&lt;table class="cart">
-&lt;thead>
-&lt;tr>
-&lt;th>Image&lt;/th>
-&lt;th>Product&lt;/th>
-&lt;th>Quantity&lt;/th>
-&lt;th>Remove&lt;/th>
-&lt;th>Unit price&lt;/th>
-&lt;th>Price&lt;/th>
-&lt;/tr>
-&lt;/thead>
-&lt;tbody>
-{% for item in cart %}
-{% with product=item.product %}
-&lt;tr>
-    &lt;td>
-        &lt;a href="{{ product.get_absolute_url }}">
-            &lt;img src="
-                    {% if product.image %}{{ product.image.url }}{% else %}{% static 'img/no_image.png' %}{% endif %}"
-                 alt="">
-        &lt;/a>
-    &lt;/td>
-    &lt;td>{{ product.name }}&lt;/td>
-    &lt;td>{{ item.quantity }}&lt;/td>
-    &lt;td>
-        &lt;a href="{% url 'cart:cart_remove' product.id %}">Remove&lt;/a>
-    &lt;/td>
-    &lt;td class="num">${{ item.price }}&lt;/td>
-    &lt;td class="num">${{ item.total_price }}&lt;/td>
-&lt;/tr>
-{% endwith %}
-{% endfor %}
+    &lt;h1>Your shopping cart&lt;/h1>
+    &lt;table class="cart">
+        &lt;thead>
+        &lt;tr>
+            &lt;th>Image&lt;/th>
+            &lt;th>Product&lt;/th>
+            &lt;th>Quantity&lt;/th>
+            &lt;th>Remove&lt;/th>
+            &lt;th>Unit price&lt;/th>
+            &lt;th>Price&lt;/th>
+        &lt;/tr>
+        &lt;/thead>
+        &lt;tbody>
+        {% for item in cart %}
+            {% with product=item.product %}
+                &lt;tr>
+                    &lt;td>
+                        &lt;a href="{{ product.get_absolute_url }}">
+                            &lt;img src="
+                                    {% if product.image %}{{ product.image.url }}{% else %}{% static 'img/no_image.png' %}{% endif %}"
+                                 alt="">
+                        &lt;/a>
+                    &lt;/td>
+                    &lt;td>{{ product.name }}&lt;/td>
+                    &lt;td>{{ item.quantity }}&lt;/td>
+                    &lt;td>
+                        &lt;a href="{% url 'cart:cart_remove' product.id %}">Remove&lt;/a>
+                    &lt;/td>
+                    &lt;td class="num">${{ item.price }}&lt;/td>
+                    &lt;td class="num">${{ item.total_price }}&lt;/td>
+                &lt;/tr>
+            {% endwith %}
+        {% endfor %}
 
-&lt;tr class="total">
-&lt;td>total&lt;/td>
-&lt;td colspan="4">&lt;/td>
-&lt;td class="num">${{ cart.get_total_price }}&lt;/td>
-&lt;/tr>
-&lt;/tbody>
-&lt;/table>
-&lt;p class="text-right">
-&lt;a href="{% url 'shop:product_list' %}" class="button light">Continue shopping&lt;/a>
-&lt;a href="#" class="button">Checkout&lt;/a>
-&lt;/p>
+            &lt;tr class="total">
+                &lt;td>total&lt;/td>
+                &lt;td colspan="4">&lt;/td>
+                &lt;td class="num">${{ cart.get_total_price }}&lt;/td>
+            &lt;/tr>
+        &lt;/tbody>
+    &lt;/table>
+    &lt;p class="text-right">
+        &lt;a href="{% url 'shop:product_list' %}" class="button light">Continue shopping&lt;/a>
+        &lt;a href="#" class="button">Checkout&lt;/a>
+    &lt;/p>
 {% endblock %}
 </pre>
 <p>虽然模板很长，但是逻辑很清晰，使用了一个表格展示购物车的内容。表头固定，表内的每一行通过迭代购物车中的每个item，展示对应的字段内容。还留出了删除该商品的链接。最后在表格底部展示购物车总价。</p>
 <p>加入购物车的功能如前所述，需要修改商品详情页，注意我们为加入购物车建立了一个表单，所以先要修改product_detail视图函数：</p>
 <pre>
 def product_detail(request, id, slug):
-product = get_object_or_404(Product, id=id, slug=slug, available=True)
-cart_product_form = CartAddProductForm()
-return render(request, 'shop/product/detail.html', {'product': product, 'cart_product_form': cart_product_form})
+    product = get_object_or_404(Product, id=id, slug=slug, available=True)
+    cart_product_form = CartAddProductForm()
+    return render(request, 'shop/product/detail.html', {'product': product, 'cart_product_form': cart_product_form})
 </pre>
 <p>修改后的视图函数就把表单对象传到了模板中，再来修改shop/templates/shop/product/detail.html模板增加相关内容：</p>
 <pre>
 {#在 &lt;p class="price">${{ product.price }}&lt;/p> 这行后追加#}
-&lt;form action="{% url 'cart:cart_add' product.id %}" method="post">
-{{ cart_product_form }}
-{% csrf_token %}
-&lt;input type="submit" value="Add to cart">
-&lt;/form>
+    &lt;form action="{% url 'cart:cart_add' product.id %}" method="post">
+        {{ cart_product_form }}
+        {% csrf_token %}
+        &lt;input type="submit" value="Add to cart">
+    &lt;/form>
 </pre>
 <p>然后启动站点来实验一下相关功能，可以看到商品详情页内增加了新的功能：</p>
 <img src="http://img.conyli.cc/django2/C07-05.jpg" alt="">
@@ -662,10 +673,10 @@ return render(request, 'shop/product/detail.html', {'product': product, 'cart_pr
 <p>需要实现这个功能，只需要在购物车详情视图和模板中做一个小修改即可，先来编辑cart应用里的cart_detail视图：</p>
 <pre>
 def cart_detail(request):
-cart = Cart(request)
-for item in cart:
-item['update_quantity_form'] = CartAddProductForm(initial={'quantity': item['quantity'], 'update': True})
-return render(request, 'cart/detail.html', {'cart': cart})
+    cart = Cart(request)
+    for item in cart:
+        item['update_quantity_form'] = CartAddProductForm(initial={'quantity': item['quantity'], 'update': True})
+    return render(request, 'cart/detail.html', {'cart': cart})
 </pre>
 <p>这个视图在每次进入购物车详情页面的时候，给所有的商品添加了一个键值对，值是initial里的数据初始化的CartAddProductForm实例。</p>
 <p>为什么要这么做呢，其实就是为了区分当前的修改是来自购物车详情页面的，这里的修改都需要覆盖原数量。</p>
@@ -674,12 +685,12 @@ return render(request, 'cart/detail.html', {'cart': cart})
 <pre>
 {#修改&lt;td>{{ item.quantity }}&lt;/td>这一行#}
 &lt;td>
-&lt;form action="{% url 'cart:cart_add' product.id %}" method="post">
-{{ item.update_quantity_form.quantity }}
-{{ item.update_quantity_form.update }}
-&lt;input type="submit" value="Update">
-{% csrf_token %}
-&lt;/form>
+    &lt;form action="{% url 'cart:cart_add' product.id %}" method="post">
+        {{ item.update_quantity_form.quantity }}
+        {{ item.update_quantity_form.update }}
+        &lt;input type="submit" value="Update">
+        {% csrf_token %}
+    &lt;/form>
 &lt;/td>
 </pre>
 <p>修改之后，就是将原来的数字部分改成了一个表单，表单的数据就是用视图函数中初始化的表单类的数据填充的，这样隐藏的update字段的值变成了True，只要是从这个页面提交给cart_add视图的表单，都会覆盖原来数量。</p>
@@ -691,36 +702,36 @@ return render(request, 'cart/detail.html', {'cart': cart})
 <p>回忆一下前博客项目对base.html显示最多评论的文章是使用了自定义的template tag；社交网站的base.html的顶部，为了知道当前的内容以便应用CSS样式，每个视图都传了一个section变量。这都是一种技巧。更通用的做法就像社交网站base.html的消息部分，直接采用request.messages变量。</p>
 <p>django中的上下文管理器，就是能够接受一个request请求对象作为参数，然后给request对象附加一个键值对的函数。当默认启动一个项目的时候，settings.py中的 TEMPLATES 设置中的<code>conetext_processors</code>部分，就是给模板附加上下文的上下文管理器，有这么几个：</p>
 <ul>
-<li>django.template.context_processors.debug：这个上下文管理器附加了布尔类型的debug变量，以及sql_queries变量，表示请求中执行的SQL查询</li>
-<li>django.template.context_processors.request：这个上下文管理器设置了request变量</li>
-<li>django.contrib.auth.context_processors.auth：这个上下文管理器设置了user变量</li>
-<li>django.contrib.messages.context_processors.messages：这个上下文管理器设置了messages变量</li>
+    <li>django.template.context_processors.debug：这个上下文管理器附加了布尔类型的debug变量，以及sql_queries变量，表示请求中执行的SQL查询</li>
+    <li>django.template.context_processors.request：这个上下文管理器设置了request变量</li>
+    <li>django.contrib.auth.context_processors.auth：这个上下文管理器设置了user变量</li>
+    <li>django.contrib.messages.context_processors.messages：这个上下文管理器设置了messages变量</li>
 </ul>
 <p>除此之外，django还启用了django.template.context_processors.csrf来防止跨站请求攻击。这个组件没有写在settings.py里，但是是强制启用的，无法进行设置和关闭。有关所有上下文管理器的详情请参见<a
-    href="https://docs.djangoproject.com/en/2.1/ref/templates/api/#built-in-template-context-processors" target="_blank">官方文档</a>。</p>
+        href="https://docs.djangoproject.com/en/2.1/ref/templates/api/#built-in-template-context-processors" target="_blank">官方文档</a>。</p>
 <p>现在我们就来设置一个自定义上下文管理器，原来每个视图都将cart变量传递给模板，以后就可以在所有模板内直接使用cart变量。</p>
 <p>在cart应用内新建一个context_processors.py文件，同视图，模板以及其他内容一样，django内的程序可以写在应用内的任何地方，但为了结构良好，还是分离出各个组件比较好：</p>
 <pre>
 from .cart import Cart
 def cart(request):
-return {'mycart': Cart(request)}
+    return {'mycart': Cart(request)}
 </pre>
 <p>有点简单是不是，django规定的上下文处理器，就是一个函数，接受request请求作为参数，然后返回一个键值对。键的名称就是未来在模板中可以使用的request.XXX名称。</p>
 <p>之后在settings.py里将我们的自定义上下文管理器加到TEMPLATES设置中：</p>
 <pre>
 TEMPLATES = [
-{
-'BACKEND': 'django.template.backends.django.DjangoTemplates',
-'DIRS': [os.path.join(BASE_DIR, 'templates')]
-,
-'APP_DIRS': True,
-'OPTIONS': {
-'context_processors': [
-......
-<b>'cart.context_processors.cart'</b>
-],
-},
-},
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [os.path.join(BASE_DIR, 'templates')]
+        ,
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                ......
+                <b>'cart.context_processors.cart'</b>
+            ],
+        },
+    },
 ]
 </pre>
 <p>定义了上下文管理器之后，只要一个模板被渲染，上下文管理器就会执行然后附加上变量名。值得注意的是，上下文管理器并不是必须的。如果上下文的内容涉及到数据库查询等比较耗时的操作，或者上下文管理器中的变量，并不是所有页面都需要，则一般情况下首先考虑的是使用<b>自定义模板变量</b>。否则会极大的影响网站的效率。</p>
@@ -729,16 +740,16 @@ TEMPLATES = [
 {#修改&lt;div class="cart">的内容#}
 
 &lt;div class="cart">
-{% with total_items=mycart|length %}
-{% if mycart|length > 0 %}
-Your cart:
-&lt;a href="{% url 'cart:cart_detail' %}">{{ total_items }} items{{ total_items|pluralize }},
-${{ mycart.get_total_price }}
-&lt;/a>
-{% else %}
-Your cart is empty.
-{% endif %}
-{% endwith %}
+    {% with total_items=mycart|length %}
+        {% if mycart|length > 0 %}
+            Your cart:
+            &lt;a href="{% url 'cart:cart_detail' %}">{{ total_items }} items{{ total_items|pluralize }},
+            ${{ mycart.get_total_price }}
+            &lt;/a>
+        {% else %}
+            Your cart is empty.
+        {% endif %}
+    {% endwith %}
 &lt;/div>
 </pre>
 <p>启动站点，可以发现现在购物车栏正常工作了：</p>
@@ -747,7 +758,7 @@ Your cart is empty.
 <pre>
 from .cart import Cart
 def cart(request):
-return {'<b style="color:red">cart</b>': Cart(request)}
+    return {'<b style="color:red">cart</b>': Cart(request)}
 </pre>
 <p style="color:red">由于所有的用到购物车界面的模板都继承了base.html，视图函数都传入了名叫cart的变量，base.html里也使用cart名称的变量，作者在这里把全局变量和传入的变量设置成一样，没有很好的体现出区分效果。故将上下文管理器和base.html中的变量名cart都修改为mycart，以体现出mycart和cart是两个来自于不同地方的变量。</p>
 
@@ -765,37 +776,37 @@ from shop.models import Product
 
 
 class Order(models.Model):
-first_name = models.CharField(max_length=50)
-last_name = models.CharField(max_length=50)
-email = models.EmailField()
-address = models.CharField(max_length=250)
-postal_code = models.CharField(max_length=20)
-city = models.CharField(max_length=100)
-created = models.DateTimeField(auto_now_add=True)
-updated = models.DateTimeField(auto_now=True)
-paid = models.BooleanField(default=False)
+    first_name = models.CharField(max_length=50)
+    last_name = models.CharField(max_length=50)
+    email = models.EmailField()
+    address = models.CharField(max_length=250)
+    postal_code = models.CharField(max_length=20)
+    city = models.CharField(max_length=100)
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+    paid = models.BooleanField(default=False)
 
-class Meta:
-ordering = ('-created',)
+    class Meta:
+        ordering = ('-created',)
 
-def __str__(self):
-return 'Order {}'.format(self.id)
+    def __str__(self):
+        return 'Order {}'.format(self.id)
 
-def get_total_cost(self):
-return sum(item.get_cost() for item in self.items.all())
+    def get_total_cost(self):
+        return sum(item.get_cost() for item in self.items.all())
 
 
 class OrderItem(models.Model):
-order = models.ForeignKey(Order, related_name='items', on_delete=models.CASCADE)
-product = models.ForeignKey(Product, related_name='order_items', on_delete=models.CASCADE)
-price = models.DecimalField(max_digits=10, decimal_places=2)
-quantity = models.PositiveIntegerField(default=1)
+    order = models.ForeignKey(Order, related_name='items', on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, related_name='order_items', on_delete=models.CASCADE)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.PositiveIntegerField(default=1)
 
-def __str__(self):
-return '{}'.format(self.id)
+    def __str__(self):
+        return '{}'.format(self.id)
 
-def get_cost(self):
-return self.price * self.quantity
+    def get_cost(self):
+        return self.price * self.quantity
 </pre>
 <p>建立了两个模型Order和OrderItem，Order模型用来存储订单号，和订单相关的用户信息，以及一个是否支付的布尔字段。稍后将在支付系统中将使用该字段。还定义了一个获得总金额的方法，以便方便的知道订单的总额以便支付。</p>
 <p>OrderItem两个外键分别连接到商品表和订单表，然后还存储了生成订单时候的价格和数量。由于价格是会变化的，所以在订单中只存储生成订单时候的价格用于计算总付款金额。然后定义了一个get_cost方法。这个类看起来类似多对多关系的的中间表，但实际上发挥的是一对一的功能。因为无需再到Product中去查询金额。</p>
@@ -806,17 +817,17 @@ from .models import Order, OrderItem
 
 
 class OrderItemInline(admin.TabularInline):
-model = OrderItem
-raw_id_fields = ['product']
+    model = OrderItem
+    raw_id_fields = ['product']
 
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-list_display = ['id', 'first_name', 'last_name', 'email',
-    'address', 'postal_code', 'city', 'paid',
-    'created', 'updated']
-list_filter = ['paid', 'created', 'updated']
-inlines = [OrderItemInline]
+    list_display = ['id', 'first_name', 'last_name', 'email',
+                    'address', 'postal_code', 'city', 'paid',
+                    'created', 'updated']
+    list_filter = ['paid', 'created', 'updated']
+    inlines = [OrderItemInline]
 </pre>
 <p>这次注册模型又引入了一些新的形式和字段。对OrderItem类继承了admin.TabularInline类，然后在OrderAdmin类中使用了inlines参数指定了OrderItemInline类。意思是将OrderItem类以内联（行显示）的状态包含在Order类中，显示在同一页。</p>
 <p>这种注册模型的方式仅影响展示形式，不会影响models.py中定义的两个类之间的关系。</p>
@@ -827,9 +838,9 @@ inlines = [OrderItemInline]
 <p>用过电商网站的读者应该知道，比如京东从购物车页面点击“去结算”按钮，会进入到一个结算页，供用户填写信息，选择地址，支付方式和配送方式等。这个页面实际上也是填写一个表单，再点提交才会真正生成订单让你付款。</p>
 <p>类似的，我们生成一个新订单有如下步骤：</p>
 <ol>
-<li>给用户提供一个表单供填写</li>
-<li>根据用户填写的内容生成一个新Order类实例，然后将Cart中的商品放入OrderItem实例中并与Order实例建立外键关系</li>
-<li>清理全部购物车内容，然后重定向用户到一个成功的页面或者进行其他动作。</li>
+    <li>给用户提供一个表单供填写</li>
+    <li>根据用户填写的内容生成一个新Order类实例，然后将Cart中的商品放入OrderItem实例中并与Order实例建立外键关系</li>
+    <li>清理全部购物车内容，然后重定向用户到一个成功的页面或者进行其他动作。</li>
 </ol>
 <p>首先就利用内置表单功能建立订单表单，在orders应用中新建forms.py：</p>
 <pre>
@@ -838,9 +849,9 @@ from .models import Order
 
 
 class OrderCreateForm(forms.ModelForm):
-class Meta:
-model = Order
-fields = ['first_name', 'last_name', 'email', 'address', 'postal_code', 'city']
+    class Meta:
+        model = Order
+        fields = ['first_name', 'last_name', 'email', 'address', 'postal_code', 'city']
 </pre>
 <p>采用内置的方法建立了包含这些字段的表单，现在针对这个表单要建立视图来控制表单，编辑orders应用中的views.py：</p>
 <pre>
@@ -851,22 +862,22 @@ from cart.cart import Cart
 
 
 def order_create(request):
-cart = Cart(request)
-if request.method == "POST":
-form = OrderCreateForm(request.POST)
-# 表单验证通过就对购物车内每一条记录生成OrderItem中对应的一条记录
-if form.is_valid():
-order = form.save()
-for item in cart:
-OrderItem.objects.create(order=order, product=item['product'], price=item['price'],
-                         quantity=item['quantity'])
-# 成功生成OrderItem之后清除购物车
-cart.clear()
-return render(request, 'orders/order/created.html', {'order': order})
+    cart = Cart(request)
+    if request.method == "POST":
+        form = OrderCreateForm(request.POST)
+        # 表单验证通过就对购物车内每一条记录生成OrderItem中对应的一条记录
+        if form.is_valid():
+            order = form.save()
+            for item in cart:
+                OrderItem.objects.create(order=order, product=item['product'], price=item['price'],
+                                         quantity=item['quantity'])
+            # 成功生成OrderItem之后清除购物车
+            cart.clear()
+            return render(request, 'orders/order/created.html', {'order': order})
 
-else:
-form = OrderCreateForm()
-return render(request, 'orders/order/create.html', {'cart': cart, 'form': form})
+    else:
+        form = OrderCreateForm()
+    return render(request, 'orders/order/create.html', {'cart': cart, 'form': form})
 </pre>
 <p>整体的逻辑是，如果是POST请求而且表单验证通过，对购物车里每一个商品都在OrderItem表里生成对应的一行记录，之后删除购物车，并且不再像模板内cart变量了。（当然我们有上下文管理器，还是可以用）。</p>
 <p>如果是POST请求但表单验证失败，返回原来表单数据，如果是GET请求，返回空白表单及购物车数据。注意，这里两个分支渲染的是两个不同的页面 create.html和 created.html。</p>
@@ -878,13 +889,13 @@ from . import views
 app_name = 'orders'
 
 urlpatterns = [
-path('create/', views.order_create, name='order_create'),
+    path('create/', views.order_create, name='order_create'),
 ]
 
 </pre>
 <p>再配置主路由myshop/urls.py：</p>
 <pre>
-path('orders/',include('orders.urls', namespace='orders')),
+    path('orders/',include('orders.urls', namespace='orders')),
 </pre>
 <p>注意这一行也要在转发到shop.urls那一行之前。</p>
 <p>既然现在我们有了视图函数，那就可以修改购物车详情页cart\templates\cart\detail.html的CHECKOUT按钮的链接了：</p>
@@ -900,26 +911,26 @@ Checkout
 {% endblock %}
 
 {% block content %}
-&lt;h1>Checkout&lt;/h1>
+    &lt;h1>Checkout&lt;/h1>
 
-&lt;div class="order-info">
-&lt;h3>Your order&lt;/h3>
-&lt;ul>
-{% for item in cart %}
-&lt;li>
-{{ item.quantity }} x {{ item.product.name }}
-&lt;span>${{ item.total_price }}&lt;/span>
-&lt;/li>
-{% endfor %}
-&lt;/ul>
-&lt;p>Total: ${{ cart.get_total_price }}&lt;/p>
-&lt;/div>
+    &lt;div class="order-info">
+        &lt;h3>Your order&lt;/h3>
+        &lt;ul>
+            {% for item in cart %}
+            &lt;li>
+                {{ item.quantity }} x {{ item.product.name }}
+                &lt;span>${{ item.total_price }}&lt;/span>
+            &lt;/li>
+            {% endfor %}
+        &lt;/ul>
+        &lt;p>Total: ${{ cart.get_total_price }}&lt;/p>
+    &lt;/div>
 
-&lt;form action="." method="post" class="order-form" novalidate>
-{{ form.as_p }}
-&lt;p>&lt;input type="submit" value="Place order">&lt;/p>
-{% csrf_token %}
-&lt;/form>
+    &lt;form action="." method="post" class="order-form" novalidate>
+        {{ form.as_p }}
+        &lt;p>&lt;input type="submit" value="Place order">&lt;/p>
+        {% csrf_token %}
+    &lt;/form>
 {% endblock %}
 </pre>
 <p>模板内容比较简单，展示购物车内的商品和总价，之后下边提供空白表单供填写。再来编辑created.html</p>
@@ -931,8 +942,8 @@ Thank you
 {% endblock %}
 
 {% block content %}
-&lt;h1>Thank you&lt;/h1>
-&lt;p>Your order has been successfully completed. Your order number is &lt;strong>{{ order.id }}&lt;/strong>.&lt;/p>
+    &lt;h1>Thank you&lt;/h1>
+    &lt;p>Your order has been successfully completed. Your order number is &lt;strong>{{ order.id }}&lt;/strong>.&lt;/p>
 {% endblock %}
 </pre>
 <p>created.html就是一个成功页面。现在运行站点，加入一些商品到购物车中，然后点击checkout，可以看到如下页面：</p>
@@ -995,10 +1006,10 @@ app.autodiscover_tasks()
 </pre>
 <p>这里的程序主要是和Celery相关，而不是django，解释如下：</p>
 <ul>
-<li>首先导入django 的环境变量，为Celery命令行创造环境。如果读者使用Pycharm开发django项目，Pycharm中启动Python console，实际上已经默认执行了该语句，作用就是将当前命令行环境配置成django项目。</li>
-<li>然后实例化了一个Celery对象</li>
-<li>调用Celery对象的.config_from_object方法，从我们的设置文件中读取设置。Celery除了可以通过实例化简单使用外，还支持设置文件进行设置，从而比较健壮的使用Celery。同时提供了一个命名为CELERY，说明我们的设置文件里，所有和CELERY相关的设置都以"CELERY"开头。</li>
-<li>最后我们调用.autodiscover_tasks()，让Celery自动发现所有的异步任务。Celery会在每个INSTALLED_APPS中列出的应用中寻找task.py文件，在里边寻找定义好的异步任务然后执行。</li>
+    <li>首先导入django 的环境变量，为Celery命令行创造环境。如果读者使用Pycharm开发django项目，Pycharm中启动Python console，实际上已经默认执行了该语句，作用就是将当前命令行环境配置成django项目。</li>
+    <li>然后实例化了一个Celery对象</li>
+    <li>调用Celery对象的.config_from_object方法，从我们的设置文件中读取设置。Celery除了可以通过实例化简单使用外，还支持设置文件进行设置，从而比较健壮的使用Celery。同时提供了一个命名为CELERY，说明我们的设置文件里，所有和CELERY相关的设置都以"CELERY"开头。</li>
+    <li>最后我们调用.autodiscover_tasks()，让Celery自动发现所有的异步任务。Celery会在每个INSTALLED_APPS中列出的应用中寻找task.py文件，在里边寻找定义好的异步任务然后执行。</li>
 </ul>
 <p>还需要在项目的__init__.py文件中导入celery模块，以让django运行的时候celery就运行，编辑myshop/__inti__.py：</p>
 <pre>
@@ -1020,19 +1031,19 @@ from .models import Order
 
 @task
 def order_created(order_id):
-"""
-当一个订单创建完成后发送邮件通知给用户
-:param order_id: 订单编号
-:return: mail_sent
-"""
+    """
+    当一个订单创建完成后发送邮件通知给用户
+    :param order_id: 订单编号
+    :return: mail_sent
+    """
 
-order = Order.objects.get(id=order_id)
-subject = 'Order {}'.format(order.id)
-message = 'Dear {},\n\nYou have successfully placed an order. Your order id is {}.'.format(order.first_name,
-                                                                               order_id)
-mail_sent = send_mail(subject, message, 'lee0709@vip.sina.com', [order.email])
-print(mail_sent, type(mail_sent))
-return mail_sent
+    order = Order.objects.get(id=order_id)
+    subject = 'Order {}'.format(order.id)
+    message = 'Dear {},\n\nYou have successfully placed an order. Your order id is {}.'.format(order.first_name,
+                                                                                               order_id)
+    mail_sent = send_mail(subject, message, 'lee0709@vip.sina.com', [order.email])
+    print(mail_sent, type(mail_sent))
+    return mail_sent
 </pre>
 <p>使用celery模块中的@task 装饰器装饰想成为异步任务的函数。推荐只给异步函数传入ID，让其去检索数据库。拼接好标题和正文后发送邮件。</p>
 <p>在之前已经学习过如何发送邮件，如果没有SMTP服务器，在settings.py里将邮件配置为打印到控制台上：</p>
@@ -1050,24 +1061,24 @@ from .task import order_created
 
 
 def order_create(request):
-cart = Cart(request)
-if request.method == "POST":
-form = OrderCreateForm(request.POST)
-# 表单验证通过就对购物车内每一条记录生成OrderItem中对应的一条记录
-if form.is_valid():
-order = form.save()
-for item in cart:
-OrderItem.objects.create(order=order, product=item['product'], price=item['price'],
-                         quantity=item['quantity'])
-# 成功生成OrderItem之后清除购物车
-cart.clear()
-<b># 成功完成订单后调用异步任务发送邮件</b>
-<b>order_created.delay(order.id)</b>
-return render(request, 'orders/order/created.html', {'order': order})
+    cart = Cart(request)
+    if request.method == "POST":
+        form = OrderCreateForm(request.POST)
+        # 表单验证通过就对购物车内每一条记录生成OrderItem中对应的一条记录
+        if form.is_valid():
+            order = form.save()
+            for item in cart:
+                OrderItem.objects.create(order=order, product=item['product'], price=item['price'],
+                                         quantity=item['quantity'])
+            # 成功生成OrderItem之后清除购物车
+            cart.clear()
+            <b># 成功完成订单后调用异步任务发送邮件</b>
+            <b>order_created.delay(order.id)</b>
+            return render(request, 'orders/order/created.html', {'order': order})
 
-else:
-form = OrderCreateForm()
-return render(request, 'orders/order/create.html', {'cart': cart, 'form': form})
+    else:
+        form = OrderCreateForm()
+    return render(request, 'orders/order/create.html', {'cart': cart, 'form': form})
 </pre>
 <p>被装饰过的异步函数对象有一个delay方法，将order.id作为参数，order.id就会被传给我们自行编写的函数。当每次有用户完成订单的时候，这个异步的函数对象就会被加入到队列，然后等着被worker执行。</p>
 <p>启动另外一个shell（必须是导入了当前环境的命令行窗口，比如Pycharm中启动的terminal），启动Celery worker，让工人等待干活：</p>
@@ -1083,10 +1094,10 @@ return render(request, 'orders/order/create.html', {'cart': cart, 'form': form})
 [2018-09-28 20:42:04,673: INFO/SpawnPoolWorker-8] child process 18224 calling self.run()
 [2018-09-28 20:42:05,225: WARNING/MainProcess] django.py:200: UserWarning: Using settings.DEBUG leads to a memory leak, never use this setting in p
 roduction environments!
-warnings.warn('Using settings.DEBUG leads to a memory leak, never '
+  warnings.warn('Using settings.DEBUG leads to a memory leak, never '
 [2018-09-28 20:42:05,227: INFO/MainProcess] celery@Notebook ready.
 </pre>
-<p>可以看到Celery默认去连接了RabbitMQ的服务，然后显示使用guest:账号连接成功；之后提醒我们在生成环境下不要使用DEBUG，会导致内存泄露。</p>
+<p>可以看到Celery默认去连接了RabbitMQ的服务，然后显示使用guest:账号连接成功；之后提醒我们在生产环境下不要使用DEBUG，会导致内存泄露。</p>
 <p>现在我们启动django站点，然后去实际提交一个订单。看到terminal窗口中出现：</p>
 <pre>
 [2018-09-28 20:51:37,255: INFO/MainProcess] Received task: orders.task.order_created[d9734042-2423-45cc-8109-a901f938bec4]
@@ -1126,17 +1137,17 @@ celery -A myshop flower
 <p>这一章里主要完成了四个任务，分别是建立基础的商品品类和明细展示页面，通过session建立购物车系统，建立提交订单系统，以及以发送邮件为例子介绍了在django 中使用异步任务。</p>
 <p>主要的新知识有：</p>
 <ul>
-<li>为字段建立联合索引，使用meta类的index_together属性</li>
-<li>注册管理后台的list_edit属性，可以直接在列表页修改字段</li>
-<li>session模块的中间件与类似字典方式的使用</li>
-<li>自定义类管理购物车和类似的小型数据</li>
-<li>建立自定义上下文处理器，为项目内所有表单增加全局变量</li>
-<li>上下文管理器与自定义template tag的取舍</li>
-<li>注册管理后台的Inline模式，外键关联的表格显示在一页内的做法</li>
-<li>Celery与RabbitMQ在linux和windows下的配置</li>
-<li>Django内使用Celery的方法与异步功能的编写</li>
-<li>Win10中Celery运行错误的解决方法</li>
-<li>Flower模块图形化监控Celery状态</li>
+    <li>为字段建立联合索引，使用meta类的index_together属性</li>
+    <li>注册管理后台的list_edit属性，可以直接在列表页修改字段</li>
+    <li>session模块的中间件与类似字典方式的使用</li>
+    <li>自定义类管理购物车和类似的小型数据</li>
+    <li>建立自定义上下文处理器，为项目内所有表单增加全局变量</li>
+    <li>上下文管理器与自定义template tag的取舍</li>
+    <li>注册管理后台的Inline模式，外键关联的表格显示在一页内的做法</li>
+    <li>Celery与RabbitMQ在linux和windows下的配置</li>
+    <li>Django内使用Celery的方法与异步功能的编写</li>
+    <li>Win10中Celery运行错误的解决方法</li>
+    <li>Flower模块图形化监控Celery状态</li>
 </ul>
 
 
