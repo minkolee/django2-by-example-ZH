@@ -507,15 +507,15 @@ class Cart:
 <p class="emp">译者注，原书的代码采用<code>class Cart(object)</code>的写法，译者将其修改为Python 3的新式类编写方法。</p>
 
 <h3 id="c7-2-5"><span class="title">2.5</span>创建购物车视图</h3>
-<p>建立完了管理购物车的类之后，就可以来编写视图了。购物车还记得最开始说类似一个小数据库，所以功能不外乎增删改查。视图的作用，就是将用户前端的增删改查动作获取到，然后调用购物车类来进行增删改查。</p>
-<p>针对购物车类的功能，显然我们需要编写3个视图函数：</p>
+<p>现在我们拥有了管理购物车的Cart类，需要创建如下的视图来添加、更新和删除购物车中的商品</p>
 <ul>
-    <li>一个视图函数用来增加或者更新购物车内的商品和数量（增和改）</li>
-    <li>一个视图删除购物车内的商品（删）</li>
-    <li>一个视图显示购物车内的详细内容和总价（查）</li>
+    <li>添加商品的视图，可以控制增加或者更新商品数量</li>
+    <li>删除商品的视图</li>
+    <li>详情视图，显示购物车中的商品和总金额等信息</li>
 </ul>
-<p>现在就来编写这三个视图。首先是增加和更新商品的视图。</p>
-<p>为了把商品增加到购物车，除了具体商品的实例肯定在页面中获取了之外，还必须要让用户选择增加的数量。因此先到cart应用中建立form.py，在其中编写一个表单类：</p>
+
+<h4 id="c7-2-5-1"><span class="title">2.5.1</span>购物车相关视图</h4>
+<p>为了向购物车内增加商品，显然需要一个表单让用户选择数量并按下添加到购物车的按钮。在<code>cart</code>应用中创建<code>forms.py</code>文件并添加如下内容：</p>
 <pre>
 from django import forms
 
@@ -525,12 +525,13 @@ PRODUCT_QUANTITY_CHOICES = [(i, str(i)) for i in range(1, 21)]
 class CartAddProductForm(forms.Form):
     quantity = forms.TypedChoiceField(choices=PRODUCT_QUANTITY_CHOICES, coerce=int)
     update = forms.BooleanField(required=False, initial=False, widget=forms.HiddenInput)
-
 </pre>
-<p>这个表单包括两个字段，第一个字段是给用户进行选择数量，这里我们通过choices限定了用户选择的数量为1-20，使用了coerce=int表示将该字段的数据转换成整型。coerce参数只能使用在<a href="https://docs.djangoproject.com/en/2.1/ref/forms/fields/#typedchoicefield" target="_blank">TypedChoiceField</a>和<a
-        href="https://docs.djangoproject.com/en/2.1/ref/forms/fields/#typedmultiplechoicefield" target="_blank">TypedMultipleChoiceField</a>上。</p>
-<p>第二个字段update，用于确认用户是增加数量还是覆盖原来的数量。如果为True，则覆盖，如果为False则增加，这里用了HiddeInput就不想给用户看了。</p>
-<p>有了表单以后来建立视图，编写cart应用中的views.py：</p>
+<p>使用该表单添加商品到购物车，这个CartAddProductForm表单包含如下两个字段：</p>
+<ul>
+    <li><code>quantity</code>：限制用户选择的数量为1-20个。使用<code>TypedChoiceField</code>字段，并且设置<code>coerce=int</code>，将输入转换为整型字段。</li>
+    <li><code>update</code>：用于指定当前数量是增加到原有数量（<code>False</code>）上还是替代原有数量（<code>True</code>），把这个字段设置为<code>HiddenInput</code>，因为我们不需要用户看到这个字段。</li>
+</ul>
+<p>创建向购物车中添加商品的视图，编写<code>cart</code>应用中的<code>views.py</code>文件，添加如下代码：</p>
 <pre>
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.http import require_POST
@@ -538,23 +539,18 @@ from shop.models import Product
 from .cart import Cart
 from .form import CartAddProductForm
 
-
 @require_POST
 def cart_add(request, product_id):
-    # 实例化购物车对象
     cart = Cart(request)
-    # 取得当前商品
     product = get_object_or_404(Product, id=product_id)
-    # 取得POST表单对象
     form = CartAddProductForm(request.POST)
-    # 如果表单验证通过，调用cart类的add方法然后跳转到购物车详情页面
     if form.is_valid():
         cd = form.cleaned_data
         cart.add(product=product, quantity=cd['quantity'], update_quantity=cd['update'])
     return redirect('cart:cart_detail')
 </pre>
-<p>业务逻辑已经写在了注释里，这个视图的功能非常类似京东的商品详情页面，点击加入购物车的按钮，之后会跳转到另外一个界面，可以返回商品页或者查看购物车，这里我们就直接跳转到了购物车详情页。</p>
-<p>再来编写删除商品的视图：</p>
+<p>这是添加商品的视图，使用<code>@require_POST</code>使该视图仅接受<code>POST</code>请求。这个视图接受商品ID作为参数，ID取得商品对象之后验证表单。表单验证通过后，将商品添加到购物车，然后跳转到购物车详情页面对应的<code>cart_detail</code> URL，稍后我们会来编写<code>cart_detail</code> URL。</p>
+<p>再来编写删除商品的视图，在<code>cart</code>应用的<code>views.py</code>中添加如下代码：</p>
 <pre>
 def cart_remove(request, product_id):
     cart = Cart(request)
@@ -562,13 +558,14 @@ def cart_remove(request, product_id):
     cart.remove(product)
     return redirect('cart:cart_detail')
 </pre>
-<p>删除方法很简单，继续来编写展示视图：</p>
+<p>删除商品视图同样接受商品ID作为参数，通过ID获取<code>Product</code>对象，删除成功之后跳转到<code>cart_detail</code> URL。</p>
+<p>还需要一个展示购物车详情的视图，继续在<code>cart</code>应用的<code>views.py</code>文件中添加下列代码：</p>
 <pre>
 def cart_detail(request):
     cart = Cart(request)
     return render(request, 'cart/detail.html', {'cart': cart})
 </pre>
-<p>视图都编写好了之后，在cart应用里新建urls.py：</p>
+<p><code>cart_detail</code>视图用来展示当前购物车中的详情。现在已经创建了添加、更新、删除及展示的视图，需要配置URL，在<code>cart</code>应用里新建<code>urls.py</code>：</p>
 <pre>
 from django.urls import path
 from . import views
@@ -580,15 +577,25 @@ urlpatterns = [
     path('remove/&lt;int:product_id>/', views.cart_remove, name='cart_remove'),
 ]
 </pre>
-<p>在项目的一级路由内增加一条，将cart路径转发到cart应用的二级路由里：</p>
+<p>然后编辑项目的根<code>urls.py</code>，配置URL：</p>
 <pre>
-path('cart/', include('cart.urls', namespace='cart')),
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    <b>path('cart/', include('cart.urls', namespace='cart')),</b>
+    path('', include('shop.urls', namespace='shop')),
+]
 </pre>
-<p>注意这一条路由需要增加在shop路径之前，因为shop路径被配置成默认路径，如果放在shop下边，则永远无法被匹配到。路由配置的时候，越严格的匹配越要往上放，最后用最宽泛的路径接着。</p>
+<p>注意这一条路由需要增加在<code>shop.urls</code>路径之前，因为这一条比下一条的匹配路径更加严格。</p>
 
-<h3><b>建立购物车相关模板</b></h3>
-<p>回想一下之前建立的base.html，其中为购物车留出了一行。此外，增加购物车的按钮应该出现在每个商品的详情页中，最后还要单独编写一个购物车清单页面。</p>
-<p>建立：cart/templates/cart/detail.html：</p>
+<h4 id="c7-2-5-2"><span class="title">2.5.2</span>创建展示购物车的模板</h4>
+<p><code>cart_add</code>和<code>cart_remove</code>视图并未渲染模板，而是重定向到<code>cart_detail</code>视图，我们需要为编写展示购物车详情的模板。</p>
+<p>在<code>cart</code>应用内创建如下文件目录结构：</p>
+<pre>
+templates/
+    cart/
+        detail.html
+</pre>
+<p>编辑<code>cart/detail.html</code>，添加下列代码：</p>
 <pre>
 {% extends 'shop/base.html' %}
 
@@ -646,78 +653,86 @@ path('cart/', include('cart.urls', namespace='cart')),
     &lt;/p>
 {% endblock %}
 </pre>
-<p>虽然模板很长，但是逻辑很清晰，使用了一个表格展示购物车的内容。表头固定，表内的每一行通过迭代购物车中的每个item，展示对应的字段内容。还留出了删除该商品的链接。最后在表格底部展示购物车总价。</p>
-<p>加入购物车的功能如前所述，需要修改商品详情页，注意我们为加入购物车建立了一个表单，所以先要修改product_detail视图函数：</p>
+<p>这是展示购物车详情的模板，包含了一个表格用于展示具体商品。用户可以通过表单修改之中的数量，并将其发送至<code>cart_add</code>视图。还提供了一个删除链接供用户删除商品。</p>
+
+<h4 id="c7-2-5-3"><span class="title">2.5.3</span>添加商品至购物车</h4>
+<p>需要修改商品详情页，增加一个Add to Cart按钮。编辑<code>shop</code>应用的<code>views.py</code>文件，把<code>CartAddProductForm</code>添加到<code>product_detail</code>视图中：</p>
 <pre>
+from cart.forms import CartAddProductForm
+
 def product_detail(request, id, slug):
     product = get_object_or_404(Product, id=id, slug=slug, available=True)
-    cart_product_form = CartAddProductForm()
-    return render(request, 'shop/product/detail.html', {'product': product, 'cart_product_form': cart_product_form})
+    <b>cart_product_form = CartAddProductForm()</b>
+    return render(request, 'shop/product/detail.html', {'product': product, <b>'cart_product_form': cart_product_form</b>})
 </pre>
-<p>修改后的视图函数就把表单对象传到了模板中，再来修改shop/templates/shop/product/detail.html模板增加相关内容：</p>
+<p>编辑对应的<code>shop/templates/shop/product/detail.html</code>模板，在展示商品价格之后添加如下内容：</p>
 <pre>
-{#在 &lt;p class="price">${{ product.price }}&lt;/p> 这行后追加#}
-    &lt;form action="{% url 'cart:cart_add' product.id %}" method="post">
-        {{ cart_product_form }}
-        {% csrf_token %}
-        &lt;input type="submit" value="Add to cart">
-    &lt;/form>
+&lt;p class="price">${{ product.price }}&lt;/p>
+<b>&lt;form action="{% url 'cart:cart_add' product.id %}" method="post"></b>
+    <b>{{ cart_product_form }}</b>
+    <b>{% csrf_token %}</b>
+    <b>&lt;input type="submit" value="Add to cart"></b>
+<b>&lt;/form></b>
+{{ product.description|linebreaks }}
 </pre>
-<p>然后启动站点来实验一下相关功能，可以看到商品详情页内增加了新的功能：</p>
-<img src="http://img.conyli.cc/django2/C07-05.jpg" alt="">
-<p>点击增加到购物车之后，进入了购物车界面：</p>
-<img src="http://img.conyli.cc/django2/C07-06.jpg" alt="">
+<p>启动站点，到<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>，进入任意一个商品的详情页，可以看到商品详情页内增加了按钮，如下图：</p>
+<p><img src="http://img.conyli.cc/django2/C07-05.jpg" alt=""></p>
+<p>选择一个数量，然后点击Add to cart按钮，即可购物车详情界面，如下图：</p>
+<p><img src="http://img.conyli.cc/django2/C07-06.jpg" alt=""></p>
 
-<h3><b>修改购物车中商品的数量</b></h3>
-<p>读者有过电商网站购物经验的话，就会知道我们的购物车很明显缺少一个功能，就是购物车页面修改商品的数量。这种修改与将商品加入购物车不同，修改的结果直接就是商品的最终数量。所以Cart.add方法里也提供了覆盖原来数量的功能。</p>
-<p>需要实现这个功能，只需要在购物车详情视图和模板中做一个小修改即可，先来编辑cart应用里的cart_detail视图：</p>
+<h4 id="c7-2-5-4"><span class="title">2.5.4</span>更新商品数量</h4>
+<p>当用户在浏览购物车详情时，在下订单前很可能会修改购物车的中商品的数量，我们必须允许用户在购物车详情页修改数量。</p>
+<p>编辑<code>cart</code>应用中的<code>views.py</code>文件，修改其中的<code>cart_detail</code>视图：</p>
 <pre>
 def cart_detail(request):
     cart = Cart(request)
-    for item in cart:
-        item['update_quantity_form'] = CartAddProductForm(initial={'quantity': item['quantity'], 'update': True})
+    <b>for item in cart:</b>
+        <b>item['update_quantity_form'] = CartAddProductForm(initial={'quantity': item['quantity'], 'update': True})</b>
     return render(request, 'cart/detail.html', {'cart': cart})
 </pre>
-<p>这个视图在每次进入购物车详情页面的时候，给所有的商品添加了一个键值对，值是initial里的数据初始化的CartAddProductForm实例。</p>
-<p>为什么要这么做呢，其实就是为了区分当前的修改是来自购物车详情页面的，这里的修改都需要覆盖原数量。</p>
-<p>回忆一下操作的流程。CartAddProductForm的update被我们以隐藏的形式埋在了商品详情页面里。其默认为空，提交给add方法的update参数就是空。所以在送到add方法里的时候，会将当前数量加上去。那么我们只需要在进入购物车详情页的时候，修改表单里的update字段的值为True就可以了。</p>
-<p>然后修改网页上展示的那个quantity的部分，打开cart/templates/cart/detaii.html：</p>
+<p>这个视图为每个购物车的商品对象添加了一个<code>CartAddProductForm</code>对象，这个表单使用当前数量初始化，然后将<code>update</code>字段设置为<code>True</code>，这样在提交表单时，当前的数字直接覆盖原数字。</p>
+<p>编辑<code>cart</code>应用的<code>cart/detail.html</code>模板，找到下边这行</p>
+<pre>&lt;td>{{ item.quantity }}&lt;/td></pre>
+<p>将其替换成：</p>
 <pre>
-{#修改&lt;td>{{ item.quantity }}&lt;/td>这一行#}
 &lt;td>
-    &lt;form action="{% url 'cart:cart_add' product.id %}" method="post">
-        {{ item.update_quantity_form.quantity }}
-        {{ item.update_quantity_form.update }}
-        &lt;input type="submit" value="Update">
-        {% csrf_token %}
-    &lt;/form>
+    <b>&lt;form action="{% url 'cart:cart_add' product.id %}" method="post"></b>
+        <b>{{ item.update_quantity_form.quantity }}</b>
+        <b>{{ item.update_quantity_form.update }}</b>
+        <b>&lt;input type="submit" value="Update"></b>
+        <b>{% csrf_token %}</b>
+    <b>&lt;/form></b>
 &lt;/td>
 </pre>
-<p>修改之后，就是将原来的数字部分改成了一个表单，表单的数据就是用视图函数中初始化的表单类的数据填充的，这样隐藏的update字段的值变成了True，只要是从这个页面提交给cart_add视图的表单，都会覆盖原来数量。</p>
-<p>之后启动站点，到购物车详情页来，可以看到如下所示：</p>
-<img src="http://img.conyli.cc/django2/C07-07.jpg" alt="">
+<p>之后启动站点，到<a href="http://127.0.0.1:8000/cart/" target="_blank">http://127.0.0.1:8000/cart/</a>，可以看到如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C07-07.jpg" alt=""></p>
+<p>修改数量然后点击Update按钮来测试新的功能，还可以尝试从购物车中删除商品。</p>
 
-<h3><b>为购物车构建上下文处理器</b></h3>
-<p>所谓上下文，就是程序的外部变量集合。我们注意到这个时候还有一个地方的功能没有实现，那就是网站首页的购物车那一栏，依然没有变化。每个网站都会有一些可能需要在每个页面都使用的数据，这些东西就类似于全局变量。就像在前几章在模板里使用过的request.user，request.messages以及本章的request.session，并不需要我们给模板传入request对象和user对象等，直接在所有的视图和模板中都可以使用。</p>
-<p>回忆一下前博客项目对base.html显示最多评论的文章是使用了自定义的template tag；社交网站的base.html的顶部，为了知道当前的内容以便应用CSS样式，每个视图都传了一个section变量。这都是一种技巧。更通用的做法就像社交网站base.html的消息部分，直接采用request.messages变量。</p>
-<p>django中的上下文管理器，就是能够接受一个request请求对象作为参数，然后给request对象附加一个键值对的函数。当默认启动一个项目的时候，settings.py中的 TEMPLATES 设置中的<code>conetext_processors</code>部分，就是给模板附加上下文的上下文管理器，有这么几个：</p>
+<h3 id="c7-2-6"><span class="title">2.6</span>创建购物车上下文处理器</h3>
+<p>你可能在实际的电商网站中会注意到，购物车的详细情况一直显示在页面上方的导航部分，在购物车为空的时候显示特殊的为空的字样，如果购物车中有商品，则会显示数量或者其他内容。这种展示购物车的方法与之前编写的处理购物车的视图没有关系，因此我们可以通过创建一个上下文处理器，将购物车对象作为<code>request</code>对象的一个属性，而不用去管是不是通过视图操作。</p>
+
+<h4 id="c7-2-6-1"><span class="title">2.6.1</span>上下文处理器</h4>
+<p>Django中的上下文管理器，就是能够接受一个<code>request</code>请求对象作为参数，返回一个要添加到<code>request</code>上下文的字典的Python函数。</p>
+<p>当默认通过<code>startproject</code>启动一个项目的时候，<code>settings.py</code>中的<code>TEMPLATES</code>设置中的<code>conetext_processors</code>部分，就是给模板附加上下文的上下文处理器，有这么几个：</p>
 <ul>
-    <li>django.template.context_processors.debug：这个上下文管理器附加了布尔类型的debug变量，以及sql_queries变量，表示请求中执行的SQL查询</li>
-    <li>django.template.context_processors.request：这个上下文管理器设置了request变量</li>
-    <li>django.contrib.auth.context_processors.auth：这个上下文管理器设置了user变量</li>
-    <li>django.contrib.messages.context_processors.messages：这个上下文管理器设置了messages变量</li>
+    <li><code>django.template.context_processors.debug</code>：这个上下文处理器附加了布尔类型的<code>debug</code>变量，以及<code>sql_queries</code>变量，表示请求中执行的SQL查询</li>
+    <li><code>django.template.context_processors.request</code>：这个上下文处理器设置了<code>request</code>变量</li>
+    <li><code>django.contrib.auth.context_processors.auth</code>：这个上下文处理器设置了<code>user</code>变量</li>
+    <li><code>django.contrib.messages.context_processors.messages</code>：这个上下文处理器设置了<code>messages</code>变量，用于使用消息框架</li>
 </ul>
-<p>除此之外，django还启用了django.template.context_processors.csrf来防止跨站请求攻击。这个组件没有写在settings.py里，但是是强制启用的，无法进行设置和关闭。有关所有上下文管理器的详情请参见<a
-        href="https://docs.djangoproject.com/en/2.1/ref/templates/api/#built-in-template-context-processors" target="_blank">官方文档</a>。</p>
-<p>现在我们就来设置一个自定义上下文管理器，原来每个视图都将cart变量传递给模板，以后就可以在所有模板内直接使用cart变量。</p>
-<p>在cart应用内新建一个context_processors.py文件，同视图，模板以及其他内容一样，django内的程序可以写在应用内的任何地方，但为了结构良好，还是分离出各个组件比较好：</p>
+<p>除此之外，django还启用了<code>django.template.context_processors.csrf</code>来防止跨站请求攻击。这个组件没有写在<code>settings.py</code>里，强制启用，无法进行设置和关闭。有关所有上下文管理器的详情请参见<a href="https://docs.djangoproject.com/en/2.0/ref/templates/api/#built-in-template-context-processors" target="_blank">https://docs.djangoproject.com/en/2.0/ref/templates/api/#built-in-template-context-processors</a>。</p>
+
+<h4 id="c7-2-6-2"><span class="title">2.6.2</span>将购物车设置到request上下文中</h4>
+
+<p>现在我们就来设置一个自定义上下文处理器，以在所有模板内访问购物车对象。</p>
+<p>在<code>cart</code>应用内新建一个<code>context_processors.py</code>文件，同视图，模板以及其他内容一样，django内的程序可以写在应用内的任何地方，但为了结构良好，将其单独写成一个文件：</p>
 <pre>
 from .cart import Cart
 def cart(request):
-    return {'mycart': Cart(request)}
+    return {'cart': Cart(request)}
 </pre>
-<p>有点简单是不是，django规定的上下文处理器，就是一个函数，接受request请求作为参数，然后返回一个键值对。键的名称就是未来在模板中可以使用的request.XXX名称。</p>
-<p>之后在settings.py里将我们的自定义上下文管理器加到TEMPLATES设置中：</p>
+<p>Django规定的上下文处理器，就是一个函数，接受<code>request</code>请求作为参数，然后返回一个字典。这个字典的键值对被<code>RequestContext</code>设置为所有模板都可以使用的变量及对应的值。在我们的上下文处理器中，我们使用<code>request</code>对象初始化了<code>cart</code>对象</p>
+<p>之后在settings.py里将我们的自定义上下文处理器加到TEMPLATES设置中：</p>
 <pre>
 TEMPLATES = [
     {
@@ -734,36 +749,33 @@ TEMPLATES = [
     },
 ]
 </pre>
-<p>定义了上下文管理器之后，只要一个模板被渲染，上下文管理器就会执行然后附加上变量名。值得注意的是，上下文管理器并不是必须的。如果上下文的内容涉及到数据库查询等比较耗时的操作，或者上下文管理器中的变量，并不是所有页面都需要，则一般情况下首先考虑的是使用<b>自定义模板变量</b>。否则会极大的影响网站的效率。</p>
-<p>有了mycart变量之后，由于只是给request附加了初始化的Cart实例，所以对其他视图没有任何影响，base.html由于没有视图直接控制，就使用上下文变量比较方便，修改base.html：</p>
+<p>定义了上下文管理器之后，只要一个模板被<code>RequestContext</code>渲染，上下文处理器就会被执行然后附加上变量名<code>cart</code>。</p>
+<p class="hint">所有使用<code>RequestContext</code>的请求过程中都会执行上下文处理器。对于不是每个模板都需要的变量，一般情况下首先考虑的是使用自定义模板标签，特别是涉及到数据库查询的变量，否则会极大的影响网站的效率。</p>
+<p>修改<code>base.html</code>，找到下面这部分：</p>
 <pre>
-{#修改&lt;div class="cart">的内容#}
-
 &lt;div class="cart">
-    {% with total_items=mycart|length %}
-        {% if mycart|length > 0 %}
-            Your cart:
-            &lt;a href="{% url 'cart:cart_detail' %}">{{ total_items }} items{{ total_items|pluralize }},
-            ${{ mycart.get_total_price }}
-            &lt;/a>
-        {% else %}
-            Your cart is empty.
-        {% endif %}
-    {% endwith %}
+Your cart is empty.
 &lt;/div>
 </pre>
-<p>启动站点，可以发现现在购物车栏正常工作了：</p>
-<img src="http://img.conyli.cc/django2/C07-08.jpg" alt="">
-<p style="color: red">这里需要说明一下的是：原书的上下文管理器的代码是：</p>
+<p>将其修改成：</p>
 <pre>
-from .cart import Cart
-def cart(request):
-    return {'<b style="color:red">cart</b>': Cart(request)}
+&lt;div class="cart">
+    <b>{% with total_items=cart|length %}</b>
+        <b>{% if cart|length > 0 %}</b>
+            <b>Your cart:</b>
+            <b>&lt;a href="{% url 'cart:cart_detail' %}">{{ total_items }} items{{ total_items|pluralize }},</b>
+            <b>${{ cart.get_total_price }}</b>
+            <b>&lt;/a></b>
+        <b>{% else %}</b>
+            <b>Your cart is empty.</b>
+        <b>{% endif %}</b>
+    <b>{% endwith %}</b>
+&lt;/div>
 </pre>
-<p style="color:red">由于所有的用到购物车界面的模板都继承了base.html，视图函数都传入了名叫cart的变量，base.html里也使用cart名称的变量，作者在这里把全局变量和传入的变量设置成一样，没有很好的体现出区分效果。故将上下文管理器和base.html中的变量名cart都修改为mycart，以体现出mycart和cart是两个来自于不同地方的变量。</p>
+<p>启动站点，到<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>，添加一些商品到购物车，在网站的标题部分可以显示出购物车的信息：</p>
+<p><img src="http://img.conyli.cc/django2/C07-08.jpg" alt=""></p>
 
-
-<h2><b>用户订单功能</b></h2>
+<h2 id="c7-3"><span class="title">3</span>生成客户订单</h2>
 <p>在刚才的购物车详情页面中，有一个Checkout 结账功能，目前还无法使用。现在要来制作用户订单功能。</p>
 <p>在每个购物车生成订单的时候，需要把订单的数据保存到数据库中。一个订单应该包含用户以及要购买的商品等信息。</p>
 <p>建立一个新的应用orders并在settings.py里配置好。我们将用这个应用来处理订单相关的功能。</p>
