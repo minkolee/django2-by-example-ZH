@@ -776,12 +776,19 @@ Your cart is empty.
 <p><img src="http://img.conyli.cc/django2/C07-08.jpg" alt=""></p>
 
 <h2 id="c7-3"><span class="title">3</span>生成客户订单</h2>
-<p>在刚才的购物车详情页面中，有一个Checkout 结账功能，目前还无法使用。现在要来制作用户订单功能。</p>
-<p>在每个购物车生成订单的时候，需要把订单的数据保存到数据库中。一个订单应该包含用户以及要购买的商品等信息。</p>
-<p>建立一个新的应用orders并在settings.py里配置好。我们将用这个应用来处理订单相关的功能。</p>
+<p>当用户准备对一个购物车内的商品进行结账的时候，需要生成一个订单数据保存到数据库中。订单必须保存用户信息和用户所购买的商品信息。</p>
+<p>为了实现订单功能，新创建一个订单应用：</p>
+<pre>python manage.py startapp orders</pre>
+<p>然后在<code>settings.py</code>中的<code>INSTALLED_APPS</code>中进行激活：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    <b>'orders.apps.OrdersConfig',</b>
+]
+</pre>
 
-<h3><b>建立订单数据模型</b></h3>
-<p>首先还是思考一下，在点击Checkout按钮的时候，购物车页面上有什么数据？主要的数据就是cart变量代表的购物车数据对象。光有商品还不够，肯定还需要知道当前的用户是谁。其实还有一个重要的数据就是该订单是否已经支付。Order模型就是围绕这些数据建立的，编辑models.py：</p>
+<h3 id="c7-3-1"><span class="title">3.1</span>创建订单模型</h3>
+<p>我们用一个模型存储订单的详情，然后再用一个模型保存订单内的商品信息，包括价格和数量。编辑<code>orders</code>应用的<code>models.py</code>文件：</p>
 <pre>
 from django.db import models
 from shop.models import Product
@@ -820,9 +827,12 @@ class OrderItem(models.Model):
     def get_cost(self):
         return self.price * self.quantity
 </pre>
-<p>建立了两个模型Order和OrderItem，Order模型用来存储订单号，和订单相关的用户信息，以及一个是否支付的布尔字段。稍后将在支付系统中将使用该字段。还定义了一个获得总金额的方法，以便方便的知道订单的总额以便支付。</p>
-<p>OrderItem两个外键分别连接到商品表和订单表，然后还存储了生成订单时候的价格和数量。由于价格是会变化的，所以在订单中只存储生成订单时候的价格用于计算总付款金额。然后定义了一个get_cost方法。这个类看起来类似多对多关系的的中间表，但实际上发挥的是一对一的功能。因为无需再到Product中去查询金额。</p>
-<p>执行过makemigrations和migrate之后，将这两个类加入到管理后台中，编辑orders/admin.py：</p>
+<p><code>Order</code>模型包含一些存储用户基础信息的字段，以及一个是否支付的布尔字段<code>paid</code>。稍后将在支付系统中使用该字段区分订单是否已经付款。还定义了一个获得总金额的方法<code>get_total_cost()</code>，通过该方法可以获得当前订单的总金额。</p>
+<p><code>OrderItem</code>存储了生成订单时候的价格和数量。然后定义了一个<code>get_cost()</code>方法，返回当前商品的总价。</p>
+<p>之后执行数据迁移，过程不再赘述。</p>
+
+<h3 id="c7-3-2"><span class="title">3.2</span>将订单模型加入管理后台</h3>
+<p>编辑<code>orders</code>应用的<code>admin.py</code>文件：</p>
 <pre>
 from django.contrib import admin
 from .models import Order, OrderItem
@@ -841,43 +851,38 @@ class OrderAdmin(admin.ModelAdmin):
     list_filter = ['paid', 'created', 'updated']
     inlines = [OrderItemInline]
 </pre>
-<p>这次注册模型又引入了一些新的形式和字段。对OrderItem类继承了admin.TabularInline类，然后在OrderAdmin类中使用了inlines参数指定了OrderItemInline类。意思是将OrderItem类以内联（行显示）的状态包含在Order类中，显示在同一页。</p>
-<p>这种注册模型的方式仅影响展示形式，不会影响models.py中定义的两个类之间的关系。</p>
-<p>启动站点到 http://127.0.0.1:8000/admin/orders/order/add/ 可以看到如下的页面，更好的展示了订单与其中包含的商品之间的关系：</p>
-<img src="http://img.conyli.cc/django2/C07-09.jpg" alt="">
+<p>我们让<code>OrderItem</code>类继承了<code>admin.TabularInline</code>类，然后在<code>OrderAdmin</code>类中使用了<code>inlines</code>参数指定<code>OrderItemInline</code>，通过该设置，可以将一个模型显示在相关联的另外一个模型的编辑页面中。</p>
+<p>启动站点到<code>http://127.0.0.1:8000/admin/orders/order/add/</code>，可以看到如下的页面：</p>
+<p><img src="http://img.conyli.cc/django2/C07-09.jpg" alt=""></p>
 
-<h3><b>建立订单视图和模板</b></h3>
-<p>用过电商网站的读者应该知道，比如京东从购物车页面点击“去结算”按钮，会进入到一个结算页，供用户填写信息，选择地址，支付方式和配送方式等。这个页面实际上也是填写一个表单，再点提交才会真正生成订单让你付款。</p>
-<p>类似的，我们生成一个新订单有如下步骤：</p>
+<h3 id="c7-3-3"><span class="title">3.3</span>创建客户订单视图和模板</h3>
+<p>在用户提交订单的时候，我们需要用刚创建的订单模型来保存用户当时购物车内的信息。创建一个新的订单的步骤如下：</p>
 <ol>
-    <li>给用户提供一个表单供填写</li>
-    <li>根据用户填写的内容生成一个新Order类实例，然后将Cart中的商品放入OrderItem实例中并与Order实例建立外键关系</li>
-    <li>清理全部购物车内容，然后重定向用户到一个成功的页面或者进行其他动作。</li>
+    <li>提供一个表单供用户填写</li>
+    <li>根据用户填写的内容生成一个新<code>Order</code>类实例，然后将购物车中的商品放入<code>OrderItem</code>实例中并与<code>Order</code>实例建立外键关系</li>
+    <li>清理全部购物车内容，然后重定向用户到一个操作成功页面。</li>
 </ol>
-<p>首先就利用内置表单功能建立订单表单，在orders应用中新建forms.py：</p>
+<p>首先利用内置表单功能建立订单表单，在<code>orders</code>应用中新建<code>forms.py</code>文件并添加如下代码：</p>
 <pre>
 from django import forms
 from .models import Order
-
 
 class OrderCreateForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = ['first_name', 'last_name', 'email', 'address', 'postal_code', 'city']
 </pre>
-<p>采用内置的方法建立了包含这些字段的表单，现在针对这个表单要建立视图来控制表单，编辑orders应用中的views.py：</p>
+<p>采用内置的模型表单创建对应<code>order</code>对象的表单，现在要建立视图来控制表单，编辑<code>orders</code>应用中的<code>views.py</code>：</p>
 <pre>
 from django.shortcuts import render
 from .models import OrderItem
 from .forms import OrderCreateForm
 from cart.cart import Cart
 
-
 def order_create(request):
     cart = Cart(request)
     if request.method == "POST":
         form = OrderCreateForm(request.POST)
-        # 表单验证通过就对购物车内每一条记录生成OrderItem中对应的一条记录
         if form.is_valid():
             order = form.save()
             for item in cart:
@@ -891,9 +896,12 @@ def order_create(request):
         form = OrderCreateForm()
     return render(request, 'orders/order/create.html', {'cart': cart, 'form': form})
 </pre>
-<p>整体的逻辑是，如果是POST请求而且表单验证通过，对购物车里每一个商品都在OrderItem表里生成对应的一行记录，之后删除购物车，并且不再像模板内cart变量了。（当然我们有上下文管理器，还是可以用）。</p>
-<p>如果是POST请求但表单验证失败，返回原来表单数据，如果是GET请求，返回空白表单及购物车数据。注意，这里两个分支渲染的是两个不同的页面 create.html和 created.html。</p>
-<p>视图有了下一步是配路由，先在orders应用里建立urls.py作为二级路由：</p>
+<p>在这个<code>order_create</code>视图中，我们首先通过<code>cart = Cart(request)</code>获取当前购物车对象；之后根据HTTP请求种类的不同，视图进行以下工作：</p>
+<ul>
+    <li>GET请求：初始化空白的<code>OrderCreateForm</code>，并且渲染<code>orders/order/created.html</code>页面。</li>
+    <li>POST请求：通过POST请求中的数据生成表单并且验证，验证通过之后执行<code>order = form.save()</code>创建新订单对象并写入数据库；然后遍历购物车的所有商品，对每一种商品创建一个<code>OrderItem</code>对象并存入数据库。最后清空购物车，渲染<code>orders/order/created.html</code>页面。</li>
+</ul>
+<p>在<code>orders</code>应用里建立<code>urls.py</code>作为二级路由：</p>
 <pre>
 from django.urls import path
 from . import views
@@ -905,16 +913,25 @@ urlpatterns = [
 ]
 
 </pre>
-<p>再配置主路由myshop/urls.py：</p>
+<p>配置好了<code>order_create</code>视图的路由，再配置<code>myshop</code>项目的根<code>urls.py</code>文件，在<code>shop.urls</code>之前增加下边这条：</p>
 <pre>
     path('orders/',include('orders.urls', namespace='orders')),
 </pre>
-<p>注意这一行也要在转发到shop.urls那一行之前。</p>
-<p>既然现在我们有了视图函数，那就可以修改购物车详情页cart\templates\cart\detail.html的CHECKOUT按钮的链接了：</p>
+<p>编辑购物车详情页<code>cart/detail.html</code>，找到下边这行：</p>
+<pre>&lt;a href="#" class="button">Checkout&lt;/a></pre>
+<p>将这个结账按钮的链接修改为<code>order_create</code>视图的URL：</p>
 <pre>
-&lt;a href="{% url 'orders:order_create' %}" class="button">Checkout&lt;/a>
+&lt;a href="<b>{% url 'orders:order_create' %}</b>" class="button">Checkout&lt;/a>
 </pre>
-<p>最后是来建立模板。在orders应用下建立templates/orders/order目录，然后在order目录内建立create.html和created.html，先来编辑create.html：</p>
+<p>用户现在可以通过购物车详情页来提交订单，我们要为订单页制作模板，在<code>orders</code>应用下建立如下文件和目录结构：</p>
+<pre>
+templates/
+    orders/
+        order/
+            create.html
+            created.html
+</pre>
+<p>编辑确认订单的页面<code>orders/order/create.html</code>，添加如下代码：</p>
 <pre>
 {% extends 'shop/base.html' %}
 
@@ -945,7 +962,8 @@ Checkout
     &lt;/form>
 {% endblock %}
 </pre>
-<p>模板内容比较简单，展示购物车内的商品和总价，之后下边提供空白表单供填写。再来编辑created.html</p>
+<p>这个模板，展示购物车内的商品和总价，之后提供空白表单用于提交订单。</p>
+<p>再来编辑订单提交成功后跳转到的页面<code>orders/order/created.html</code>：</p>
 <pre>
 {% extends 'shop/base.html' %}
 
@@ -958,36 +976,32 @@ Thank you
     &lt;p>Your order has been successfully completed. Your order number is &lt;strong>{{ order.id }}&lt;/strong>.&lt;/p>
 {% endblock %}
 </pre>
-<p>created.html就是一个成功页面。现在运行站点，加入一些商品到购物车中，然后点击checkout，可以看到如下页面：</p>
-<img src="http://img.conyli.cc/django2/C07-10.jpg" alt="">
-<p>填写表单然后点击Place order，可以看到成功页面：</p>
-<img src="http://img.conyli.cc/django2/C07-11.jpg" alt="">
-<p>至此就做完了订单功能。</p>
+<p>这是订单成功页面。启动站点，添加一些商品到购物车中，然后在购物车详情页面中点击CHECKOUT按钮，之后可以看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C07-10.jpg" alt=""></p>
+<p>填写表单然后点击Place order按钮，订单被创建，然后重定向至创建成功页面：</p>
+<p><img src="http://img.conyli.cc/django2/C07-11.jpg" alt=""></p>
+<p>现在可以到管理后台去看一看相关的信息了。</p>
 
+<h2 id="c7-4"><span class="title">4</span>使用Celery启动异步任务</h2>
+<p>在一个视图内执行的所有操作，都会影响到响应时间。很多情况下，尤其视图中有一些非常耗时或者可能会失败，需要重试的操作，我们希望尽快给用户先返回一个响应而不是等到执行结束，而让服务器去继续异步执行这些任务。例如：很多视频分享网站允许用户上传视频，在上传成功之后服务器需花费一定时间转码，这个时候会先返回一个响应告知用户视频已经成功上传，正在进行转码，然后异步进行转码。还一个例子是向用户发送邮件。如果站点中有一个视图的操作是发送邮件，SMTP连接很可能失败或者速度比较慢，这个时候采用异步的方式就能有效的避免阻塞。</p>
+<p>Celery是一个分布式任务队列，采取异步的方式同时执行大量的操作，支持实施操作和计划任务，可以方便的批量创建异步任务并且执行，也可以设定为计划执行。Celery的文档在<a href="http://docs.celeryproject.org/en/latest/index.html" target="_blank">http://docs.celeryproject.org/en/latest/index.html</a>。</p>
 
-<h2><b>使用Celery异步发送订单邮件给用户</b></h2>
-<p>如果读者有过在Amazon上购物的经历，可以知道很多电商网站在用户成功下订单后，会发送一封电子邮件到用户的邮箱，内容一般是告诉用户订单的内容。</p>
-<p>为了发送邮件，先来了解一下异步的程序。我们在视图函数中所作的所有事情，都会影响视图函数的响应时间，在视图函数完成操作之前，某些URL或者网站内容可能不可用。对于比较耗时间的操作，这样可能会导致请求失败，或者需要用户重试。举个例子：很多视频分享网站允许用户上传视频，上传之后，服务器还需要花时间进行转码，如果在这个时候用户访问该视频，显然不可能允许用户直接访问资源地址，会导致访问失败。常用的做法是设置一个重试功能，在转码完成之前用户想要查看自己上传的视频，就返回一个请求说该视频尚未处理完毕。</p>
-<p>如果我们在视图中调用发送邮件的程序，SMTP服务器很可能会连接失败或者花费比较长的时间，如果直接在视图函数内编写，则视图函数会阻塞到邮件发送完毕才会执行下一步程序。会导致页面的响应非常慢。如果能让发邮件和返回页面响应异步的进行，那么页面的响应速度就可以提高很多。读者可以回忆一下，我们在社交网站的用户验证部分建立了发送邮件重置密码的功能，点击发送到返回成功发送的速度是不是相比其他页面要慢很多。</p>
-<p>Celery是一个分布式任务队列，采取异步的方式同时执行大量的操作，支持实施操作和计划任务，可以方便的批量创建异步任务并且执行。Celery的文档在<a href="http://docs.celeryproject.org/en/latest/index.html" target="_blank">http://docs.celeryproject.org/en/latest/index.html</a>。</p>
-
-<h3><b>安装Celery</b></h3>
-<p>在django 中使用 Celery 需要在Python 中安装Celery模块：</p>
+<h3 id="c7-4-1"><span class="title">4.1</span>安装Celery</h3>
+<p>通过<code>pip</code>安装Celery：</p>
 <pre>
 pip install celery==4.1.0
 </pre>
-<p>作者推荐的是4.1版，在本文发布的时候celery最新版为4.2.1，之前已经体验过了taggit的低版本和Django 2.1冲突的问题，所以既然安装了Django 2.1，笔者没有按照作者推荐，而是安装celery的最新版。如果发现问题，踩坑捉虫的过程也是很有意思的。</p>
-<p>Celery需要一个消息代理程序来处理外界的请求，这个代理把要处理的请求发送到Celery worker，也就是实际处理任务的模块。所以还需要安装一个消息代理程序：</p>
+<p>Celery需要一个消息代理程序来处理外部的请求，这个代理把要处理的请求发送到Celery worker，也就是实际处理任务的模块。所以还需要安装一个消息代理程序：</p>
 
-<h3><b>安装RabbitMQ</b></h3>
+<h3 id="c7-4-2"><span class="title">4.2</span>安装RabbitMQ</h3>
 <p>Celery的消息代理程序有很多选择，Redis数据库也可以作为Celery的消息代理程序。这里我们使用RabbitMQ，因为它是Celery官方推荐的消息代理程序。</p>
-<p>关于Celery，RabbitMQ以及Redis的相关内容，可以看<a href="https://www.jianshu.com/p/1840035cb510" target="_blank">这里</a>的一篇文章。</p>
-<p>RabbitMQ的下载地址：<a href="https://www.rabbitmq.com/download.html" target="_blank">https://www.rabbitmq.com/download.html</a>。</p>
-<p>Linux下安装RabbitMQ：</p>
+
+<p>如果是Linux系统，通过如下命令安装RabbitMQ：</p>
 <pre>
 apt-get install rabbitmq
 </pre>
-<p>之后启动服务：</p>
+<p>如果使用macOS X或者Windows，可以在<a href="https://www.rabbitmq.com/download.html" target="_blank">https://www.rabbitmq.com/download.html</a>下载RabbitMQ。</p>
+<p>安装之后使用下列命令启动RabbitMQ服务：</p>
 <pre>
 rabbitmq-server
 </pre>
@@ -995,58 +1009,49 @@ rabbitmq-server
 <pre>
 Starting broker... completed with 10 plugins.
 </pre>
-就说明RabbitMQ已经就绪，等待接受消息。
-<p>Windows 下安装 RabbitMQ，必须先安装<a href="https://www.erlang.org/downloads" target="_blank">Erlong OPT平台</a>，然后安装从官网下载回来的RabbitMQ windows installer。</p>
-<p>然后把Erlong安装目录下的bin目录和RabbitMQ安装目录下的sbin目录设置到PATH中。之后安装参见<a href="https://blog.csdn.net/tjcyjd/article/details/77150893" target="_blank">这里</a>。</p>
+<p>就说明RabbitMQ已经就绪，等待接受消息。</p>
+<p class="emp">译者注：Windows下安装RabbitMQ，必须先安装<a href="https://www.erlang.org/downloads" target="_blank">Erlong OPT平台</a>，然后安装从官网下载回来的RabbitMQ windows installer。之后需要手工把Erlong安装目录下的bin目录和RabbitMQ安装目录下的sbin目录设置到PATH中。之后安装参见<a href="https://blog.csdn.net/tjcyjd/article/details/77150893" target="_blank">这里</a>。</p>
 
-<h3><b>将Celery 加入到项目中</b></h3>
-<p>确定好了本机的RabbitMQ服务正常运行之后，需要在django 中使用celery，在myshop/myshop/目录下新建一个文件celery.py：</p>
+<h3 id="c7-4-3"><span class="title">4.3</span>在项目中集成Celery</h3>
+<p>需要为项目使用的Celery实例进行一些配置，在<code>settings.py</code>文件的相同目录下创建<code>celery.py</code>文件：</p>
 <pre>
 import os
 from celery import Celery
 
-
-# 导入django的环境
+# 为celery程序设置环境为当前项目的环境
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'myshop.settings')
-
 
 app = Celery('myshop')
 
 app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
-
 </pre>
-<p>这里的程序主要是和Celery相关，而不是django，解释如下：</p>
-<ul>
-    <li>首先导入django 的环境变量，为Celery命令行创造环境。如果读者使用Pycharm开发django项目，Pycharm中启动Python console，实际上已经默认执行了该语句，作用就是将当前命令行环境配置成django项目。</li>
-    <li>然后实例化了一个Celery对象</li>
-    <li>调用Celery对象的.config_from_object方法，从我们的设置文件中读取设置。Celery除了可以通过实例化简单使用外，还支持设置文件进行设置，从而比较健壮的使用Celery。同时提供了一个命名为CELERY，说明我们的设置文件里，所有和CELERY相关的设置都以"CELERY"开头。</li>
-    <li>最后我们调用.autodiscover_tasks()，让Celery自动发现所有的异步任务。Celery会在每个INSTALLED_APPS中列出的应用中寻找task.py文件，在里边寻找定义好的异步任务然后执行。</li>
-</ul>
-<p>还需要在项目的__init__.py文件中导入celery模块，以让django运行的时候celery就运行，编辑myshop/__inti__.py：</p>
+<p>这段程序解释如下：</p>
+<ol>
+    <li>导入<code>DJANGO_SETTINGS_MODULE</code>环境变量，为Celery命令行程序创造运行环境。</li>
+    <li>实例化一个<code>app</code>对象，是一个Celery程序实例</li>
+    <li>调用<code>config_from_object()</code>方法，从我们项目的设置文件中读取环境设置。<code>namespace</code>属性指定了在我们的settings.py文件中，所有和Celery相关的配置都以<code>CELERY</code>开头，例如<code>CELERY_BROKER_URL</code>。</li>
+    <li>调用<code>autodiscover_tasks()</code>，让Celery自动发现所有的异步任务。Celery会在每个<code>INSTALLED_APPS</code>中列出的应用中寻找<code>task.py</code>文件，在里边寻找定义好的异步任务然后执行。</li>
+</ol>
+<p>还需要在项目的<code>__init__.py</code>文件中导入<code>celery</code>模块，以让项目启动时Celery就运行，编辑<code>myshop/__inti__.py</code>：</p>
 <pre>
-import celery
-
+# import celery
 from .celery import app as celery_app
-
 </pre>
-<p>CELERY_ALWAYS_EAGER设置可以让celery在本地以同步的方式直接执行任务，而不会去把任务加到队列中。这常用来进行测试或者检查Celery的配置是否正确。</p>
-<p>之后就可以来编辑异步任务了。</p>
+<p>现在就可以为应用启动异步任务了。</p>
+<p class="hint"><code>CELERY_ALWAYS_EAGER</code>设置可以让Celery在本地以同步的方式直接执行任务，而不会去把任务加到队列中。这常用来进行测试或者检查Celery的配置是否正确。</p>
 
-<h3><b>编写需要异步处理的任务</b></h3>
-<p>我们准备在用户提交订单的时候异步发送邮件。一般的做法是在应用目录下建立一个模块（task.py)用于专门的异步任务，在orders应用下建立task.py：</p>
+<h3 id="c7-4-4"><span class="title">4.4</span>为应用添加异步任务</h3>
+<p>我们准备在用户提交订单的时候异步发送邮件。一般的做法是在应用目录下建立一个<code>task</code>模块专门用于编写异步任务，在<code>orders</code>应用下建立<code>task.py</code>文件，添加如下代码：</p>
 <pre>
 from celery import task
 from django.core.mail import send_mail
 from .models import Order
 
-
 @task
 def order_created(order_id):
     """
     当一个订单创建完成后发送邮件通知给用户
-    :param order_id: 订单编号
-    :return: mail_sent
     """
 
     order = Order.objects.get(id=order_id)
@@ -1057,111 +1062,66 @@ def order_created(order_id):
     print(mail_sent, type(mail_sent))
     return mail_sent
 </pre>
-<p>使用celery模块中的@task 装饰器装饰想成为异步任务的函数。推荐只给异步函数传入ID，让其去检索数据库。拼接好标题和正文后发送邮件。</p>
-<p>在之前已经学习过如何发送邮件，如果没有SMTP服务器，在settings.py里将邮件配置为打印到控制台上：</p>
+<p>将<code>order_created</code>函数通过装饰器<code>@task</code>定义为异步任务，可以看到，只要用<code>@task</code>装饰就可以把一个函数变成Celery异步任务。这里我们给异步函数传入<code>order_id</code>，推荐仅传入ID，让异步任务启动的时候再去检索数据库。最后拼接好标题和正文后使用<code>send_mail()</code>发送邮件。</p>
+<p>在第二章已经学习过如何发送邮件，如果没有SMTP服务器，在<code>settings.py</code>里将邮件配置为打印到控制台上：</p>
 <pre>
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 </pre>
-<p>这里是将发送邮件这类耗时比较大的功能配置到为异步功能，在实际应用中，除了耗时比较大的功能之外，还可以将其他容易失败需要重试的功能，无论耗时长短，都可以设置为异步任务。</p>
-<p>设置好了异步任务之后，还需要修改原来的视图order_created，以便在订单完成的时候，调用该异步函数。修改后的视图如下：</p>
+<p class="hint">在实际应用中，除了耗时比较大的功能之外，还可以将其他容易失败需要重试的功能，即使耗时较短，也推荐设置为异步任务。</p>
+<p>设置好了异步任务之后，还需要修改原来的视图<code>order_created</code>，以便在订单完成的时候，调用<code>order_created</code>异步函数。编辑<code>orders</code>应用的<code>views.py</code>文件：</p>
 <pre>
-from django.shortcuts import render
-from .models import OrderItem
-from .forms import OrderCreateForm
-from cart.cart import Cart
-from .task import order_created
-
+<b>from .task import order_created</b>
 
 def order_create(request):
-    cart = Cart(request)
+    #......
     if request.method == "POST":
-        form = OrderCreateForm(request.POST)
-        # 表单验证通过就对购物车内每一条记录生成OrderItem中对应的一条记录
+        #......
         if form.is_valid():
-            order = form.save()
-            for item in cart:
-                OrderItem.objects.create(order=order, product=item['product'], price=item['price'],
-                                         quantity=item['quantity'])
-            # 成功生成OrderItem之后清除购物车
+            #......
             cart.clear()
-            <b># 成功完成订单后调用异步任务发送邮件</b>
+            <b># 启动异步任务</b>
             <b>order_created.delay(order.id)</b>
-            return render(request, 'orders/order/created.html', {'order': order})
-
-    else:
-        form = OrderCreateForm()
-    return render(request, 'orders/order/create.html', {'cart': cart, 'form': form})
+        #......
 </pre>
-<p>被装饰过的异步函数对象有一个delay方法，将order.id作为参数，order.id就会被传给我们自行编写的函数。当每次有用户完成订单的时候，这个异步的函数对象就会被加入到队列，然后等着被worker执行。</p>
-<p>启动另外一个shell（必须是导入了当前环境的命令行窗口，比如Pycharm中启动的terminal），启动Celery worker，让工人等待干活：</p>
+<p>调用<code>delay()</code>方法即表示异步执行该任务，任务会被加入队列然后交给执行程序执行。</p>
+<p>启动另外一个shell（必须是导入了当前环境的命令行窗口，比如Pycharm中启动的terminal），使用如下命令启动Celery worker：</p>
 <pre>celery -A myshop worker -l info</pre>
-<p>之后可以看到类似下边的输出，表示Celery worker 已经就绪：</p>
+<p>现在Celery worker已经启动并且准备处理任务。启动站点，然后添加一些商品到购物车，提交订单。在启动了Celery worker的窗口应该能看到类似下边的输出：</p>
 <pre>
-[2018-09-28 20:51:13,985: INFO/MainProcess] Connected to amqp://guest:**@127.0.0.1:5672//
-[2018-09-28 20:51:13,999: INFO/MainProcess] mingle: searching for neighbors
-[2018-09-28 20:51:15,040: INFO/MainProcess] mingle: all alone
-[2018-09-28 20:51:15,086: INFO/MainProcess] pidbox: Connected to amqp://guest:**@127.0.0.1:5672//.
-[2018-09-28 20:42:04,641: INFO/SpawnPoolWorker-6] child process 16896 calling self.run()
-[2018-09-28 20:42:04,641: INFO/SpawnPoolWorker-1] child process 15652 calling self.run()
-[2018-09-28 20:42:04,673: INFO/SpawnPoolWorker-8] child process 18224 calling self.run()
-[2018-09-28 20:42:05,225: WARNING/MainProcess] django.py:200: UserWarning: Using settings.DEBUG leads to a memory leak, never use this setting in p
-roduction environments!
-  warnings.warn('Using settings.DEBUG leads to a memory leak, never '
-[2018-09-28 20:42:05,227: INFO/MainProcess] celery@Notebook ready.
+[2017-12-17 17:43:11,462: INFO/MainProcess] Received task:
+orders.tasks.order_created[e990ddae-2e30-4e36-b0e4-78bbd4f2738e]
+[2017-12-17 17:43:11,685: INFO/ForkPoolWorker-4] Task
+orders.tasks.order_created[e990ddae-2e30-4e36-b0e4-78bbd4f2738e] succeeded in
+0.22019841300789267s: 1
 </pre>
-<p>可以看到Celery默认去连接了RabbitMQ的服务，然后显示使用guest:账号连接成功；之后提醒我们在生产环境下不要使用DEBUG，会导致内存泄露。</p>
-<p>现在我们启动django站点，然后去实际提交一个订单。看到terminal窗口中出现：</p>
+<p>表示任务已经被执行，应该可以收到邮件了。</p>
+<p class="emp">译者注：Windows平台下，在发送邮件的时候，有可能出现错误信息如下：</p>
+<pre><b>not enough values to unpack (expected 3, got 0)</b></pre>
+<p class="emp">这是因为Celery 4.x 在win10版本下运行存在问题，解决方案为：先安装Python的<code>eventlet</code>模块：</p>
 <pre>
-[2018-09-28 20:51:37,255: INFO/MainProcess] Received task: orders.task.order_created[d9734042-2423-45cc-8109-a901f938bec4]
-[2018-09-28 20:51:42,895: WARNING/MainProcess] 1
-[2018-09-28 20:51:42,896: WARNING/MainProcess] &lt;class 'int'>
-[2018-09-28 20:51:42,896: INFO/MainProcess] Task orders.task.order_created[d9734042-2423-45cc-8109-a901f938bec4] succeeded in 5.64100000000326s: 1
+<b>pip install eventlet</b>
 </pre>
-<p>检查邮件发现成功的完成了任务。如果注意看RabbitMQ的监控窗口，可以看到RabbitMQ的DeliverMessage会出现我们的任务，Queues中可以看到有一个Celery的运行中队列</p>
-<p style="color: red">注意，在发送邮件的时候，有可能出现错误信息如下：</p>
+<p class="emp">然后在启动Celery worker的时候，加上参数 -P eventlet，命令行如下：</p>
 <pre>
-<b style="color: red">not enough values to unpack (expected 3, got 0)</b>
+<b>celery -A myshop worker -l info -P eventlet</b>
 </pre>
-<p style="color: red">这是因为Celery 4.x 在win10版本下运行都有这个问题，解决方案为：先安装Python的 eventlet模块：</p>
-<pre>
-<b style="color: red">pip install eventlet</b>
-</pre>
-<p style="color: red">然后在启动Celery worker的时候，加上参数 -P eventlet，命令行如下：</p>
-<pre>
-<b style="color: red">celery -A myshop worker -l info -P eventlet</b>
-</pre>
-<p style="color: red">即可解决该错误。在linux下应该不会发生该错误。参考Celery项目在 Github 上的问题：<a href="https://github.com/celery/celery/issues/4081" target="_blank">Unable to run tasks under Windows #4081</a></p>
+<p class="emp">即可解决该错误。在linux下应该不会发生该错误。参考Celery项目在 Github 上的问题：<a href="https://github.com/celery/celery/issues/4081" target="_blank">Unable to run tasks under Windows #4081</a></p>
 
-<h3><b>使用Flower图形化模块监控Celery</b></h3>
-<p>如果想要监控异步任务的执行情况，可以安装Python 的FLower模块：</p>
+<h3 id="c7-4-5"><span class="title">4.5</span>监控Celery</h3>
+<p>如果想要监控异步任务的执行情况，可以安装Python的FLower模块：</p>
 <pre>
 pip install flower==0.9.2
 </pre>
-<p>Flower库好像是本书中第二个从作者成书到翻译之间没有更新版本的库。Flower的项目地址是<a href="https://flower.readthedocs.io/" target="_blank">https://flower.readthedocs.io/</a></p>
-<p>之后在新的终端窗口（如果是Pycharm，点terminal左上角的+）输入：</p>
+<p>之后在新的终端窗口输入：</p>
 <pre>
 celery -A myshop flower
 </pre>
-<p>之后在浏览器中打开http://localhost:5555/dashboard，即可看到图形化监控的Celery情况：</p>
-<img src="http://img.conyli.cc/django2/C07-12.jpg" alt="">
+<p>之后在浏览器中打开<code>http://localhost:5555/dashboard</code>，即可看到图形化监控的Celery情况：</p>
+<p><img src="http://img.conyli.cc/django2/C07-12.jpg" alt=""></p>
+<p>可以在<a href="https://flower.readthedocs.io/" target="_blank">https://flower.readthedocs.io/</a>查看Flower的文档。</p>
 
 <h1><b>总结</b></h1>
-<p>这一章里主要完成了四个任务，分别是建立基础的商品品类和明细展示页面，通过session建立购物车系统，建立提交订单系统，以及以发送邮件为例子介绍了在django 中使用异步任务。</p>
-<p>主要的新知识有：</p>
-<ul>
-    <li>为字段建立联合索引，使用meta类的index_together属性</li>
-    <li>注册管理后台的list_edit属性，可以直接在列表页修改字段</li>
-    <li>session模块的中间件与类似字典方式的使用</li>
-    <li>自定义类管理购物车和类似的小型数据</li>
-    <li>建立自定义上下文处理器，为项目内所有表单增加全局变量</li>
-    <li>上下文管理器与自定义template tag的取舍</li>
-    <li>注册管理后台的Inline模式，外键关联的表格显示在一页内的做法</li>
-    <li>Celery与RabbitMQ在linux和windows下的配置</li>
-    <li>Django内使用Celery的方法与异步功能的编写</li>
-    <li>Win10中Celery运行错误的解决方法</li>
-    <li>Flower模块图形化监控Celery状态</li>
-</ul>
-
-
+<p>这一章里创建了一个基础的电商网站。为网站创建了商品品类和详情展示，通过session创建了购物车应用。实现了一个自定义的上下文处理器用于将购物车对象附加到所有模板上，还实现了创建订单的功能。最后还学习了使用Celery启动异步任务。</p>
+<p>在下一章将学习集成支付网关，为管理后台增加自定义操作，将数据导出为CSV格式，以及动态的生成PDF文件。</p>
 </body>
 </html>
