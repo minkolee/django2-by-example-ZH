@@ -5,50 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/normalize.min.css">
     <link rel="stylesheet" href="css/base.css">
-    <title>第八章 </title>
+    <title>第八章 管理支付与订单</title>
 
 </head>
 <body>
-<h1><b>管理支付与订单</b></h1>
-<p>上一章制作了一个带有商品展示和购物车功能的电商网站雏形，同时也学到了如何使用Celery给项目增加异步任务。</p>
-<p>这一章就来给网站增加实际的支付功能，以及通过订单数据生成PDF发票的功能，主要有三大块内容：</p>
+<h1 id="top"><b>管理支付与订单</b></h1>
+<p>上一章制作了一个带有商品品类展示和购物车功能的电商网站雏形，同时也学到了如何使用Celery给项目增加异步任务。本章将学习为网站集成支付网关以让用户通过信用卡付款，还将为管理后台扩展两项功能：将数据导出为CSV以及生成PDF发票。</p>
+<p>本章的主要内容有：</p>
 <ul>
     <li>集成支付网关到项目中</li>
     <li>将订单数据导出成CSV文件</li>
-    <li>动态生成PDF文件</li>
+    <li>为管理后台创建自定义视图</li>
+    <li>动态生成PDF发票</li>
 </ul>
-<p>其中还将学习如何为管理后台建立自定义功能和视图</p>
+<h2 id="c8-1"><span class="title">1</span>集成支付网关</h2>
 
-<h2><b>集成支付网关</b></h2>
-
-<p>支付网关是一种进行支付的第三方代理程序（网站）。由于涉及到支付，不可能每个人都去和支付清算机构研发属于自己的支付程序。就像日常生活中我们付款给另外一个人，都需要通过银行或者支付机构这些第三方进行操作一样，对于我们网站的付款，通过支付网关将支付处理过程交给一个可信任的第三方来完成，只需要得到是否成功支付的结果，无需在自己的网站上处理信用卡和其他支付方式的信息并接入到清算机构进行实际支付。</p>
-<p>支付网关有很多可供选择，像在国内就可以选择支付宝，微信支付等。在本书的上一版中，集成的是Paypal。这次要集成的是叫做"Braintree"的支付网关。</p>
-<p>Braintree使用较为广泛，是Uber和Airbnb的支付方式。Braintree提供了一套API用于支持信用卡，PayPal，Android Pay和Apple Pay等支付方式，官方网站在<a
+<p>支付网关是一种处理在线支付的网站或者程序，使用支付网关，就可以管理用户的订单，然后将支付过程交给一个可信赖且安全的第三方，而无需在我们自己的站点上处理支付信息。</p>
+<p>支付网关有很多可供选择，我们将要集成的是叫做"Braintree"的支付网关。Braintree使用较为广泛，是Uber和Airbnb的支付服务提供商。Braintree提供了一套API用于支持信用卡，PayPal，Android Pay和Apple Pay等支付方式，官方网站在<a
         href="https://www.braintreepayments.com/" target="_blank">https://www.braintreepayments.com/</a>。</p>
-<p>Braintree提供了很多集成的选择，最简单的集成方式就是Drop-in集成，包含一个预先建立好的支付表单。但是为了自定义一些支付过程中的内容，这里选择使用高级的Hosted Field方式进行集成。<a
-        href="https://developers.braintreepayments.com/guides/hosted-fields/overview/javascript/v3" target="_blank">这里</a>可以看到详细的帮助文档。</p>
-<p>支付表单与普通网站交互的表单不同，其中包含的信用卡号，CVV码，过期日期等信息必须要得到安全处理，Hosted Field集成方式将这些字段展示给用户的时候，在页面中渲染的是一个iframe框架。我们可以来自定义该字段的外观，但必须要遵循<a
-        href="https://en.wikipedia.org/wiki/Payment_Card_Industry_Data_Security_Standard" target="_blank">Payment Card Industry (PCI)安全支付</a>的要求。并且由于可以修改外观，用户并不会注意到页面内有一个iframe框架。</p>
-
-<h3><b>建立Braintree沙盒账户</b></h3>
-<p>就像之前使用social-auth需要注册开发者账户一样，使用Braintree的支付网关，也必须先注册一个Braintree沙盒账户用户开发和测试。打开<a
+<p>Braintree提供了很多集成的方法，最简单的集成方式就是Drop-in集成，包含一个预先建立好的支付表单。但是为了自定义一些支付过程中的内容，这里选择使用高级的<em>Hosted Field</em>（字段托管）方式进行集成。在<a
+        href="https://developers.braintreepayments.com/guides/hosted-fields/overview/javascript/v3" target="_blank">https://developers.braintreepayments.com/guides/hosted-fields/overview/javascript/v3</a>可以看到详细的帮助文档。</p>
+<p>支付表单中包含的信用卡号，CVV码，过期日期等信息必须要得到安全处理，Hosted Field集成方式将这些字段展示给用户的时候，在页面中渲染的是一个iframe框架。我们可以来自定义该字段的外观，但必须要遵循<a
+        href="https://en.wikipedia.org/wiki/Payment_Card_Industry_Data_Security_Standard" target="_blank">Payment Card Industry (PCI)安全支付</a>的要求。由于可以修改外观，用户并不会注意到页面使用了iframe。</p>
+<p class="emp">译者注：原书在这里说的不是很清晰。Hosted Fields的意思是敏感字段由我们页面中的Braintree JavaScript客户端通过Braintree服务器生成并填入到页面中，而不是在模板中直接编写<code>input</code>字段。简单的说就是信用卡等敏感信息的字段是由Braintree托管生成，而不是我们自行编写。</p>
+<h3 id="c8-1-1"><span class="title">1.1</span>注册Braintree沙盒测试账户</h3>
+<p>需要注册一个Braintree账户。才能使用集成支付功能。我们先注册一个Braintree沙盒账户用于开发和测试。打开<a
         href="https://www.braintreepayments.com/sandbox" target="_blank">https://www.braintreepayments.com/sandbox</a>，如下图所示：</p>
-<img src="http://img.conyli.cc/django2/C08-01.jpg" alt="">
+<p><img src="http://img.conyli.cc/django2/C08-01.jpg" alt=""></p>
 <p>填写表单创建用户，之后会收到电子邮件验证，验证通过之后在<a href="https://sandbox.braintreegateway.com/login" target="_blank">https://sandbox.braintreegateway.com/login</a>进行登录。可以得到自己的商户ID和私有/公开密钥如下图所示：</p>
-<img src="http://img.conyli.cc/django2/C08-02.jpg" alt="">
-<p>这些内容和一会使用API过程中的验证有关，注意保存好这些资料，不要泄露给他人。</p>
+<p><img src="http://img.conyli.cc/django2/C08-02.jpg" alt=""></p>
+<p>这些信息与使用Braintree API进行验证交易有关，注意保存好私钥，不要泄露给他人。</p>
 
-<h3><b>Python中安装Braintree模块</b></h3>
-<p>Braintree为Python提供了一个模块，源代码地址在<a href="https://github.com/braintree/braintree_python" target="_blank">https://github.com/braintree/braintree_python</a>。使用命令行安装：</p>
+<h3 id="c8-1-2"><span class="title">1.2</span>安装Braintree的Python模块</h3>
+<p>Braintree为Python提供了一个模块操作其API，源代码地址在<a href="https://github.com/braintree/braintree_python" target="_blank">https://github.com/braintree/braintree_python</a>。我们将把这个<code>braintree</code>模块集成到站点中。</p>
+<p>使用命令行安装<code>braintree</code>模块：</p>
 <pre>
 pip install braintree==3.45.0
 </pre>
-<p>译者安装了目前最新版3.48版本。之后在settings.py里需要配置Braintree的相关设置：</p>
+<p>之后在<code>settings.py</code>里配置：</p>
 <pre>
 # Braintree支付网关设置
-BRAINTREE_MERCHANT_ID = 'g38f76cnqg87znvp'  # Merchant ID
-BRAINTREE_PUBLIC_KEY = 'hnhdn4dj9ghkf9dd'  # Public Key
-BRAINTREE_PRIVATE_KEY = '7e61ac77680f6b66d7997c39ef06f5bc'  # Private key
+BRAINTREE_MERCHANT_ID = 'XXX'  # 商户ID
+BRAINTREE_PUBLIC_KEY = 'XXX'  # 公钥
+BRAINTREE_PRIVATE_KEY = 'XXX'  # 私钥
+
 from braintree import Configuration, Environment
 
 Configuration.configure(
@@ -58,64 +58,82 @@ Configuration.configure(
     BRAINTREE_PRIVATE_KEY
 )
 </pre>
-<p>将刚才注册后得到的信息填入到其中。注意此处的设置 <code>Environment.Sandbox,</code>，我们目前是在沙盒环境中操作，不是正式支付环境。如果是在正式支付环境中，必须修改成 <code>Environment.Production</code>。由于我们目前是沙盒测试账号，这里的Merchant ID 不是可以用于生产环境的正式ID。Braintree对于正式账号会有新的商户ID和公钥/私钥。</p>
-<p>Braintree的工作准备好了，下一步是将网关和我们的网站结合起来。</p>
+<p>将<code>BRAINTREE_MERCHANT_ID</code>，<code>BRAINTREE_PUBLIC_KEY</code>，<code>BRAINTREE_PRIVATE_KEY</code>的值替换成你自己的实际信息。</p>
+<p class="hint">注意此处的设置 <code>Environment.Sandbox,</code>，表示我们当前集成的是沙盒环境。如果站点正式上线并且获取了正式的Braintree账户，必须修改成<code>Environment.Production</code>。Braintree对于正式账号会有新的商户ID和公钥/私钥。</p>
+<p>Braintree的基础设置结束了，下一步是将支付网关和支付过程结合起来。</p>
 
-<h3><b>集成支付网关的准备工作</b></h3>
-<p>使用过电商网站的用户对结账过程应该比较熟悉：</p>
+<h3 id="c8-1-3"><span class="title">1.3</span>集成支付网关</h3>
+<p>结账过程是这样的：</p>
 <ol>
     <li>将商品加入到购物车</li>
     <li>从购物车中选择结账</li>
-    <li>在弹出的页面中选择支付方式/输入支付信息</li>
+    <li>输入信用卡信息并且支付</li>
 </ol>
-<p>针对支付功能，我们建立一个新的应用叫做payment，建立之后在settings.py内注册好。在客户从购物车选择结账的时候，目前的返回页面是一个成功页面，必须将该页面重定向到一个新的支付页面。</p>
-<p>编辑orders应用中的views.py，修改order_create视图的启动异步发送邮件那行之后的内容：</p>
-<pre>
-from django.urls import reverse
-from django.shortcuts import render, <b>redirect</b>
+<p>针对支付功能，我们建立一个新的应用叫做<code>payment</code>：</p>
+<pre>python manage.py startapp payment</pre>
 
-# 启动异步发送邮件
+<p>编辑<code>settings.py</code>文件，激活该应用：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    <b>'payment.apps.PaymentConfig',</b>
+]
+</pre>
+<p><code>payment</code>现在已经被激活。</p>
+<p>客户成功提交订单后，必须将该页面重定向到一个支付过程页面（目前是重定向到一个简单的成功页面）。编辑<code>orders</code>应用中的<code>views.py</code>，增加如下导入：</p>
+<pre>
+<b>from django.urls import reverse</b>
+from django.shortcuts import render, <b>redirect</b>
+</pre>
+<p>在同一个文件内，将<code>order_create</code>视图的如下部分：</p>
+<pre>
+# 启动异步任务
+order_created.delay(order.id)
+return render(request, 'orders/order/created.html', locals())
+</pre>
+<p>替换成：</p>
+<pre>
+# 启动异步任务
 order_created.delay(order.id)
 <b># 在session中加入订单id
 request.session['order_id'] = order.id
 # 重定向到支付页面
 return redirect(reverse('payment:process'))</b>
 </pre>
-<p>在订单获取成功后，session中就保存了一个订单id，然后页面会跳转到支付页面。通过session拿到订单id来进行支付，如果成功，就修改订单的状态为已支付。payment:process的URL很快我们就会配置。</p>
-<p>需要了解的是：由于我们的支付请求是提交到Braintree去的，每次在Braintree中创建一个订单（支付请求）的时候，会生成一个唯一的交易ID号。因为必须在Order模型中增加一个字段用于存储我们的本地订单与提交到Braintree进行支付的交易ID号的对应关系。</p>
-<p>编辑orders应用的models.py，为Order模型新增一行：</p>
+<p>这样修改后，在成功创建订单之后，session中就保存了订单ID的变量<code>order_id</code>，然后用户被重定向至<code>payment:process</code> URL，这个URL稍后会编写。</p>
+<p>注意必须为<code>order_created</code>视图启动Celery。</p>
+<p>每次我们向Braintree中发送一个交易请求的时候，会生成一个唯一的交易ID号。因此我们在<code>Order</code>模型中增加一个字段用于存储这个交易ID号，这样可以将订单与Braintree交易联系起来。</p>
+<p>编辑<code>orders</code>应用的<code>models.py</code>文件，为<code>Order</code>模型新增一行：</p>
 <pre>
 class Order(models.Model):
     # ...
-    braintree_id = models.CharField(max_length=150, blank=True)
+    <b>braintree_id = models.CharField(max_length=150, blank=True)</b>
 </pre>
-<p>之后执行makemigrations和migrate，修改数据库。目前准备工作都已经做完，剩下的就是在payment应用中使用Braintree。</p>
+<p>之后执行数据迁移程序，每一个订单都会保存与其关联的交易ID。目前准备工作都已经做完，剩下就是在支付过程中使用支付网关。</p>
 
-<h3><b>使用Hosted Fields方式集成支付网关</b></h3>
-<p>Hosted Fields方式允许我们创建自定义的支付表单，使用各种样式和表现形式。Braintree JavaScript SDK会在页面中动态的添加一个iframe框体用于展示支付字段。</p>
-<p>当用户提交表单的时候，Hosted Fields会安全的将用户的信息特征提取，生成一个特征字符串（token）。如果令牌化过程成功，就可以使用这个特征字符串（token），向Braintree发起一个支付申请。</p>
-<p>为此需要建立一个视图用于和Braintree通信。这个视图的工作流程如下：</p>
+<h4 id="c8-1-3-1"><span class="title">1.3.1</span>使用Hosted Fields进行支付</h4>
+<p>Hosted Fields方式允许我们创建自定义的支付表单，使用自定义样式和表现形式。Braintree JavaScript SDK会在页面中动态的添加iframe框体用于展示Host Fields支付字段。当用户提交表单的时候，Hosted Fields会安全地提取用户的信用卡等信息，生成一个特征字符串（tokenize，令牌化）。如果令牌化过程成功，就可以使用这个特征字符串（token），通过视图中的<code>braintree</code>模块发起一个支付申请。</p>
+<p>为此需要建立一个支付视图。这个视图的工作流程如下：</p>
 <ol>
-    <li>用户提交订单时，通过braintree模块生成一个token，这个token用于实例化下一步的Braintree JS 客户端，并不是最终发送给支付网关的上边说的token。为了方便以下把这个token称为临时token，把最终提交给Braintree网站的token叫做交易token。</li>
-    <li>视图渲染支付表单。Braintree JS 客户端使用第一步里生成的临时token和我们自定义的表单数据来生成页面中的支付表单。</li>
-    <li>用户提交支付表单后，Braintree JS 客户端会生成交易token</li>
-    <li>视图拿到交易token之后，通过braintree模块向网站提交支付请求。</li>
+    <li>用户提交订单时，视图通过<code>braintree</code>模块生成一个token，这个token用于Braintree JavaScript 客户端生成支付表单，并不是最终发送给支付网关的token。为了方便以下把这个token称为临时token，把最终提交给Braintree网站的token叫做交易token。</li>
+    <li>视图渲染支付表单所在的模板。页面中的Braintree JavaScript 客户端使用临时token来生成页面中的支付表单。</li>
+    <li>用户输入信用卡信息并且提交支付表单后，Braintree JavaScript 客户端会生成交易token，将这个交易token通过<code>POST</code>请求发送到视图</li>
+    <li>视图获取交易token之后，通过<code>braintree</code>模块向网站提交交易请求。</li>
 </ol>
-<p>了解了工作流程之后，来编写相关视图，编辑payment应用中的views.py：</p>
+<p>了解了工作流程之后，来编写相关视图，编辑<code>payment</code>应用中的<code>views.py</code>文件，添加下列代码：</p>
 <pre>
-from django.shortcuts import render, redirect, get_object_or_404
 import braintree
+from django.shortcuts import render, redirect, get_object_or_404
 from orders.models import Order
-
 
 def payment_process(request):
     order_id = request.session.get('order_id')
     order = get_object_or_404(Order, id=order_id)
-    # POST请求则处理支付
+
     if request.method == "POST":
-        # 获得最终生成的交易token
+        # 获得交易token
         nonce = request.POST.get('payment_method_nonce', None)
-        # 使用token和附加信息，建立并向Braintree提交交易信息
+        # 使用交易token和附加信息，创建并提交交易信息
         result = braintree.Transaction.sale(
             {
                 'amount': '{:2f}'.format(order.get_total_cost()),
@@ -125,42 +143,44 @@ def payment_process(request):
                 }
             }
         )
-        # 如果提交交易信息成功,将已支付和交易id记录到Order表中
         if result.is_success:
+            # 标记订单状态为已支付
             order.paid = True
+            # 保存交易ID
             order.braintree_id = result.transaction.id
             order.save()
             return redirect('payment:done')
         else:
             return redirect('payment:canceled')
 
-    # GET请求则生成临时token交给前端页面以生成支付表单供用户填写
     else:
+        # 生成临时token交给页面上的JS程序
         client_token = braintree.ClientToken.generate()
         return render(request,
                       'payment/process.html',
                       {'order': order,
                        'client_token': client_token})
 </pre>
-<p>这个视图的逻辑解释如下：</p>
+<p>这个<code>payment_process</code>视图管理支付过程，工作流程如下 ：</p>
 <ol>
-    <li>在order_create中我们向session中传入了订单id并且立刻重定向到这个视图，从中取出订单id，然后获取订单对象</li>
-    <li>然后是分支，如果是POST请求，说明用户提交了支付申请，从页面里拿到Braintree JS 客户端生成的交易token，附加上其他信息然后发送给braintree支付网站。这里边的几个参数解释如下：<ol>
-        <li>amount：总收款金额</li>
-        <li>payment_method_nonce：Braintree JS 客户端生成的交易token</li>
-        <li>options：其他选项，submit_for_settlement设置为True表示生成交易信息完毕的时候就立刻提交。</li>
+    <li>从session中取出由<code>order_create</code>视图设置的<code>order_id</code>变量。</li>
+    <li>获取<code>Order</code>对象，如果没找到，返回<code>404 Not Found</code>错误</li>
+    <li>如果接收到<code>POST</code>请求，获取交易token <code>payment_method_nonce</code>，使用交易token和<code>braintree.Transaction.sale()</code>方法生成新的交易，该方法的几个参数解释如下：<ol>
+        <li><code>amount</code>：总收款金额</li>
+        <li><code>payment_method_nonce</code>：交易token，由页面中的Braintree JavaScript 客户端生成。</li>
+        <li><code>options</code>：其他选项，<code>submit_for_settlement</code>设置为<code>True</code>表示生成交易信息完毕的时候就立刻提交。</li>
     </ol></li>
-    <li>之后根据result的结果来判断，如果成功就将该订单标记为已支付，记录交易id。不成功就跳转到cancel页面。</li>
-    <li>如果是GET请求，说明用户新进入到支付页面，生成临时token交给前端的Braintree JS 代理。</li>
+    <li>如果交易成功，通过设置<code>paid</code>属性为<code>True</code>，将订单标记为已支付，将交易ID存储到<code>braintree_id</code>属性中，之后重定向至<code>payment:done</code>，如果交易失败就重定向至<code>payment:canceled</code>。</li>
+    <li>如果视图接收到<code>GET</code>请求，生成临时token交给页面中的Braintree JavaScript 客户端。</li>
 </ol>
-<p>下边建立支付成功和失败时候的处理视图，继续编辑views.py：</p>
+<p>下边建立支付成功和失败时的处理视图，在<code>payment</code>应用的views.py中添加下列代码：</p>
 <pre>
 def payment_done(request):
     return render(request, 'payment/done.html')
 def payment_canceled(request):
     return render(request, 'payment/canceled.html')
 </pre>
-<p>然后在payment目录下建立urls.py来配置本级路由：</p>
+<p>然后在<code>payment</code>目录下建立<code>urls.py</code>，为上述视图配置路由：</p>
 <pre>
 from django.urls import path
 from . import views
@@ -173,12 +193,31 @@ urlpatterns = [
     path('canceled/', views.payment_canceled, name='canceled'),
 ]
 </pre>
-<p>再去配置项目的根路由：</p>
+<p>这是支付流程的路由，配置了如下URL模式：</p>
+<ul>
+    <li><code>process</code>：处理支付的视图</li>
+    <li><code>done</code>：支付成功的视图</li>
+    <li><code>canceled</code>：支付未成功的视图</li>
+</ul>
+<p>编辑<code>myshop</code>项目的根<code>urls.py</code>文件，为<code>payment</code>应用配置二级路由：</p>
 <pre>
-path('pyament/',include('payment.urls',namespace='payment')),
+urlpatterns = [
+    # ...
+    <b>path('payment/', include('payment.urls', namespace='payment')),</b>
+    path('', include('shop.urls', namespace='shop')),
+]
 </pre>
-<p>依然要注意这一行要放到shop.urls上边，否则无法被解析到。</p>
+<p>依然要注意这一行要放到<code>shop.urls</code>上边，否则无法被解析到。</p>
 <p>之后是建立视图，在payment目录下建立templates/payment/目录，并在其中建立 process.html， done.html，canceled.html三个模板。先来编写process.html：</p>
+<p>在<code>payment</code>应用内建立下列目录和文件结构：</p>
+<pre>
+templates/
+    payment/
+        process.html
+        done.html
+        canceled.html
+</pre>
+<p>编辑<code>payment/process.html</code>，添加下列代码：</p>
 <pre>
 {% extends "shop/base.html" %}
 
@@ -256,16 +295,16 @@ path('pyament/',include('payment.urls',namespace='payment')),
   &lt;/script>
 {% endblock %}
 </pre>
-<p>在页面的表单部分，让用户填写信用卡号，CVV码和过期日期。然后埋了一个隐藏的元素用于存放交易token。</p>
-<p>之后的JS代码部分，导入了关键的Braintree网站上的JS客户端代码和Hosted Field组件。JS代码解释如下：</p>
+<p>这是用户填写信用卡信息并且提交支付的模板，我们用<code>&lt;div&gt;</code>替代<code>&lt;input&gt;</code>使用在信用卡号，CVV码和过期日期字段上。这些字段就是Braintree JavaScript客户端渲染的iframe字段。还使用了一个名称为<code>payment_method_nonce</code>的<code>&lt;input&gt;</code>元素用于提交交易ID到后端。</p>
+<p>在模板中还导入了Braintree JavaScript SDK的<code>client.min.js</code>和Hosted Fields组件<code>hosted-fields.min.js</code>，然后执行了下列JS代码：</p>
 <ol>
-    <li>使用braintree.client.create，用authorization: '{{ client_token }}'也就是视图里生成的临时token，来进行后边的控制表单和生成交易token等一系列动作。</li>
-    <li>braintree.hostedFields.create()实例化hostfield对象</li>
-    <li>给页面中的元素加上了ID，根据ID来选择元素，对表单应用一些CSS样式</li>
-    <li>给提交按钮绑定了事件，点击的话就生成交易token，然后提交表单。</li>
+    <li>使用<code>braintree.client.create()</code>方法，传入<code>client_token</code>即<code>payment_process</code>视图里生成的临时token，实例化Braintree JavaScript 客户端。</li>
+    <li>使用<code>braintree.hostedFields.create()</code>实例化Hosted Field组件</li>
+    <li>给<code>input</code>字段应用自定义样式</li>
+    <li>给<code>cardnumber</code>，<code>cvv</code>, 和<code>expiration-date</code>字段设置<code>id</code>选择器</li>
+    <li>给表单的<code>submit</code>行为绑定一个事件，当表单被点击提交时，Braintree SDK 使用表单中的信息，生成交易token放入<code>payment_method_nonce</code>字段中，然后提交表单。</li>
 </ol>
-<p>这里的很多写法来自于Braintree提供的文档，有兴趣的读者可以<a href="https://developers.braintreepayments.com/guides/hosted-fields/overview/javascript/v3" target="_blank">在此</a>查看。</p>
-<p>再来编辑done.html：</p>
+<p>编辑<code>payment/done.html</code>文件，添加下列代码：</p>
 <pre>
 {% extends "shop/base.html" %}
 {% block content %}
@@ -273,7 +312,8 @@ path('pyament/',include('payment.urls',namespace='payment')),
     &lt;p>Your payment has been processed successfully.&lt;/p>
 {% endblock %}
 </pre>
-<p>canceled.html：</p>
+<p>这是订单成功支付时用户被重定向的页面。</p>
+<p>编辑<code>canceled.html</code>，添加下列代码：</p>
 <pre>
 {% extends "shop/base.html" %}
 {% block content %}
@@ -281,24 +321,36 @@ path('pyament/',include('payment.urls',namespace='payment')),
     &lt;p>There was a problem processing your payment.&lt;/p>
 {% endblock %}
 </pre>
-<p>之后可以启动站点了，记得还需要启动Celery和RabbitMQ，否则无法发送邮件。加入一些商品到购物车，点击Checkout之后Place order，可以看到出现了支付页面：</p>
-<img src="http://img.conyli.cc/django2/C08-03.jpg" alt="">
-<p>针对沙盒测试环境，Braintree提供了一些测试用的信用卡资料，可以在<a
-        href="https://developers.braintreepayments.com/guides/credit-cards/testing-go-live/python" target="_blank">https://developers.braintreepayments.com/guides/credit-cards/testing-go-live/python</a>找到，实际输入一些来看看是否成功或者失败。</p>
-<p>在卡号中输入4111 1111 1111 1111，CVV填入123，到期日期填入未来的某一天比如12/20（2020年12月）：</p>
-<img src="http://img.conyli.cc/django2/C08-04.jpg" alt="">
+<p>这是订单未支付成功时用户被重定向的页面。之后我们来试验一下付款。</p>
+
+<h3 id="c8-1-4"><span class="title">1.4</span>测试支付</h3>
+<p>打开系统命令行窗口然后运行RabbitMQ：</p>
+<pre>rabbitmq-server</pre>
+<p>再启动一个命令行窗口，启动Celery worker：</p>
+<pre>celery -A myshop worker -l info</pre>
+<p>再启动一个命令行窗口，启动站点：</p>
+<pre>python manage.py runserver</pre>
+<p>之后在浏览器中打开<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>加入一些商品到购物车，提交订单，当按下PLACE ORDER按钮后，订单信息被保存进数据库，订单ID被附加到session上，然后进入支付页面。</p>
+<p>支付页面从session中取得订单id然后在iframe中渲染Hosted Fields，像下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C08-03.jpg" alt=""></p>
+<p>可以看一下页面的HTML代码，从而理解什么是Hosted Fields。</p>
+<p>针对沙盒测试环境，Braintree提供了一些测试用的信用卡资料，可以进行付款成功或失败的测试，可以在<a
+        href="https://developers.braintreepayments.com/guides/credit-cards/testing-go-live/python" target="_blank">https://developers.braintreepayments.com/guides/credit-cards/testing-go-live/python</a>找到，我们来使用<code>4111 1111 1111 1111</code>这个信用卡号，在CVV码中填入<code>123</code>，到期日期填入未来的某一天比如<code>12/20</code>：</p>
+<p><img src="http://img.conyli.cc/django2/C08-04.jpg" alt=""></p>
 <p>之后点击Pay，应该可以看到成功页面：</p>
-<img src="http://img.conyli.cc/django2/C08-05.jpg" alt="">
+<p><img src="http://img.conyli.cc/django2/C08-05.jpg" alt=""></p>
 <p>说明付款已经成功。可以在<a href="https://sandbox.braintreegateway.com/login" target="_blank">https://sandbox.braintreegateway.com/login</a>登录，然后在左侧菜单选Transaction里搜索最近的交易，可以看到如下信息：</p>
-<img src="http://img.conyli.cc/django2/C08-06.jpg" alt="">
-<p>然后再查看管理站点http://127.0.0.1:8000/admin/orders/order/中的对应记录，看一下Paid字段和Braintree_id字段，这里看到该交易id和上一张图片交易清单里的id不同，是因为Braintree页面已经改版，译者截取了自己的交易信息，实际上查看Order订单库的braintree_id字段，其内容是和交易清单里的信息完全对应的，这里只是示例：</p>
-<img src="http://img.conyli.cc/django2/C08-07.jpg" alt="">
+<p><img src="http://img.conyli.cc/django2/C08-i01.jpg" alt=""></p>
+<p class="emp">译者注：Braintree网站在成书后有部分改版，读者看到的支付详情页面可能与上述图片有一些区别。</p>
+<p>然后再查看管理站点<a href="http://127.0.0.1:8000/admin/orders/order/" target="_blank">http://127.0.0.1:8000/admin/orders/order/</a>中的对应记录，该订单应该已经被标记为已支付，而且记录了交易ID，如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C08-07.jpg" alt=""></p>
+<p>我们现在就成功集成了支付功能。</p>
 
-<h3><b>正式上线</b></h3>
-<p>在沙盒环境中测试通过之后，需要正式上线的话，需要重新到<a href="https://www.braintreepayments.com" target="_blank">https://www.braintreepayments.com</a>注册账号，并且填写组织机构名称，等待认证通过之后，就拥有了正式的Braintree账户。</p>
-<p>此时会获得新的商户ID以及公钥/私钥，需要将其更新到settings.py中去，并将其中的 <code>Environment.Sandbox</code>修改为 <code>Environment.Production</code>。正式上线的具体步骤可以参考：<a href="https://developers.braintreepayments.com/start/go-live/python" target="_blank">https://developers.braintreepayments.com/start/go-live/python</a></p>
+<h3 id="c8-1-5"><span class="title">1.5</span>正式上线</h3>
+<p>在沙盒环境中测试通过之后，需要正式上线的话，需要到<a href="https://www.braintreepayments.com" target="_blank">https://www.braintreepayments.com</a>创建正式账户。</p>
+<p>在部署到生产环境时，需要将<code>settings.py</code>中的商户ID和公钥私钥更新为正式账户的对应信息，然后将其中的<code>Environment.Sandbox</code>修改为<code>Environment.Production</code>。正式上线的具体步骤可以参考：<a href="https://developers.braintreepayments.com/start/go-live/python" target="_blank">https://developers.braintreepayments.com/start/go-live/python</a>。</p>
 
-<h2><b>导出订单为CSV文件</b></h2>
+<h2 id="c8-2"><span class="title">2</span>导出订单为CSV文件</h2>
 <p>很多情况下，我们的网站将数据库中的信息导出，可能为了和其他系统进行数据交换，或者给人阅读。常用的数据交换格式除了之前我们提到过的JSON，CSV（逗号分隔数据）文件也是一种得到广泛使用的数据格式。</p>
 <p>CSV文件是一个纯文本文件，包含很多条记录。通常一行是一条记录，用逗号分隔其中的每个字段对应的值。由于导出网站数据库数据这种功能一般不会对普通用户开放，所以这里我们准备自定义管理后台，增加导出CSV文件的功能。</p>
 
