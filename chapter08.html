@@ -351,22 +351,21 @@ templates/
 <p>在部署到生产环境时，需要将<code>settings.py</code>中的商户ID和公钥私钥更新为正式账户的对应信息，然后将其中的<code>Environment.Sandbox</code>修改为<code>Environment.Production</code>。正式上线的具体步骤可以参考：<a href="https://developers.braintreepayments.com/start/go-live/python" target="_blank">https://developers.braintreepayments.com/start/go-live/python</a>。</p>
 
 <h2 id="c8-2"><span class="title">2</span>导出订单为CSV文件</h2>
-<p>很多情况下，我们的网站将数据库中的信息导出，可能为了和其他系统进行数据交换，或者给人阅读。常用的数据交换格式除了之前我们提到过的JSON，CSV（逗号分隔数据）文件也是一种得到广泛使用的数据格式。</p>
-<p>CSV文件是一个纯文本文件，包含很多条记录。通常一行是一条记录，用逗号分隔其中的每个字段对应的值。由于导出网站数据库数据这种功能一般不会对普通用户开放，所以这里我们准备自定义管理后台，增加导出CSV文件的功能。</p>
+<p>有时我们想将某个模型中的数据导出为一个文件，用于在其他系统导入。常用的一种数据交换格式是CSV（逗号分隔数据）文件。CSV文件是一个纯文本文件，包含很多条记录。通常一行是一条记录，用特定的分隔符（一般是逗号）分隔每个字段的值。我们准备自定义管理后台，增加导出CSV文件的功能。</p>
 
-<h3><b>给管理后台增加自定义功能（actions)</b></h3>
-<p>这里的actions，是特指Django提供的下拉式功能菜单中的具体选项，如图所示，Django默认对于数据提供了删除的功能：</p>
-<img src="http://img.conyli.cc/django2/C08-08.jpg" alt="">
-<p>Django提供针对管理后台的很多设置。我们准备通过修改actions列表视图，来为管理后台增加自定义功能。</p>
-<p>一个功能的工作流程是：一个用户先从列出的所有字段或者对象中选择要处理的内容，然后从功能菜单中选择要使用的功能，之后执行该功能。</p>
-<p>可以通过写一个符合要求的自定义函数作为一项action，这个函数要接受如下参数：</p>
+<h3 id="c8-2-1"><span class="title">2.1</span>给管理后台增加自定义管理行为（actions)</h3>
+<p>Django允许对管理后台的很多内容进行自定义修改。我们准备在列出具体数据的视图内增加导出CSV文件的功能。</p>
+<p>一个管理行为是指如下操作：用户从管理后台列出某个模型中具体记录的页面内，使用复选框选中要操作的记录，然后从下拉菜单中选择一项操作，之后就会针对所有选中的记录执行操作。这个action的位置如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C08-08.jpg" alt=""></p>
+<p class="hint">创建自定义管理行为可以让管理员批量对记录进行操作。</p>
+<p>可以通过写一个符合要求的自定义函数作为一项管理行为，这个函数要接受如下参数：</p>
 <ul>
-    <li>当前的ModelAdmin类，也就是在操作哪个数据表</li>
-    <li>当前的request对象</li>
-    <li>用户选中的内容，也就是一个QuerySet</li>
+    <li>当前显示的<code>ModelAdmin</code>类</li>
+    <li>当前的request对象，是一个<code>HttpResponse</code>实例</li>
+    <li>用户选中的内容组成的QuerySet</li>
 </ul>
 <p>在选中一个action选项然后点击旁边的Go按钮的时候，该函数就会被执行。</p>
-<p>我们就准备在下拉action清单里增加一项导出CSV数据的功能，为此先来修改orders应用中的admin.py，将下列代码加在定义 OrderAdmin 类之前：</p>
+<p>我们就准备在下拉action清单里增加一项导出CSV数据的功能，为此先来修改<code>orders</code>应用中的<code>admin.py</code>韦健，将下列代码加在<code>OrderAdmin</code>类定义之前：</p>
 <pre>
 import csv
 import datetime
@@ -391,45 +390,40 @@ def exprot_to_csv(modeladmin, request, queryset):
         writer.writerow(data_row)
     return response
 
-
 exprot_to_csv.short_description = 'Export to CSV'
 </pre>
 <p>在这个函数里我们做了如下事情：</p>
 <ol>
-    <li>建立一个HttpResponse对象，类型是text/csv。</li>
-    <li>还附加了一个Header信息，告诉这个请求带有一个附加文件。从当前的类，也就是modeladmin参数里，拿其元类，然后下边用到元类的verboser_属性的值用于生成文件名。</li>
-    <li>以HttpResponse作为参数实例化一个writer对象，用于后边向HTTP请求里写数据。</li>
-    <li>取当前类的所有不是外键的字段对象，放到列表中去。</li>
-    <li>使用一个两层嵌套for循环，对于传入的QuerySet参数，对其中的每一个数据对象（一行数据），采用自省的方式，拿到该对象的所有字段名的值。然后挨个加入到一个临时列表中，之后将列表作为一行数据写入到HttpResponse中。</li>
-    <li>最后返回HTTP响应</li>
-    <li>最后设置了该函数对象的.short_description属性，该属性的值为在页面中显示出来的功能名称。</li>
+    <li>创建一个<code>HttpResponse</code>对象，将其内容类型设置为<code>text/csv</code>，以告诉浏览器将其视为一个CSV文件。还为请求头附加了<code>Content-Disposition</code>头部信息，告诉浏览器这个请求带有一个附加文件。</li>
+    <li>创建一个CSV的<code>writer</code>对象，用于向Http响应对象<code>response</code>中写入CSV文件数据。</li>
+    <li>通过<code>_meta</code>的<code>get_fields()</code>方法获取所有字段名，动态获取<code>model</code>的字段，排除了所有一对多和多对多字段。</li>
+    <li>将字段名写入到响应的CSV数据中，作为第一行数据，即表头</li>
+    <li>迭代QuerySet，将其中每一个对象的数据写入一行中，注意特别对<code>datetime</code>采用了格式化功能，以转换成字符串。</li>
+    <li>最后设置了该函数对象的<code>short_description</code>属性，该属性的值为在action列表中显示的功能名称。</li>
 </ol>
-<p>之后在OrderAdmin类中增加一个新的actions属性，值是一个列表，放着对应的函数对象：</p>
+<p>这样我们就创建了一个通用的管理功能，可以操作任何<code>ModelAdmin</code>对象。</p>
+<p>之后在<code>OrderAdmin</code>类中增加这个新的<code>export_to_csv</code>功能：</p>
 <pre>
-@admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ['id', 'first_name', 'last_name', 'email', 'address', 'postal_code', 'city', 'paid', 'created',
-                    'updated']
-    list_filter = ['paid', 'created', 'updated']
-    inlines = [OrderItemInline]
-    <b>actions = [exprot_to_csv]</b>
+WeasyPrint    # ...
+    <b>actions = [export_to_csv]</b>
 </pre>
-<p>然后到管理后台 http://127.0.0.1:8000/admin/orders/order/ 查看订单类，页面如下：</p>
-<img src="http://img.conyli.cc/django2/C08-09.jpg" alt="">
-<p>可以看到在actions里出现了一项新功能，就是导出到CSV，点击下载，就可以下载到一个文件。</p>
-<p style="color: red">注意这里作者的源代码中并没有在orders应用的models.py中为Order类的 meta 类增加 verbose_name 属性，所以文件名是download。手工增加verboser_name的值为'order'，这样才能下载到和原书里写的名称一样的order.csv文件。</p>
-<p>CSV文件可以用纯文本编辑器如Notepad++或者IDE打开，可以看到里边的内容类似：</p>
+<p>在浏览器中打开<a href="http://127.0.0.1:8000/admin/orders/order/" target="_blank">http://127.0.0.1:8000/admin/orders/order/</a>查看订单类，页面如下：</p>
+<p><img src="http://img.conyli.cc/django2/C08-09.jpg" alt=""></p>
+<p>选择一些订单，然后选择上边的Export to CSV功能，然后点击Go按钮，浏览器就会下载一个<code>order.csv</code>文件。</p>
+<p class="emp">译者注：此处下载的文件名可能不是<code>order.csv</code>，这是因为原书没有在<code>orders</code>应用的<code>models.py</code>中为<code>Order</code>类的<code>meta</code>类增加<code>verbose_name</code>属性，手工增加<code>verboser_name</code>的值为<code>order</code>，这样才能下载到和原书里写的名称一样的<code>order.csv</code>文件。</p>
+<p>使用文本编辑器打开刚下载的CSV文件，可以看到里边的内容类似：</p>
 <pre>
 ID,first name,last name,email,address,postal
 code,city,created,updated,paid,braintree id
 3,Antonio,Melé,antonio.mele@gmail.com,Bank Street,WS
 J11,London,25/02/2018,25/02/2018,True,2bwkx5b6
 </pre>
-<p>这样就实现了导出数据为CSV文件的功能，Django中将数据输出为CSV的说明可以参考<a href="https://docs.djangoproject.com/en/2.0/howto/outputting-csv/" target="_blank">官方文档</a>。</p>
+<p>可以看到，实现管理功能的方法很直接。Django中将数据输出为CSV的说明可以参考<a href="https://docs.djangoproject.com/en/2.0/howto/outputting-csv/" target="_blank">https://docs.djangoproject.com/en/2.0/howto/outputting-csv/</a>。</p>
 
-<h3><b>用自定义视图扩展管理后台的功能</b></h3>
-<p>之前我们使用了增加action的方法给管理后台增加了导出CSV文件的功能。有时候，可能需要对管理后台进行更多的自定义。Django的管理后台并不特殊，也是一个应用，非常易于扩展，可以更改源代码，模板样式，增添功能，甚至可以完全重新编写管理后台本身（从settings.py中将<code>'django.contrib.admin'</code>更换为自行编写的应用并配置URL）。唯一的要求就是管理站点所有的功能应当只允许管理员身份的用户进行登录或者做一些设置（比如只允许从本地地址登录管理后台）。</p>
-<p>我们这次来修改一下管理后台，增加一个自定义的功能用于显示一个订单的信息。修改orders应用中的views.py，增加如下内容：</p>
+<h2 id="c8-3"><span class="title">3</span>用自定义视图扩展管理后台的功能</h2>
+<p>不仅仅是配置<code>ModelAdmin</code>，创建管理行为和覆盖内置模板，有时候可能需要对管理后台进行更多的自定义。这时你需要创建自定义的管理视图。使用管理视图，就可以实现自己想要的功能，要注意的只是自定义管理视图应该只允许管理员进行操作，同时继承内置模板以保持风格一致性。</p>
+<p>我们这次来修改一下管理后台，增加一个自定义的功能用于显示一个订单的信息。修改<code>orders</code>应用中的<code>views.py</code>文件，增加如下内容：</p>
 <pre>
 from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import get_object_or_404
@@ -440,12 +434,19 @@ def admin_order_detail(request, order_id):
     order = get_object_or_404(Order, id=order_id)
     return render(request, 'admin/orders/order/detail.html', {'order': order})
 </pre>
-<p>@staff_member_required装饰器顾名思义，就是只有User表里is_staff和is_active字段同时为True才能使用被装饰的视图。</p>
-<p>然后配置orders应用的urls.py，增加一条路由：</p>
+<p><code>@staff_member_required</code>装饰器只允许<code>is_staff</code>和<code>is_active</code>字段同时为<code>True</code>的用户才能使用被装饰的视图。在这个视图中，通过传入的id取得对应的<code>Order</code>对象。</p>
+<p>然后配置<code>orders</code>应用的<code>urls.py</code>文件，增加一条路由：</p>
 <pre>
 path('admin/order/&lt;int:order_id>/', views.admin_order_detail, name='admin_order_detail')
 </pre>
-<p>然后建立上边视图所需的模板，新建 orders/templates/admin/orders/order/detail.html并且编辑：</p>
+<p>然后在order应用的templates/目录下创建如下文件目录结构：</p>
+<pre>
+admin/
+    orders/
+        order/
+            detail.html
+</pre>
+<p>编辑这个<code>detail.html</code>，添加下列代码：</p>
 <pre>
 {% extends "admin/base_site.html" %}
 {% load static %}
@@ -528,49 +529,46 @@ path('admin/order/&lt;int:order_id>/', views.admin_order_detail, name='admin_ord
     &lt;/div>
 {% endblock %}
 </pre>
-<p>首先我们继承django 管理后台的模板，CSS文件也采用django后台的样式表。然后根据母版里的block的名称分别来编写内容，有增加链接和用表格展示内容等。这里很多内容不一一解释，都是按照继承母版的要求以及django admin内部结构和urls来写的，具体可以参考<a
-        href="https://github.com/django/django/tree/2.1/django/contrib/admin/templates/admin" target="_blank">django 2.1 中所有的内置模板</a>。</p>
-<p>模板也可以不继承Django 的内置模板，完全重写。需要将自己编写的模板命名为与原来模板相同，然后替换原来的模板文件。当然，如果不想使用内置的admin模块，完全自行编写，就没有这个限制了。</p>
-<p>最后，还需要将每个Object的链接都链到我们自己的视图函数上，编辑orders应用的admin.py，在OrderAdmin类之前增加如下代码：</p>
+<p>这个模板用于在管理后台显示订单详情。模板继承了<code>admin/base_site.html</code>母版，这个母版包含Django管理站点的基础结构和CSS类，然后还加载了自定义的样式表<code>css/admin.css</code>。</p>
+<p>自定义CSS样式表在随书代码中，像之前的项目一样将其复制到对应目录。</p>
+<p>我们使用的块名称都定义在母版中，在其中编写了展示订单详情的部分。</p>
+<p>当你需要继承Django的内置模板时，必须了解内置模板的结构，在<a
+        href="https://github.com/django/django/tree/2.1/django/contrib/admin/templates/admin" target="_blank">https://github.com/django/django/tree/2.1/django/contrib/admin/templates/admin</a>可以找到内置模板的信息。</p>
+<p>如果需要覆盖内置模板，需要将自己编写的模板命名为与原来模板相同，然后复制到<code>templates</code>下，设置与内置模板相同的相对路径和名称。管理后台就会优先使用当前项目下的模板。</p>
+<p>最后，还需要再管理后台中为每个<code>Order</code>对象增加一个链接到我们自行编写的视图，编辑<code>orders</code>应用的<code>admin.py</code>文件，在<code>OrderAdmin</code>类之前增加如下代码：</p>
 <pre>
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 
-
 def order_detail(obj):
     return mark_safe('&lt;a href="{}">View&lt;/a>'.format(reverse('orders:admin_order_detail', args=[obj.id])))
 </pre>
-<p>由于我们要渲染一段字符串当做HTML元素解析，所以必须使用mark_safe。这个函数的意思就是取得一个具体的Order对象然后生成一个链接到刚才编写的自定义视图函数，进入自定义模板。这个函数的名称就像一个字段名一样可以增加在页面显示中。需要在OrderAdmin中配置一下，修改OrderAdmin类：</p>
+<p>这个函数接受一个Order对象作为参数，返回一个解析后的<code>admin_order_detail</code>名称对应的URL，由于Django默认会将HTML代码转义，所以加上<code>mark_safe</code>。</p>
+<p class="hint">使用mark_safe可以不让HTML代码转义。使用mark_safe的时候，确保对于用户的输入依然要进行转义，以防止跨站脚本攻击。</p>
+<p>然后编辑<code>OrderAdmin</code>类来显示链接：</p>
 <pre>
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = ['id', 'first_name', 'last_name', 'email', 'address', 'postal_code', 'city', 'paid', 'created',
                     'updated', <b>order_detail</b>]
-    list_filter = ['paid', 'created', 'updated']
-    inlines = [OrderItemInline]
-    actions = [exprot_to_csv]
 </pre>
-<p>然后启动站点，到 http://127.0.0.1:8000/admin/orders/order/ 查看，可以看到新增了一列：</p>
-<img src="http://img.conyli.cc/django2/C08-10.jpg" alt="">
-<p>点击View查看详情，会进入Django 管理后台风格的订单详情页：</p>
-<img src="http://img.conyli.cc/django2/C08-11.jpg" alt="">
+<p>然后启动站点，访问<a href="http://127.0.0.1:8000/admin/orders/order/" target="_blank">http://127.0.0.1:8000/admin/orders/order/</a>，可以看到新增了一列：</p>
+<p><img src="http://img.conyli.cc/django2/C08-10.jpg" alt=""></p>
+<p>点击任意一个订单的View链接查看详情，会进入Django管理后台风格的订单详情页：</p>
+<p><img src="http://img.conyli.cc/django2/C08-11.jpg" alt=""></p>
 
-<h2><b>动态生成PDF</b></h2>
-<p>本章的最后一个任务是实现通过订单动态的生成PDF发票信息。有很多Python库都可以用来生成PDF，常用的是Reportlab库，该库也是django 2.1 <a href="https://docs.djangoproject.com/en/2.1/howto/outputting-pdf/" target="_blank">官方文档</a>推荐使用的库。</p>
-<p>Reportlab生成的PDF是黑白的，而且是直接从文本生成，无法带有样式。更好的做法是建立一个模板，然后将其转换成PDF，这样转换出来的PDF具有一定的格式，方便给用户观看。这里我们使用WeasyPrint库，这个库用来从HTML文件生成PDF文件。</p>
+<h2 id="c8-4"><span class="title">4</span>动态生成PDF发票</h2>
+<p>我们现在已经实现了完整的结账和支付功能，可以为每个订单生成一个PDF发票。有很多Python库都可以用来生成PDF，常用的是Reportlab库，该库也是django 2.0官方推荐使用的库，可以在<a href="https://docs.djangoproject.com/en/2.0/howto/outputting-pdf/" target="_blank">https://docs.djangoproject.com/en/2.0/howto/outputting-pdf/</a>查看详情。</p>
+<p>大部分情况下，PDF文件中都要包含一些样式和格式，这个时候通过渲染后的HTML模板生成PDF更加方便。我们在Django中集成一个模块来按照上述方法转换PDF。这里我们使用WeasyPrint库，这个库用来从HTML模板生成PDF文件。</p>
 
-<h3><b>安装WeasyPrint</b></h3>
-<p>Reportlab的安装不再赘述。WeasyPrint针对不同的系统需要一些依赖库，到其<a href="https://weasyprint.readthedocs.io/en/latest/" target="_blank">官方文档</a>查看，例如在Windows上使用64位的Python，就需要安装<a
-        href="https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer" target="_blank">GTK3-runtime64位版本</a>，将GTK3的路径加入环境变量。</p>
-<p>然后安装WeasyPrint：</p>
-<pre>
-pip install WeasyPrint==0.42.3
-</pre>
-<p>这是第三个到翻译为止还没有更新过的库。</p>
+<h3 id="c8-4-1"><span class="title">4.1</span>安装WeasyPrint</h3>
+<p>需要先按照<a href="http://weasyprint.org/docs/install/#platforms" target="_blank">http://weasyprint.org/docs/install/#platforms</a>的指引安装相关依赖，之后通过<code>pip</code>安装WeasyPrint：</p>
+<pre>pip install WeasyPrint==0.42.3</pre>
+<p class="emp">译者注：WeasyPrint在Windows下的配置非常麻烦，还未必能够成功，推荐Windows用户使用Linux虚拟机。</p>
 
-<h3><b>建立PDF模板</b></h3>
-<p>这个PDF模板也就是我们打算转换成PDF的HTML文件。我们需要建立一个带有订单内容和CSS样式的模板，每次将最终生成的页面传给WeasyPrint生成PDF文件。</p>
-<p>在orders应用的templates/orders/order/目录下建立pdf.html：</p>
+<h3 id="c8-4-2"><span class="title">4.2</span>创建PDF模板</h3>
+<p>需要创建一个模板作为输入给WeasyPrint的数据。我们创建一个带有订单内容和CSS样式的模板，通过Django渲染，将最终生成的页面传给WeasyPrint。</p>
+<p>在<code>orders</code>应用的<code>templates/orders/order/</code>目录下创建<code>pdf.html</code>文件，添加下列代码：</p>
 <pre>
 &lt;html>
 &lt;body>
@@ -619,11 +617,17 @@ pip install WeasyPrint==0.42.3
 &lt;/body>
 &lt;/html>
 </pre>
-<p>注意第五行标红的部分，原书错误的写成了<code>&lt;/br&gt;</code>。这个模板的内容很简单，就是将订单的用户信息和商品信息全部展示出来。之后我们要建立一个视图函数来渲染这个HTML文件。</p>
+<p class="emp">译者注：注意第五行标红的部分，原书错误的写成了<code>&lt;/br&gt;</code>。</p>
+<p>这个模板的内容很简单，使用一个<code>&lt;table&gt;</code>元素展示订单的用户信息和商品信息，还添加了消息显示订单是否已支付。</p>
 
-<h3><b>建立视图渲染PDF文件</b></h3>
-<p>在orders应用的views.py中增加下列代码：</p>
+<h3 id="c8-4-3"><span class="title">4.3</span>创建渲染PDF的视图</h3>
+<p>我们来创建在管理后台内生成订单PDF文件的视图，在<code>orders</code>应用的<code>views.py</code>文件内增加下列代码：</p>
 <pre>
+from django.conf import settings
+from django.http import HttpResponse
+from django.template.loader import render_to_string
+import weasyprint
+
 @staff_member_required
 def admin_order_pdf(request, order_id):
     order = get_object_or_404(Order, id=order_id)
@@ -633,107 +637,98 @@ def admin_order_pdf(request, order_id):
     weasyprint.HTML(string=html).write_pdf(response, stylesheets=[weasyprint.CSS(settings.STATIC_ROOT + 'css/pdf.css')])
     return response
 </pre>
-<p>这个视图从一个订单中生成一个PDF文件，按照如下的顺序：</p>
-<ul>
-    <li>使用了@staff_member_required装饰器让这个功能只有超级用户可以使用</li>
-    <li>通过order_id拿到订单对象，然后使用render_to_string方法将pdf.html加上订单信息渲染成字符串。</li>
-    <li>设置HTTP请求头以便一会浏览器可以下载对应的pdf文件</li>
-    <li>调用WeasyPrint，将渲染后的页面配上css文件，生成最终的PDF，写到HttpResponse里</li>
-    <li>视图返回设置了附加PDF文件和文件名响应的请求给浏览器</li>
-</ul>
-<p>细心的读者会发现settings.py中此时还没有STATIC_ROOT变量，这个变量是表示整个项目的静态文件的基础路径。而之前在模板里使用 load static标签，是指的应用目录下的static目录。在settings.py里设置该参数：</p>
+<p>这是生成PDF文件的视图，使用了<code>@staff_member_required</code>装饰器使该视图只能由管理员访问。通过ID获取Order对象，然后使用<code>render_to_string()</code>方法渲染<code>orders/order/pdf.html</code>，渲染后的模板以字符串形式保存在<code>html</code>变量中。然后创建一个新的<code>HttpResponse</code>对象，并为其附加<code>application/pdf</code>和<code>Content-Disposition</code>请求头信息。使用WeasyPrint从字符串形式的HTML中转换PDF文件并写入<code>HttpResponse</code>对象。这个生成的PDF会带有<code>STATIC_ROOT</code>路径下的<code>css/pdf.css</code>中的样式，最后返回响应。</p>
+<p>如果发现文件缺少CSS样式，记得把CSS文件从随书目录中放入<code>shop</code>应用的<code>static/</code>目录下。</p>
+<p>我们这里还没有配置<code>STATIC_ROOT</code>变量，这个变量规定了项目的静态文件存放的路径。编辑<code>myshop</code>项目的<code>settings.py</code>文件，添加下面这行：</p>
 <pre>
 STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
 </pre>
-<p>将其设置在项目根目录的static目录内。下一步比较有趣，打开终端或者Pycharm的执行manage.py命令：</p>
+<p>然后运行如下命令：</p>
 <pre>
 python manage.py collectstatic
 </pre>
 <p>之后会看到：</p>
 <pre>
-122 static files copied to 'D:\Coding\sites\myshop\static'.
+120 static files copied to 'code/myshop/static'.
 </pre>
-<p>这个命令就是如果设置了STATIC_ROOT变量后，会把所有已经注册的应用里的static目录里的内容复制到项目根目录/static/文件下边来。还可以在settings.py里设置STATICFILES_DIRS，在执行该命令时就会连STATICFILES_DIRS内的目录中的文件一并复制过来。如果再次执行该命令，会提示是否覆盖原来的相同文件。</p>
-<p>视图写好了，在orders应用的urls.py增加一条：</p>
+<p>这个命令会把所有已经激活的应用下的<code>static/</code>目录中的文件，复制到<code>STATIC_ROOT</code>指定的目录中。每个应用都可以有自己的static/目录存放静态文件，还可以在<code>STATICFILES_DIRS</code>中指定其他的静态文件路径，当执行<code>collectstatic</code>时，会把所有<code>STATICFILES_DIRS</code>目录内的文件都复制过来。如果再次执行<code>collectstatic</code>，会提示是否需要覆盖已经存在的静态文件。</p>
+<p class="emp">译者注：虽然将静态文件分开存放在每个应用的<code>static/</code>下可以正常运行开发中的站点，但在正式上线的最好统一静态文件的存放地址，以方便配置Web服务程序。</p>
+<p>编辑<code>orders</code>应用的<code>urls.py</code>文件，为视图配置URL：</p>
 <pre>
-path('admin/order/&lt;int:order_id>/pdf/', views.admin_order_pdf, name='admin_order_pdf'),
+urlpatterns = [
+    # ...
+    <b>path('admin/order/&lt;int:order_id&lt;/pdf/',views.admin_order_pdf,name='admin_order_pdf'),</b>
+]
 </pre>
-<p>从一开始使用@staff_member_required大家可能就看出来了，像导出CSV一样，我们要再增加一个字段放生成PDF的链接。打开orders应用的admin.py，在OrderAdmin类之前增加：</p>
+<p>像导出CSV一样，我们要在管理后台的展示页面中增加一个链接到这个视图的URL。打开<code>orders</code>应用的<code>admin.py</code>文件，在<code>OrderAdmin</code>类之前增加：</p>
 <pre>
 def order_pdf(obj):
     return mark_safe('&lt;a href="{}">View&lt;/a>'.format(reverse('orders:admin_order_pdf', args=[obj.id])))
-
 order_pdf.short_description = 'Invoice'
 </pre>
-<p>还需给OrderAdmin的list_display增加这个新的字段：</p>
+<p>如果指定了<code>short_description</code>属性，Django就会用该属性的值作为列名。</p>
+<p>为<code>OrderAdmin</code>的<code>list_display</code>增加这个新的字段<code>order_pdf</code>：</p>
 <pre>
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = ['id', 'first_name', 'last_name', 'email', 'address', 'postal_code', 'city', 'paid', 'created',
                     'updated', order_detail, <b>order_pdf</b>]
 </pre>
-<p>之后启动站点，到http://127.0.0.1:8000/admin/orders/order/可以看到新增了一列字段用于转换PDF：</p>
-<img src="http://img.conyli.cc/django2/C08-12.jpg" alt="">
-<p>点击PDF链接，浏览器应该会下载一个名为order_xx.pdf的文件，如果是尚未支付的订单，样式如下：</p>
-<img src="http://img.conyli.cc/django2/C08-13.jpg" alt="">
+<p>在浏览器中打开<a href="http://127.0.0.1:8000/admin/orders/order/" target="_blank">http://127.0.0.1:8000/admin/orders/order/</a>，可以看到新增了一列字段用于转换PDF：</p>
+<p><img src="http://img.conyli.cc/django2/C08-12.jpg" alt=""></p>
+<p>点击PDF链接，浏览器应该会下载一个PDF文件，如果是尚未支付的订单，样式如下：</p>
+<p><img src="http://img.conyli.cc/django2/C08-13.jpg" alt=""></p>
 <p>已经支付的订单，则类似这样：</p>
-<img src="http://img.conyli.cc/django2/C08-14.jpg" alt="">
-<p style="color:red">WeasyPrint的安装依赖比较多，原书里对这一块没有详细讲解，交给用户自己去进行。结果译者在windows环境折腾了好久，运行的时候依然找不到cairo库，后来在linux安装了N多依赖后终于运行成功。</p>
+<p><img src="http://img.conyli.cc/django2/C08-14.jpg" alt=""></p>
 
-
-<h3><b>使用电子邮件发送PDF文件</b></h3>
-<p>在之前我们使用Celery异步任务，在用户提交一个订单的时候异步发送邮件给用户。现在在支付成功的时候，我们发送带有这个PDF文件的邮件给用户。编辑payment应用中的views.py视图，导入一些新功能后编辑payment_process视图：</p>
+<h3 id="c8-4-4"><span class="title">4.4</span>使用电子邮件发送PDF文件</h3>
+<p>当支付成功的时，我们发送带有PDF发票的邮件给用户。编辑<code>payment</code>应用中的<code>views.py</code>视图，添加如下导入语句：</p>
 <pre>
 from django.template.loader import render_to_string
 from django.core.mail import EmailMessage
 from django.conf import settings
 import weasyprint
 from io import BytesIO
-
+</pre>
+<p>在<code>payment_process</code>视图中，<code>order.save()</code>这行之后，以相同的缩进添加下列代码：</p>
+<pre>
 def payment_process(request):
     # ......
     if request.method == "POST":
         # ......
-        # 如果提交交易信息成功,将已支付和交易id记录到Order表中
         if result.is_success:
             # ......
             order.save()
 
-            # 建立邮件
-            subject = 'My Shop - Invoice no. {}'.format(order.id)
-            message = 'Please, find attached the invoice for your recent purchase.'
-            email = EmailMessage(subject, message, 'admin@myshop.com', [order.email])
+            <b># 创建带有PDF发票的邮件</b>
+            <b>subject = 'My Shop - Invoice no. {}'.format(order.id)</b>
+            <b>message = 'Please, find attached the invoice for your recent purchase.'</b>
+            <b>email = EmailMessage(subject, message, 'admin@myshop.com', [order.email])</b>
 
-            # 生成PDF文件
-            html = render_to_string('orders/order/pdf.html', {'order': order})
-            out = BytesIO()
-            stylesheets = [weasyprint.CSS(settings.STATIC_ROOT + 'css/pdf.css')]
-            weasyprint.HTML(string=html).write_pdf(out, stylesheets=stylesheets)
+            <b># 生成PDF文件</b>
+            <b>html = render_to_string('orders/order/pdf.html', {'order': order})</b>
+            <b>out = BytesIO()</b>
+            <b>stylesheets = [weasyprint.CSS(settings.STATIC_ROOT + 'css/pdf.css')]</b>
+            <b>weasyprint.HTML(string=html).write_pdf(out, stylesheets=stylesheets)</b>
 
-            # 给邮件附加PDF文件
-            email.attach('order_{}.pdf'.format(order.id), out.getvalue(), 'application/pdf')
+            <b># 附加PDF文件作为邮件附件</b>
+            <b>email.attach('order_{}.pdf'.format(order.id), out.getvalue(), 'application/pdf')</b>
 
-            # 发送邮件
-            email.send()
+            <b># 发送邮件</b>
+            <b>email.send()</b>
+
             return redirect('payment:done')
-            # ......
+        else:
+            return redirect('payment:canceled')
+    else:
+        # ......
 </pre>
-<p>这里使用WeasyPrint的方式和生成PDF文件的基本类似，唯一不同的就是没有向HttpResponse中写数据，而是向一个空的字节对象中写数据。由于PDF是一个二进制文件，所以就采用了这个方法。邮件我们使用了Django 的EmailMessage模块来实例化一个邮件对象，在有了二进制文件对象之后，调用email.attach方法，设置邮件附件中的文件名，内容和类型。</p>
-<p>这就完成了发送邮件的工作。值得注意的是这里发送邮件是同步的，如果读者愿意，可以将发送邮件的代码分离，配置为使用Celery异步发送。</p>
+<p>这里使用了<code>EmailMessage</code>类创建一个邮件对象<code>email</code>，然后将模板渲染到<code>html</code>变量中，然后通过WeasyPrint将其写入一个<code>BytesIO</code>二进制字节对象，之后使用<code>attach</code>方法，将这个字节对象的内容设置为<code>EmailMessage</code>的附件，同时设置文件类型为PDF，最后发送邮件。</p>
+<p>记得在<code>settings.py</code>中设置SMTP服务器，可以参考第二章。</p>
+<p>现在，可以尝试完成一个新的付款，并且在邮箱内接收PDF发票。</p>
 
 <h1><b>总结</b></h1>
-<p>这一章的实战性质越来越强，真正的集成了可以用的支付网关，以及让我们的网站对外提供信息的方式，除了展示页面之外，又多了生成CSV文件和PDF文件的方式。</p>
-<p>本章的主要内容有：</p>
-<ul>
-    <li>Braintree支付网关沙盒测试的注册和使用</li>
-    <li>braintree模块的使用，使用braintree的JS代码生成前端页面</li>
-    <li>给管理后台增加action的方法，通过管理类中增加actions属性，指定为按照规定自行编写的函数</li>
-    <li>为管理后台中的模型增加自定义的功能字段</li>
-    <li>WeasyPrint的安装和使用</li>
-    <li>STATIC_ROOT变量的设置和collectstatic命令</li>
-    <li>django 发送邮件附加附件的方法</li>
-</ul>
-
-
+<p>在这一章中，我们集成了支付网关，自定义了Django管理后台，还学习了如何将数据以CSV文件格式导出和动态生成PDF文件。</p>
+<p>下一章我们将深入了解Django项目的国际化和本地化设置，还将创建一个优惠码功能和商品推荐引擎。</p>
 </body>
 </html>
