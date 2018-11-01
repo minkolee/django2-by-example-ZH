@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/normalize.min.css">
+    <link rel="stylesheet" href="css/base.css">
+    <title>第九章 扩展商店功能</title>
+
+</head>
+<body>
+<h1 id="top"><b>第九章 扩展商店功能</b></h1>
+<p>在上一章里，为电商站点集成了支付功能，然后可以生成PDF发票发送给用户。在本章，我们将为商店添加优惠码功能。此外，还会学习国际化和本地化的设置和建立一个推荐商品的系统。</p>
+<p>本章涵盖如下要点：</p>
+<ul>
+    <li>建立一个优惠券系统，可以实现折扣功能</li>
+    <li>给项目增加国际化功能</li>
+    <li>使用Rosetta来管理翻译</li>
+    <li>使用Django-parler翻译模型</li>
+    <li>建立商品推荐系统</li>
+</ul>
+
+<h2 id="c9-1"><span class="title">1</span>优惠码系统</h2>
+<p>很多电商网站，会向用户发送电子优惠码，以便用户在购买时使用，以折扣价进行结算。一个在线优惠码通常是一个字符串，然后还规定了有效期限，一次性有效或者可以反复使用。</p>
+<p>我们将为站点添加优惠码功能。我们的优惠码带有有效期，但是不限制使用次数，输入之后，就会影响用户购物车中的总价。为了实现这个需求，需要建立一个数据模型来存储优惠码，有效期和对应的折扣比例。</p>
+<p>为<code>myshop</code>项目创建新的应用<code>coupons</code>：</p>
+<pre>python manage.py startapp coupons</pre>
+<p>然后在<code>settings.py</code>内激活该应用：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    <b>'coupons.apps.CouponsConfig',</b>
+]
+</pre>
+
+<h3 id="c9-1-1"><span class="title">1.1</span>创建优惠码数据模型</h3>
+<p>编辑<code>coupons</code>应用的<code>models.py</code>文件，创建一个<code>Coupon</code>模型：</p>
+<pre>
+from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
+
+class Coupon(models.Model):
+    code = models.CharField(max_length=50, unique=True)
+    valid_from = models.DateTimeField()
+    valid_to = models.DateTimeField()
+    discount = models.IntegerField(validators=[MinValueValidator(0), MaxValueValidator(100)])
+    active = models.BooleanField()
+
+    def __str__(self):
+        return self.code
+</pre>
+<p>这是用来存储优惠码的模型，<code>Coupon</code>模型包含以下字段：</p>
+<ul>
+    <li><code>code</code>：用于存放码的字符串</li>
+    <li><code>valid_from</code>：优惠码有效期的开始时间。</li>
+    <li><code>valid_to</code>：优惠码有效期的结束时间。</li>
+    <li><code>discount</code>：该券对应的折扣，是一个百分比，所以取值为<code>0-100</code>，我们使用了内置验证器控制该字段的取值范围。</li>
+    <li><code>active</code>：表示该码是否有效</li>
+</ul>
+<p>之后执行数据迁移程序。然后将<code>Coupon</code>模型加入到管理后台，编辑<code>coupons</code>应用的<code>admin.py</code>文件：</p>
+<pre>
+from django.contrib import admin
+from .models import Coupon
+
+class CouponAdmin(admin.ModelAdmin):
+    list_display = ['code', 'valid_from', 'valid_to', 'discount', 'active']
+    list_filter = ['active', 'valid_from', 'valid_to']
+    search_fields = ['code']
+
+admin.site.register(Coupon, CouponAdmin)
+</pre>
+<p>现在启动站点，到<a href="http://127.0.0.1:8000/admin/coupons/coupon/add/" target="_blank">http://127.0.0.1:8000/admin/coupons/coupon/add/</a>查看<code>Coupon</code>模型：</p>
+<p><img src="http://img.conyli.cc/django2/C09-01.jpg" alt=""></p>
+<p>输入一个优惠码记录，有效期设置为当前日期，不要忘记勾上Active然后点击SAVE按钮。</p>
+
+<h3 id="c9-1-2"><span class="title">1.2</span>为购物车增加优惠码功能</h3>
+<p>创建数据模型之后，可以查询和获得优惠码对象。现在我们必须增添使用户可以输入优惠码从而获得折扣价的功能。这个功能将按照如下逻辑进行操作：</p>
+<ol>
+    <li>用户添加商品到购物车</li>
+    <li>用户能通过购物车详情页面的表单输入一个优惠码</li>
+    <li>输入优惠码并提交表单之后，需要来判断该码是否在数据库中存在、当前时间是否在<code>valid_from</code>和<code>valid_to</code>有效时间之间、<code>active</code>属性是否为<code>True</code>。</li>
+    <li>如果优惠码通过上述检查，将优惠码的信息保存在<code>session</code>中，用折扣重新计算价格并更新购物车中的商品价格</li>
+    <li>用户提交订单时，将优惠码保存在订单对象中。</li>
+</ol>
+<p>在<code>coupons</code>应用里建立<code>forms.py</code>文件，添加下列代码：</p>
+<pre>
+from django import forms
+
+class CouponApplyForm(forms.Form):
+    code = forms.CharField()
+</pre>
+<p>这个表单用于用户输入优惠码。然后来编辑<code>coupons</code>应用的<code>views.py</code>文件：</p>
+<pre>
+from django.shortcuts import render, redirect
+from django.utils import timezone
+from django.views.decorators.http import require_POST
+from .models import Coupon
+from .forms import CouponApplyForm
+
+@require_POST
+def coupon_apply(request):
+    now = timezone.now()
+    form = CouponApplyForm(request.POST)
+    if form.is_valid():
+        code = form.cleaned_data['code']
+        try:
+            coupon = Coupon.objects.get(code__iexact=code, valid_from__lte=now, valid_to__gte=now, active=True)
+            request.session['coupon_id'] = coupon.id
+        except Coupon.DoesNotExist:
+            request.session['coupon_id'] = None
+    return redirect('cart:cart_detail')
+</pre>
+<p>这个<code>coupon_apply</code>视图验证优惠码并将其存储在session中，使用了<code>@require_POST</code>装饰器令该视图仅接受<code>POST</code>请求。这个视图的业务逻辑如下：</p>
+<ol>
+    <li>使用请求中的数据初始化<code>CouponApplyForm</code></li>
+    <li>如果表单通过验证，从表单的<code>cleaned_data</code>获取<code>code</code>，然后使用<code>code</code>查询数据库得到<code>coupon</code>对象，这里使用了过滤参数<code>iexact</code>，进行完全匹配；使用<code>active=True</code>过滤出有效的优惠码；使用<code>timezone.now()</code>获取当前时间，<code>valid_from</code>和<code>valid_to</code>分别采用<code>lte</code>（小于等于）和<code>gte</code>（大于等于）过滤查询以保证当前时间位于有效期内。</li>
+    <li>将优惠码ID存入当前用户的session。</li>
+    <li>重定向到<code>cart_detail</code> URL对应的购物车详情页，以显示应用了优惠码之后的金额。</li>
+</ol>
+<p>需要为<code>coupon_apply</code>视图配置URL，在<code>coupons</code>应用中建立<code>urls.py</code>文件，添加下列代码：</p>
+<pre>
+from django.urls import path
+from . import views
+
+app_name = 'coupons'
+urlpatterns = [
+    path('apply/', views.coupon_apply, name='apply'),
+]
+</pre>
+<p>然后编辑项目的根路由，增加一行：</p>
+<pre>
+urlpatterns = [
+    # ...
+    <b>path('coupons/', include('coupons.urls', namespace='coupons')),</b>
+    path('', include('shop.urls', namespace='shop')),
+]
+</pre>
+<p>依然记得要把这一行放在<code>shop.urls</code>上方。</p>
+<p>编辑<code>cart</code>应用中的<code>cart.py</code>文件，添加下列导入：</p>
+<pre>
+from coupons.models import Coupon
+</pre>
+<p>然后在<code>cart</code>类的<code>__init__()</code>方法的最后添加从session中获得优惠码ID的语句：</p>
+<pre>
+class Cart(object):
+    def __init__(self, request):
+        # ...
+        <b># store current applied coupon</b>
+        <b>self.coupon_id = self.session.get('coupon_id')</b>
+
+</pre>
+<p>在<code>Cart</code>类中，我们需要通过<code>coupon_id</code>获取优惠码信息并将其保存在<code>Cart</code>对象内，为<code>Cart</code>类添加如下方法：</p>
+<pre>
+class Cart(object):
+    # ...
+    <b>@property</b>
+    <b>def coupon(self):</b>
+        <b>if self.coupon_id:</b>
+            <b>return Coupon.objects.get(id=self.coupon_id)</b>
+        <b>return None</b>
+
+    <b>def get_discount(self):</b>
+        <b>if self.coupon:</b>
+            <b>return (self.coupon.discount / Decimal('100')) * self.get_total_price()</b>
+        <b>return Decimal('0')</b>
+
+    <b>def get_total_price_after_diccount(self):</b>
+        <b>return self.get_total_price() - self.get_discount()</b>
+</pre>
+<p>这些方法解释如下：</p>
+<ul>
+    <li><code>coupon()</code>：我们使用<code>@property</code>将该方法定义为属性，如果购物车包含一个<code>coupon_id</code>属性，会返回该id对应的<code>Coupon</code>对象</li>
+    <li><code>get_discount()</code>：如果包含优惠码id，计算折扣价格，否则返回0。</li>
+    <li><code>get_total_price_after_discount()</code>：返回总价减去折扣价之后的折扣后价格。</li>
+</ul>
+<p>现在<code>Cart</code>类就具备了根据优惠码计算折扣价的功能。</p>
+<p>现在还需要修改购物车详情视图函数，以便在页面中应用表单和展示折扣金额，修改<code>cart</code>应用的<code>views.py</code>文件，增加导入代码：</p>
+<pre>from coupons.forms import CouponApplyForm
+</pre>
+<p>然后修改<code>cart_detail</code>视图，添加表单：</p>
+<pre>
+def cart_detail(request):
+    cart = Cart(request)
+    for item in cart:
+        item['update_quantity_form'] = CartAddProductForm(initial={'quantity': item['quantity'], 'update': True})
+    <b>coupon_apply_form = CouponApplyForm()</b>
+    return render(request, 'cart/detail.html', {'cart': cart, <b>'coupon_apply_form': coupon_apply_form</b>})
+</pre>
+<p>修改<code>cart</code>应用的购物车模板<code>cart/detail.html</code>，找到如下几行：</p>
+<pre>
+&lt;tr class="total">
+    &lt;td>total&lt;/td>
+    &lt;td colspan="4">&lt;/td>
+    &lt;td class="num">${{ cart.get_total_price }}&lt;/td>
+&lt;/tr>
+</pre>
+<p>替换成如下代码：</p>
+<pre>
+{% if cart.coupon %}
+    &lt;tr class="subtotal">
+        &lt;td>Subtotal&lt;/td>
+        &lt;td colspan="4">&lt;/td>
+        &lt;td class="num">${{ cart.get_total_price_after_diccount }}&lt;/td>
+    &lt;/tr>
+    &lt;tr>
+        &lt;td>"{{ cart.coupon.code }}" coupon ({{ cart.coupon.discount }}% off)&lt;/td>
+        &lt;td colspan="4">&lt;/td>
+        &lt;td class="num neg">- ${{ cart.get_discount|floatformat:"2" }}&lt;/td>
+    &lt;/tr>
+{% endif %}
+
+    &lt;tr class="total">
+        &lt;td>Total&lt;/td>
+        &lt;td colspan="4">&lt;/td>
+        &lt;td class="num">${{ cart.get_total_price_after_diccount|floatformat:"2" }}&lt;/td>
+    &lt;/tr>
+</pre>
+<p>这是新的购物车模板。如果包含一个优惠券，就展示一行购物车总价，再展示一行优惠券信息，最后通过<code>get_total_price_after_discount()</code>展示折扣后价格。</p>
+<p>在同一个文件内，在<code>&lt;/table&gt;</code>后增加下列代码：</p>
+<pre>
+{# 在紧挨着&lt;/table>标签之后插入： #}
+&lt;p>Apply a coupon:&lt;/p>
+&lt;form action="{% url 'coupons:apply' %}" method="post">
+    {{ coupon_apply_form }}
+    &lt;input type="submit" value="Apply">
+    {% csrf_token %}
+&lt;/form>
+</pre>
+<p>上边这段代码展示输入优惠码的表单。</p>
+<p>在浏览器中打开<code>http://127.0.0.1:8000/</code>，向购物车内加入一些商品，然后进入购物车页面输入优惠码并提交，可以看到如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C09-02.jpg" alt=""></p>
+<p>之后来修改订单模板<code>orders/order/create.html</code>，在其中找到如下部分：</p>
+<pre>
+&lt;ul>
+    {% for item in cart %}
+    &lt;li>
+        {{ item.quantity }} x {{ item.product.name }}
+        &lt;span>${{ item.total_price }}&lt;/span>
+    &lt;/li>
+    {% endfor %}
+&lt;/ul>
+</pre>
+<p>替换成：</p>
+<pre>
+&lt;ul>
+    {% for item in cart %}
+        &lt;li>
+            {{ item.quantity }}x {{ item.product.name }}
+            &lt;span>${{ item.total_price|floatformat:"2" }}&lt;/span>
+        &lt;/li>
+    {% endfor %}
+    {% if cart.coupon %}
+        &lt;li>
+            "{{ cart.coupon.code }}" ({{ cart.coupon.discount }}% off)
+            &lt;span>- ${{ cart.get_discount|floatformat:"2" }}&lt;/span>
+        &lt;/li>
+    {% endif %}
+&lt;/ul>
+</pre>
+<p>如果有优惠码，现在的订单页面就展示优惠码信息了。继续找到下边这行：</p>
+<pre>
+&lt;p>Total: ${{ cart.get_total_price }}&lt;/p>
+</pre>
+<p>替换成：</p>
+<pre>
+&lt;p>Total: ${{ cart.get_total_price_after_diccount|floatformat:"2" }}&lt;/p>
+</pre>
+<p>这样总价也变成了折扣后价格。</p>
+<p>在浏览器中打开<code>http://127.0.0.1:8000/</code>，添加商品到购物车然后生成订单，可以看到订单页面的价格现在是折扣后的价格了：</p>
+<p><img src="http://img.conyli.cc/django2/C09-03.jpg" alt=""></p>
+
+<h3 id="c9-1-3"><span class="title">1.3</span>为购物车增加优惠码功能</h3>
+<p>像之前说的，我们需要将优惠码信息保存至<code>order</code>对象中，为此需要修改<code>Order</code>模型。编辑</p>
+<p>编辑<code>orders</code>应用的<code>models.py</code>文件，增加导入部分的代码：</p>
+<pre>
+from decimal import Decimal
+from django.core.validators import MinValueValidator, MaxValueValidator
+from coupons.models import Coupon
+</pre>
+<p>然后为<code>Order</code>模型增加下列字段：</p>
+<pre>
+class Order(models.Model):
+    coupon = models.ForeignKey(Coupon, related_name='orders', null=True, blank=True, on_delete=models.SET_NULL)
+    discount = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])
+</pre>
+<p>这两个字段用于存储优惠码信息。虽然折扣信息保存在Coupon对象中，但这里还是用<code>discount</code>字段保存了当前的折扣，以免未来优惠码折扣发生变化。为<code>coupon</code>字段设置了<code>on_delete=models.SET_NULL</code>，优惠码删除时，该外键字段会变成空值。</p>
+<p>增加好字段后数据迁移程序。回到<code>models.py</code>文件，需要修改<code>Order</code>类中的<code>get_total_cost()</code>方法：</p>
+<pre>
+class Order(models.Model):
+    # ...
+    def get_total_cost(self):
+        <b>total_cost</b> = sum(item.get_cost() for item in self.items.all())
+        <b>return total_cost - total_cost * (self.discount / Decimal('100'))</b>
+</pre>
+<p>修改后的<code>get_total_cost()</code>方法会把折扣也考虑进去。之后还需要修改<code>orders</code>应用里的<code>views.py</code>文件中的<code>order_create</code>视图，以便在生成订单的时候，存储这两个新增的字段。找到下边这行：</p>
+<pre>order = form.save()</pre>
+<p>将其替换成如下代码：</p>
+<pre>
+order = form.save(<b>commit=False</b>)
+<b>if cart.coupon:</b>
+    <b>order.coupon = cart.coupon</b>
+    <b>order.discount = cart.coupon.discount</b>
+<b>order.save()</b>
+</pre>
+<p>在修改后代码中，通过调用<code>OrderCreateForm</code>表单对象的<code>save()</code>方法，创建一个<code>order</code>对象，使用<code>commit=False</code>暂不存入数据库。如果购物车对象中有折扣信息，就保存折扣信息。然后将<code>order</code>对象存入数据库。</p>
+<p>启动站点，在浏览器中访问<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>，使用一个自己创建的优惠码，在完成购买之后，可以到<a href="http://127.0.0.1:8000/admin/orders/order/" target="_blank">http://127.0.0.1:8000/admin/orders/order/></a>查看包含优惠码和折扣信息的订单：</p>
+<p><img src="http://img.conyli.cc/django2/C09-04.jpg" alt=""></p>
+<p>还可以修改管理后台的订单详情页和和PDF发票，以使其包含优惠码和折扣信息。下边我们将为站点增加国际化功能。</p>
+<p class="emp">译者注：这里有一个问题：用户提交了订单并清空购物车后，如果再向购物车内添加内容，再次进入购物车详情页面可以发现自动使用了上次使用的优惠券。此种情况的原因是作者把优惠券信息附加到了session上，在提交订单的时候没有清除。cart对象实例化的时候又取到了相同的优惠券信息。所以需要对程序进行一下改进。</p>
+<p class="emp">修改<code>orders</code>应用的<code>order_create</code>视图，在生成<code>OrderItem</code>并清空购物车的代码下增加一行：</p>
+<pre>
+def order_create(request):
+    cart = Cart(request)
+    if request.method == "POST":
+        form = OrderCreateForm(request.POST)
+        # 表单验证通过就对购物车内每一条记录生成OrderItem中对应的一条记录
+        if form.is_valid():
+            order = form.save(commit=False)
+            if cart.coupon:
+                order.coupon = cart.coupon
+                order.discount = cart.coupon.discount
+            order.save()
+            for item in cart:
+                OrderItem.objects.create(order=order, product=item['product'], price=item['price'],
+                                         quantity=item['quantity'])
+            # 成功生成OrderItem之后清除购物车
+            cart.clear()
+
+            <b># 清除优惠券信息</b>
+            <b>request.session['coupon_id'] = None</b>
+
+            # 成功完成订单后调用异步任务发送邮件
+            order_created.delay(order.id)
+            # 在session中加入订单id
+            request.session['order_id'] = order.id
+            # 重定向到支付页面
+            return redirect(reverse('payment:process'))
+
+    else:
+        form = OrderCreateForm()
+    return render(request, 'orders/order/create.html', {'cart': cart, 'form': form})
+</pre>
+
+<h2 id="c9-2"><span class="title">2</span>国际化与本地化</h2>
+<p>Django对于国际化和本地化提供了完整的支持，允许开发者将站点内容翻译成多种语言，而且可以处理本地化的时间日期数字和时区格式等本地化的显示内容。在开始之前，先需要区分一下<a href="https://en.wikipedia.org/wiki/Internationalization_and_localization" target="_blank">国际化和本地化</a>两个概念。国际化和本地化都是一种软件开发过程。国际化（Internationalization，通常缩写为<b>i18n</b>），是指一个软件可以被不同的国家和地区使用，而不会局限于某种语言。本地化（Localization，缩写为<b>l10n</b>）是指对国际化的软件将其进行翻译或者其他本地化适配，使之变成适合某一个国家或地区使用的软件的过程。Django通过自身的国际化框架，可以支持超过50种语言。</p>
+
+<h3 id="c9-2-1"><span class="title">2.1</span>国际化与本地化设置</h3>
+<p>Django的国际化框架可以让开发者很方便的在Python代码和模板中标注需要翻译的字符串，这个框架依赖于GNU gettext开源软件来生成和管理<b>消息文件（message file</b>)。消息文件是一个纯文本文件，代表一种语言的翻译，存放着在站点应用中找到的部分或者所有需要翻译的字符串以及对应的某种语言的翻译，就像一个字典一样。消息文件的后缀名是<code>.po</code>。</p>
+<p>一旦完成翻译，这个消息文件就会被编译以快速访问翻译后的字符串，编译后的消息文件的后缀名是<code>.mo</code>。</p>
+
+<h4 id="c9-2-1-1"><span class="title">2.1.1</span>国际化与本地化设置</h4>
+<p>Django提供了一些国际化和本地化的设置，下边一些设置是最重要的：</p>
+<ul>
+    <li><code>USE_I18N</code>：布尔值，是否启用国际化功能，默认为<code>True</code></li>
+    <li><code>USE_L10N</code>：布尔值，设置本地化功能是否启用，设置为<code>True</code>时，数字和日期将采用本地化显示。默认为<code>False</code></li>
+    <li><code>USE_TZ</code>：布尔值，指定时间是否根据时区进行调整，当使用<code>startproject</code>创建项目时，默认为<code>True</code></li>
+    <li><code>LANGUAGE_CODE</code>：项目的默认语言代码，采用标准的语言代码格式，例如'en-us'表示美国英语，'en-gb'表示英国英语。这个设置需要<code>USE_I18N</code>设置为<code>True</code>才会生效。在<a href="http://www.i18nguy.com/unicode/language-identifiers.html" target="_blank">http://www.i18nguy.com/unicode/language-identifiers.html</a>可以找到语言代码清单。</li>
+    <li><code>LANGUAGES</code>：一个包含项目所有可用语言的元组，其中每个元素是语言代码和语言名称构成的二元组。可以在<code>django.conf.global_settings</code>查看所有可用的语言。这个属性可设置的值必须是<code>django.conf.global_settings</code>中列出的值。</li>
+    <li><code>LOCALE_PATHS</code>：一个目录列表，目录内存放项目的翻译文件。</li>
+    <li><code>TIME_ZONE</code>：字符串，代表项目所采用的时区。如果使用<code>startproject</code>启动项目，该值被设置为<code>'UTC'</code>。可以按照实际情况将其设置为具体时区，如<code>'Europe/Madrid'</code>。中国的时区是<code>'Asia/Shanghai'</code>，大小写敏感。</li>
+</ul>
+<p>以上是常用的国际化和本地化设置，完整设置请参见<a href="https://docs.djangoproject.com/en/2.1/ref/settings/#globalization-i18n-l10n" target="_blank">https://docs.djangoproject.com/en/2.1/ref/settings/#globalization-i18n-l10n</a>。</p>
+
+<h3><b>国际化和本地化管理命令</b></h3>
+<p>Django包含了用于管理翻译的命令如下：</p>
+<ul>
+    <li>makemessages：运行该命令，会找到项目中所有标注要翻译的字符串，建立或者更新locale目录下的.po文件，对于settings.py中的配置，每种语言会生成单独的.po文件。</li>
+    <li>compliemessages：编译所有的.po文件为.mo文件。</li>
+</ul>
+<p>之前提到过，需要使用GNU gettext工具来执行上述过程，大部分linux发行版自带有该工具。如果在使用mac OSX，可以通过 <a href="http://brew.sh/" target="_blank">http://brew.sh/</a> 使用命令 <code>brew install gettext</code>来安装，之后使用 <code>brew link gettext --force</code>强制链接。对于Windows下的安装，参考<a
+        href="https://docs.djangoproject.com/en/2.1/topics/i18n/translation/#gettext-on-windows" target="_blank">django官方文档</a>中的步骤。</p>
+
+<h3><b>为项目增加翻译功能的流程</b></h3>
+<p>先来看一下增加翻译功能需要进行的流程：</p>
+<ol>
+    <li>在Python代码和模板中标注出需要翻译的字符串</li>
+    <li>运行makemessages命令建立消息文件</li>
+    <li>运行compilemessages命令翻译和编译消息文件</li>
+    <li></li>
+</ol>
+
+<h3><b>本地语言中间件</b></h3>
+<p>Django使用中间件django.middleware.locale. LocaleMiddleware来检查HTTP请求中所使用的本地语言。这个中间件做的工作有如下：</p>
+<ol>
+    <li>如果使用<a href="https://docs.djangoproject.com/en/2.1/topics/i18n/translation/#language-prefix-in-url-patterns" target="_blank">i18_patterns</a>（django特殊的一种URL方式，里边包含语言前缀），中间件会在请求的URL中寻找特定语言的前缀</li>
+    <li>如果在URL中没有发现语言前缀，会在session 中寻找一个键 LANGUAGE_SESSION_KEY</li>
+    <li>如果session 中没有该键，会在cookie中。可以通过LANGUAGE_COOKIE_NAME自定义该cookie的名称，默认是django_language</li>
+    <li>如果还没有找到，找HTTP请求头的Accept-Language键</li>
+    <li>如果还没有找到，则使用LANGUAGE_CODE设置</li>
+</ol>
+<p>注意这个过程只有在开启了该中间件的时候才会得到完整执行，如果未开启中间件，Django直接使用LANGUAGE_CODE中的设置。</p>
+
+<h3><b>为项目使用国际化进行准备</b></h3>
+<p>在了解上述关于国际化和本地化的一些知识之后，来为我们的电商网站增添国际化的支持，这次会增添英语和西班牙语的支持。编辑settings.py：</p>
+<pre>
+LANGUAGE_CODE = 'en'
+LANGUAGES = (
+    ('en', 'English'),
+    ('es', 'Spanish'),
+)
+</pre>
+<p>LANGUAGE_CODE可能已经存在于settings.py中，修改其值为'en'，然后增加LANGUAGES配置，其中每一个元组的第一个元素表示语言代码，第二个元素表示显示出来该语言的名称。通过这个设置，我们定义了我们的网站支持语言是英语和西班牙语。如果不定义这些设置，默认支持所有django支持的语言。</p>
+<p>添加'django.middleware.locale.LocaleMiddleware'到settings.py的中间件中，位置在session中间件之后，CommonMiddleware中间件之前，因为语言中间件依赖session中间件，而CommonMiddleware需要一种可用语言来解析URL，MIDDLEWARE设置成如下：</p>
+<pre>
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    # ...
+]
+</pre>
+<p>django中间件设置的顺序很重要，中间件会在请求上附加额外的数据，某个中间件会依赖于另外一个中间件附加的数据才能正常工作。</p>
+<p>在项目的根目录建立locale目录，在其中再分别建立en和es两个子目录。将该目录设置在 settings.py 中设置为存放翻译文件的路径：</p>
+<pre>
+LOCALE_PATH = (
+    os.path.join(BASE_DIR, 'locale/'),
+)
+</pre>
+<p>LOCALE_PATH可以是一系列路径，最上边的路径优先级最高。当使用makemessages命令的时候，消息文件会在我们创建的locale/目录中创建，然后如果某个应用也有locale/目录，会优先在那个目录中进行创建。</p>
+
+
+<h3><b>翻译字符串字面量</b></h3>
+<p>为了翻译Python代码中的字符串字面量，需要使用 django.utils.translation 库中的 gettext() 方法来标注字符串。这个方法返回翻译后的字符串，通常做法是导入该方法然后命名为一个下划线"_"。</p>
+<p>使用标记的示例如下：</p>
+<pre>
+from django.utils.translation import gettext as _
+output = _('Text to be translated.')
+</pre>
+<p>这里需要了解惰性翻译。Django 对于所有的翻译函数都有惰性版本，后缀为_lazy()。使用惰性翻译函数的时候，字符串只有被访问的时候才会进行翻译，而不是在翻译函数调用的时候。当字符串位于模块加载的时候才生成的路径中时候特别有效。对于gettext()方法来说，它的惰性版本就是gettext_lazy()。</p>
+
+<h3><b>带有变量的翻译</b></h3>
+<p>被标注的字符串中还可以带有占位符，类似于Python的字符串.format()方法，举个例子：</p>
+<pre>
+from django.utils.translation import gettext as _
+month = _('April')
+day = '14'
+output = _('Today is %(month)s %(day)s') % {'month': month, day': day}
+</pre>
+<p>通过使用占位符，可以记录变量。例如，上边这个例子的英语如果是 <em>"Today is April 14"</em>，翻译成的西班牙语就是 <em>"Hoy es 14 de Abril"</em>。当需要翻译的文本中存在变量的时候，推荐使用占位符。</p>
+
+<h3><b>复数的翻译</b></h3>
+<p>对于复数形式的翻译，可以采用ngettext()和ngettext_lazy()。这两个函数根据一个对象数量的参数来翻译单数或者复数。使用例子如下：</p>
+<pre>
+output = ngettext('there is %(count)d product', 'there are %(count)d products', count) % {'count': count}
+</pre>
+<p>现在我们了解了Python 中翻译字面量的知识，可以来为我们的项目添加翻译功能了。</p>
+
+<h2><b>翻译Python代码</b></h2>
+<p>编辑setttings.py，导入gettext_lazy()，然后修改LANGUAGES设置：</p>
+<pre>
+LANGUAGES = (
+    ('en', _('English')),
+    ('es', _('Spanish')),
+)
+</pre>
+<p>这里使用了别名"_"来避免重复导入。将显示的名称也进行了翻译，这样对于不同的语言的人来说，当前页面所显示的使用哪种语言是本地化的。</p>
+<p>然后打开shell（Pycharm也可以在 terminal中运行，如果新安装了gettext，需要重启一下Pycharm以让PATH更新） ，运行如下命令：</p>
+<pre>
+django-admin makemessages --all
+</pre>
+<p>可以看到如下输出：</p>
+<pre>
+processing locale en
+processing locale es
+</pre>
+<p>然后查看项目的locale目录，可以看到在en和es目录下建立了LC_MESSAGES目录，然后其中均有一个django.po文件。然后使用一个文本编辑器打开es/LC_MESSAGES/django.po文件，可以看到文件最后的内容如下：</p>
+<pre>
+#: .\myshop\settings.py:107
+msgid "English"
+msgstr ""
+
+#: .\myshop\settings.py:108
+msgid "Spanish"
+msgstr ""
+</pre>
+<p>这里的每一部分，就类似一个键值对，记录了所有在python代码中发现的被gettext_lazy()作为参数的字符串，msgid就是原始字符串，msgstr就是语言的翻译，默认是空白的。需要我们把实际翻译后的内容填写上去：</p>
+<pre>
+#: myshop/settings.py:117
+msgid "English"
+msgstr "Inglés"
+
+#: myshop/settings.py:118
+msgid "Spanish"
+msgstr "Español"
+</pre>
+<p>之后执行命令编译消息文件：</p>
+<pre>
+django-admin compilemessages
+</pre>
+<p>可以看到输出如下：</p>
+<pre>
+processing file django.po in myshop/locale/en/LC_MESSAGES
+processing file django.po in myshop/locale/es/LC_MESSAGES
+</pre>
+<p>此时再看locale目录，就会发现生成了django.mo文件。</p>
+<p>已经翻译好了语言名称本身。现在我们来试着翻译一下Order数据表的所有字段，修改orders应用的models.py：</p>
+<pre>
+from django.utils.translation import gettext_lazy as _
+
+class Order(models.Model):
+    first_name = models.CharField(_('frist name'), max_length=50)
+    last_name = models.CharField(_('last name'), max_length=50)
+    email = models.EmailField(_('e-mail'), )
+    address = models.CharField(_('address'), max_length=250)
+    postal_code = models.CharField(_('postal code'), max_length=20)
+    city = models.CharField(_('city'), max_length=100)
+    created = models.DateTimeField(auto_now_add=True)
+    ......
+</pre>
+<p>我们给每个字段加上了给用户显示的字段名称，并且标注了这些名称需要进行翻译，之后在orders应用中也建立locale/目录，在其中建立en和es目录。应用中的翻译会优先存放在我们在应用中建立的locale目录内。</p>
+<p>同样，还是到shell 执行：</p>
+<pre>
+django-admin makemessages --all
+</pre>
+<p>输出为：</p>
+<pre>
+processing locale es
+processing locale en
+</pre>
+<p>然后到目录中去看一看，生成了django.po文件，打开西班牙语的django.po文件，手工填入对应的西班牙语翻译：</p>
+<pre>
+#: orders/models.py:10
+msgid "first name"
+msgstr "nombre"
+
+#: orders/models.py:11
+msgid "last name"
+msgstr "apellidos"
+
+#: orders/models.py:12
+msgid "e-mail"
+msgstr "e-mail"
+
+#: orders/models.py:13
+msgid "address"
+msgstr "dirección"
+
+#: orders/models.py:14
+msgid "postal code"
+msgstr "código postal"
+
+#: orders/models.py:15
+msgid "city"
+msgstr "ciudad"
+</pre>
+<p>除了常用的文本编辑软件，还可以考虑使用Poedit编辑翻译内容，支持Linux，Windows和macOS X。官网 <a href="https://poedit.net/" target="_blank">https://poedit.net/</a></p>
+<p>之后继续翻译我们的项目。OrderCreateForm这个表单类无需翻译，因为它会自动使用Order类中我们刚刚标注翻译的verbose_name。现在我们去翻译cart和coupons应用。</p>
+<p>在cart应用的forms.py文件中，导入翻译函数，为CartAddProductForm类的quantity字段增加一个参数label，这个label的内容采用翻译标注，最终这个label在页面上会和input配对展示：</p>
+<pre>
+from django.utils.translation import gettext_lazy as _
+
+class CartAddProductForm(forms.Form):
+    quantity = forms.TypedChoiceField(choices=PRODUCT_QUANTITY_CHOICES, coerce=int, <span style="font-weight: 700">label=_('Quantity')</span>)
+    ......
+</pre>
+<p>之后修改coupons应用的forms.py，为CouponApplyForm类的code字段也增加label属性：</p>
+<pre>
+from django.utils.translation import gettext_lazy as _
+
+
+class CouponApplyForm(forms.Form):
+    code = forms.CharField(<span style="font-weight: 700">label=_('Coupon')</span>)
+</pre>
+<pre>
+#: .\cart\forms.py:9
+msgid "Quantity"
+msgstr "cantidad"
+
+#: .\coupons\forms.py:6
+msgid "Coupon"
+msgstr "vale descuento"
+</pre>
+<p>然后执行编译，会把项目根目录内和orders应用内的.po文件一并编译：</p>
+<pre>
+processing file django.po in myshop/locale/en/LC_MESSAGES
+processing file django.po in myshop/locale/es/LC_MESSAGES
+processing file django.po in myshop/orders/locale/en/LC_MESSAGES
+processing file django.po in myshop/orders/locale/es/LC_MESSAGES
+</pre>
+<p>现在Python代码的翻译工作做好了，下一步是翻译模板。</p>
+
+
+<h2><b>翻译模板</b></h2>
+<pre>
+Django为翻译模板内容提供了{% trans %} 和 {% blocktrans %}两个模板标签用于翻译内容，如果要启用这两个标签，需要在模板顶部加入 {% load i18n %}。
+</pre>
+
+<h3><b>使用{% trans %}</b></h3>
+<p>这个标签用来标记一个字符串，常量或者变量用于翻译。django内部也是对该文本执行gettext()等翻译函数。标记字符串的方法是：</p>
+<pre>{% trans "Text to be translated" %}</pre>
+<p>也可以像其他标签变量一样，使用as 将 翻译后的结果放入一个变量中，在其他地方使用。例如：</p>
+<pre>
+{% trans "Hello!" as greeting %}
+&lt;h1>{{ greeting }}&lt;/h1>
+</pre>
+<p>这个标签使用比较简单，但不能用于带占位符的文字翻译。</p>
+
+<h3><b>使用{% blocktrans %}</b></h3>
+<p>这个标签可以标记包含常量和占位符的内容用于翻译，会把其中的模板标签替换成实际内容之后进行翻译，例如：</p>
+<pre>{% blocktrans %}Hello {{ name }}!{% endblocktrans %}</pre>
+<p>这个标签还可以和with一起用，在这个标签的内部设置具体变量的值。这个时候，必须在标签内部使用占位符，不能够再继续访问表达式和对象的属性。例如：</p>
+<pre>
+{% blocktrans with name=user.name|capfirst %}
+    Hello {{ name }}!
+{% endblocktrans %}
+</pre>
+<p>其实这两个标签也就和翻译Python代码中带占位符的形式和功能相同。</p>
+
+<h3><b>翻译商店模板</b></h3>
+<p>了解了翻译标签的使用，下边就来修改一下shop应用的base.html：</p>
+<pre>
+<b>{% load i18n %}</b>
+{% load static %}
+&lt;!DOCTYPE html>
+&lt;html>
+&lt;head>
+    &lt;meta charset="utf-8"/>
+    &lt;title>{% block title %}<b>{% trans "My shop" %}</b>{% endblock %}&lt;/title>
+    &lt;link href="{% static "css/base2.css" %}" rel="stylesheet">
+&lt;/head>
+&lt;body>
+&lt;div id="header">
+    &lt;a href="/" class="logo"><b>{% trans "My shop" %}</b>&lt;/a>
+&lt;/div>
+&lt;div id="subheader">
+    &lt;div class="cart">
+        {% with total_items=mycart|length %}
+            {% if mycart|length > 0 %}
+                <b>{% trans "Your cart" %}</b>:
+                &lt;a href="{% url 'cart:cart_detail' %}">
+                    <b>{% blocktrans with total_items_plural=total_items|pluralize total_price=cart.get_total_price %}</b>
+                    <b>{{ total_items }} items{{ total_items_plural }}, ${{ total_price }}</b>
+                    <b>{% endblocktrans %}</b>
+                &lt;/a>
+            {% else %}
+                <b>{% trans "Your cart is empty." %}</b>
+            {% endif %}
+        {% endwith %}
+    &lt;/div>
+&lt;/div>
+&lt;div id="content">
+    {% block content %}
+    {% endblock %}
+&lt;/div>
+&lt;/body>
+&lt;/html>
+</pre>
+<p>{% trans %}标签的翻译都比较直观，直接应用在需要翻译的内容上就可以。</p>
+<p>在原来的模板中，我们使用了：</p>
+<pre>
+{{ total_items }} item{{ total_items|pluralize }},
+${{ cart.get_total_price }}
+</pre>
+<p>来显示商品数量和总价。由于要对这一段进行翻译，则其中不能够访问属性和方法（模板filter也是函数），必须将显示的内容全部换成占位符，所以在{% blocktrans %}中定义了如下关系：</p>
+<ul>
+    <li>total_items|pluralize ---> total_items_plural</li>
+    <li>cart.get_total_price ---> total_price</li>
+</ul>
+<p>完成了base.html的翻译之后，再到shop/product/detail.html中进行修改：</p>
+<pre>
+{% extends "shop/base.html" %}
+<b>{% load i18n %}</b>
+{% load static %}
+{% block title %}
+    {{ product.name }}
+{% endblock %}
+{% block content %}
+    &lt;div class="product-detail">
+        &lt;img src="{% if product.image %}{{ product.image.url }}{% else %}
+{% static "img/no_image.png" %}{% endif %}">
+        &lt;h1>{{ product.name }}&lt;/h1>
+        &lt;h2>&lt;a href="{{ product.category.get_absolute_url }}">{{ product.category }}&lt;/a>&lt;/h2>
+        &lt;p class="price">${{ product.price }}&lt;/p>
+        &lt;form action="{% url 'cart:cart_add' product.id %}" method="post">
+            {{ cart_product_form }}
+            {% csrf_token %}
+            &lt;input type="submit" value="<span style="font-weight: 700">{% trans "Add to cart" %}</span>">
+        &lt;/form>
+        {{ product.description|linebreaks }}
+    &lt;/div>
+{% endblock %}
+</pre>
+<p>注意如果使用{% extends %}，则该句必须是模板的第一行，所以{% load i18n %}只能写在第二行。这里的修改很简单，继续修改orders/order/create.html：</p>
+<pre>
+{% extends 'shop/base.html' %}
+<b>{% load i18n %}</b>
+{% block title %}
+    <b>{% trans "Checkout" %}</b>
+{% endblock %}
+
+{% block content %}
+    &lt;h1><span style="font-weight: 700">{% trans "Checkout" %}</span>&lt;/h1>
+
+    &lt;div class="order-info">
+        &lt;h3><span style="font-weight: 700">{% trans "Your order" %}</span>&lt;/h3>
+        &lt;ul>
+            {% for item in cart %}
+                &lt;li>
+                    {{ item.quantity }}x {{ item.product.name }}
+                    &lt;span>${{ item.total_price|floatformat:"2" }}&lt;/span>
+                &lt;/li>
+            {% endfor %}
+            {% if cart.coupon %}
+                &lt;li>
+                    <b>{% blocktrans with code=cart.coupon.code discount=cart.coupon.discount %}</b>
+                        <b>"{{ code }}" ({{ discount }}% off)</b>
+                    <b>{% endblocktrans %}</b>
+                    &lt;span>- ${{ cart.get_discount|floatformat:"2" }}&lt;/span>
+                &lt;/li>
+            {% endif %}
+        &lt;/ul>
+        &lt;p><span style="font-weight: 700">{% trans "Total" %}</span>: ${{ cart.get_total_price_after_diccount|floatformat:"2" }}&lt;/p>
+    &lt;/div>
+
+    &lt;form action="." method="post" class="order-form" novalidate>
+        {{ form.as_p }}
+        &lt;p>&lt;input type="submit" value="<span style="font-weight: 700">{% trans "Place order" %}</span>">&lt;/p>
+        {% csrf_token %}
+    &lt;/form>
+{% endblock %}
+</pre>
+<p>完成上述翻译之后，执行 <code>django-admin makemessages --all</code>，此时我们没有在orders应用以外的应用内建立locale/目录，新增的这些翻译内容都会被追加到项目根目录/locale/es/django.po中。在新的.po文件内输入对应的西班牙语翻译，也可以直接使用随书的源代码中的.po文件。之后再执行<code>django-admin compilemessages</code>，就可以看到：</p>
+<pre>
+processing file django.po in myshop/locale/en/LC_MESSAGES
+processing file django.po in myshop/locale/es/LC_MESSAGES
+processing file django.po in myshop/orders/locale/en/LC_MESSAGES
+processing file django.po in myshop/orders/locale/es/LC_MESSAGES
+</pre>
+<p>这样就做好了全部的翻译工作。</p>
+
+<h3><b>使用Rosetta翻译界面</b></h3>
+<p>Rosetta（游戏里经常见到的罗塞塔石）是一个第三方应用，使用Django管理后台编辑所有翻译内容，让.po文件的更新变得更加方便，先安装该模块：</p>
+<pre>
+pip install django-rosetta==0.8.1
+</pre>
+<p>译者在这里安装了0.9版本，之后将rosetta加入到应用中去：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    'rosetta',
+]
+</pre>
+<p>然后需要为Rosetta配置相应的url，其二级路由已经配置好，修改项目根路由增加一行：</p>
+<pre>
+path('rosetta/', include('rosetta.urls')),
+</pre>
+<p>一次又一次的强调新增的具体url匹配路径，都需要在shop.urls上边。</p>
+<p>然后启动站点，登录后进入 http://127.0.0.1:8000/rosetta/ ，点击右上的THIRD PARTY，如下图所示：</p>
+<img src="http://img.conyli.cc/django2/C09-05.jpg" alt="">
+<p>点开Spanish下边的shop应用，可以看到列出了所有需要翻译的内容：</p>
+<img src="http://img.conyli.cc/django2/C09-06.jpg" alt="">
+<p>可以手工编辑任何需要输入对应翻译的地方，对于那些占位符翻译的内容，显示为这样：</p>
+<img src="http://img.conyli.cc/django2/C09-07.jpg" alt="">
+<p>结束输入的时候，点击一下Save即可将当前翻译的内容保存到.po文件中，之后就可以执行 <code>compliemessages</code>命令了。Rosetta会直接修改.po文件，注意要给予其相应的权限。</p>
+<p>如果需要其他用户来编辑翻译内容，可以到 http://127.0.0.1:8000/admin/auth/group/add/ 新增一个用户组叫 translators，然后到 http://127.0.0.1:8000/admin/auth/user/ 对想给修改翻译的用户修改用户权限 Permissions 字段，将该用户加入到translators用户组内。使用Rosetta的权限仅限超级用户和translators用户组。</p>
+<p>Rosetta的官方文档在 <a href="https://django-rosetta.readthedocs.io/en/latest/" target="_blank">https://django-rosetta.readthedocs.io/en/latest/</a></p>
+<p>特别注意的是，当django已经在生产环境运行时，如果修改和新增了翻译，在运行了 <code>compliemessages</code> 命令之后，只有重新启动django才会让新的翻译生效。</p>
+
+<h3><b>需要检查的翻译 Fuzzy translations</b></h3>
+<p>你可能注意到了，Rosetta页面上有一列叫做Fuzzy。是一个可供修改的布尔值。这不是Rosetta的功能，而是gettext提供的功能。如果将fuzzy设置为true，则该条翻译不会包含在编译后的消息文件中。这个字段用来标记需要由用户进行检查的翻译内容。当.po文件更新了新的翻译字符串时，很可能一些翻译被自动标成了fuzzy。这是因为：在gettext发现一些msgid被修改过的时候，gettext会将其与它认为的旧有翻译进行匹配，然后标注上fuzzy。看到fuzzy出现的时候，人工翻译者必须检查该条翻译，然后取消fuzzy，之后再行编译。</p>
+<p>对于译者安装的Rosseta 0.9版本，界面与作者的界面有所区别，按照所有.po文件进行列表，而不是按项目，但是其中的操作和旧版本没有任何区别。</p>
+
+<h2><b>国际化URL</b></h2>
+<p>如果在之前使用了随书提供的源代码，可以发现其中的翻译内容除了之前我们标注的字符串外，还有一些路径，这是因为Django还提供了国际化URL的方式。</p>
+<p>Django提供两种国际化URL的特性：</p>
+<ul>
+    <li>Language prefix in URL patterns 语言前缀URL模式：在URL的前边加上不同的语言前缀构成不同的基础URL</li>
+    <li>Translated URL patterns 翻译URL模式：基础URL相同，进行翻译URL展示给用户得到对应不同语言的URL</li>
+</ul>
+<p>使用翻译URL模式的优点是对搜索引擎友好。如果采用语言前缀URL，则必须要为每一种语言进行索引，使用翻译URL模式，则一条URL就可以匹配全部语言。下边来看一下两种模式的使用：</p>
+
+<h3><b>语言前缀URL模式</b></h3>
+<p>Django可以为不同语言在URL前添加前缀，例如我们的网站，英语版以/en/开头，而西班牙语版以/es/开头。</p>
+<p>要使用语言前缀URL模式，需要启用LocaleMiddleware中间件。在之前我们已经做过该工作。现在需要修改项目的根urls.py：</p>
+<pre>
+from django.conf.urls.i18n import i18n_patterns
+
+
+urlpatterns = <span style="font-weight: 700">i18n_patterns</span>(
+    path('admin/', admin.site.urls),
+    path('cart/', include('cart.urls', namespace='cart')),
+    path('orders/', include('orders.urls', namespace='orders')),
+    path('pyament/', include('payment.urls', namespace='payment')),
+    path('coupons/', include('coupons.urls', namespace='coupons')),
+    path('rosetta/', include('rosetta.urls')),
+    path('', include('shop.urls', namespace='shop')),
+)
+</pre>
+<p>可以混用未经翻译的标准URL与i18n_patterns之内的URL，使部分URL带有语言前缀，部分为不变的URL。但最好只使用翻译URL，以避免把翻译过的URL匹配到未经翻译过的URL模式上。</p>
+<p>现在启动站点，到 http://127.0.0.1:8000/ ，Django的语言中间件会按照之前介绍的顺序来确定本地语言，然后重定向到带有语言前缀的URL，例如 http://127.0.0.1:8000/en/ ，你也可以尝试通过各种方式改变本地语言的设置，让Django来显示不同的URL。</p>
+
+<h3><b>翻译URL模式</b></h3>
+<p>Django 支持在URL模式中翻译字符串。就像我们之前翻译字面量和模板一样，针对不同的语言，作出不同的翻译配置即可。在urls.py中，同样使用ugettext_lazy()来标注字符串。继续修改项目的根urls.py：</p>
+<pre>
+from django.utils.translation import gettext_lazy as _
+
+urlpatterns = i18n_patterns(
+    path(_('admin/'), admin.site.urls),
+    path(_('cart/'), include('cart.urls', namespace='cart')),
+    path(_('orders/'), include('orders.urls', namespace='orders')),
+    path(_('payment/'), include('payment.urls', namespace='payment')),
+    path(_('coupons/'), include('coupons.urls', namespace='coupons')),
+    path('rosetta/', include('rosetta.urls')),
+    path('', include('shop.urls', namespace='shop')),
+)
+</pre>
+<p>可以看到我们将匹配的路径名进行了标注。再修改orders应用的urls.py：</p>
+<pre>
+from django.utils.translation import gettext_lazy as _
+
+urlpatterns = [
+    path(<span style="font-weight: 700">_('create/')</span>, views.order_create, name='order_create'),
+    # ...
+]
+</pre>
+<p>修改payment应用的urls.py：</p>
+<pre>
+from django.utils.translation import gettext_lazy as _
+
+urlpatterns = [
+    path(_('process/'), views.payment_process, name='process'),
+    path(_('done/'), views.payment_done, name='done'),
+    path(_('canceled/'), views.payment_canceled, name='canceled'),
+]
+</pre>
+<p>对于shop应用的url不需要修改，因为其URL是动态建立的。这次我们再执行 <code>django-admin makemessages --all</code> ，之后到Rosetta中查看，就会发现所有标注的路径，也都添加到了.po文件中可供编辑。</p>
+
+<h2><b>允许用户切换语言</b></h2>
+<p>在之前的工作中，我们配置好了西班牙语下的翻译内容，准备好了URL的两种模式，剩下的一大问题就是给用户提供切换语言的选项，准备给网站增加一个语言选择器，列出支持的语言，显示为一系列链接。</p>
+<p>编辑shop应用下的base.html，找到下边的这三行：</p>
+<pre>
+&lt;div id="header">
+    &lt;a href="/" class="logo">{% trans "My shop" %}&lt;/a>
+&lt;/div>
+</pre>
+<p>将其替换成：</p>
+<pre>
+&lt;div id="header">
+    &lt;a href="/" class="logo">{% trans "My shop" %}&lt;/a>
+    {% get_current_language as LANGUAGE_CODE %}
+    {% get_available_languages as LANGUAGES %}
+    {% get_language_info_list for LANGUAGES as languages %}
+    &lt;div class="languages">
+        &lt;p>{% trans "Language" %}:&lt;/p>
+        &lt;ul class="languages">
+            {% for language in languages %}
+                &lt;li>
+                    &lt;a href="/{{ language.code }}/"
+                       {% if language.code == LANGUAGE_CODE %} class="selected"{% endif %}>
+                        {{ language.name_local }}
+                    &lt;/a>
+                &lt;/li>
+            {% endfor %}
+        &lt;/ul>
+    &lt;/div>
+&lt;/div>
+</pre>
+<p>这个就是我们的语言选择器，逻辑如下：</p>
+<ol>
+    <li>页面的最上方，已经加载了{% load i18n %}</li>
+    <li>{% get_current_language %}标签用于获取当前语言</li>
+    <li>{% get_available_languages %}标签用于从settings里获取所有可用的支持语言</li>
+    <li>{% get_language_info_list %}是为了快速获取语言的属性而设置的变量</li>
+    <li>用循环列出了所有可支持的语言，对于当前语言设置CSS类为SELECT</li>
+</ol>
+<p>启动站点到 http://127.0.0.1:8000/ ，可以看到页面如下：</p>
+<img src="http://img.conyli.cc/django2/C09-08.jpg" alt="">
+<p>页面右上角出现了语言选择器，其链接的URL就是语言代码例如 /en/, /es/等，由于我们之前设置好了前缀URL，就会自动引导到那个语言的网站。我们已经完成了Order类字段的翻译，切换到西班牙语，然后在创建订单页面就可以看到西班牙语的页面：</p>
+<img src="http://img.conyli.cc/django2/C09-09.jpg" alt="">
+
+<h2><b>使用django-parler翻译模型</b></h2>
+<p>翻译模型是网站国际化的一个重要内容。类似我们的购物网站，对于商品的介绍有些时候可以不翻译，但是表单字段一般代表着与用户的交互，涉及到实际操作，比如付款和订单主要使用的都是通过模型生成的表单。如果能够方便快捷的国际化项目中的所有模型，站点的国际化就前进了一大步。遗憾的是django对于快捷的翻译模型字段没有提供好的方法，只能自己实现或者借助于第三方软件来翻译模型。</p>
+<p>有若干第三方软件可以实现这个功能，django-parler是其中一个，这个模块提供了高效翻译和平稳集成到django 管理后台的功能。</p>
+<p>django-parler的工作原理是为每个模型建立一个对应的翻译数据表，表内通过外键连到需要翻译的模型，存储该模型的字段与翻译之间的关系，表内每行存储一种语言的翻译，所以还有一个language字段，用于标记是何种语言。</p>
+
+<h3><b>安装django-parler</b></h3>
+<pre>
+pip install django-parler==1.9.2
+</pre>
+<p>这个模块到翻译为止也没有更新过。安装好之后在settings.py内启用该应用并且进行一些配置：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    'parler',
+]
+
+PARLER_LANGUAGES = {
+    None: (
+        {'code': 'en'},
+        {'code': 'es'},
+    ),
+    'default': {
+        'fallback': 'en',
+        'hide_untranslated': False,
+    }
+}
+</pre>
+<p>配置的含义是指定了两种可用语言为en和es，然后指定了默认语言为en，然后设置django-parler不要隐藏未翻译的内容。</p>
+
+<h3><b>翻译模型的字段</b></h3>
+<p>我们为商品目录来添加翻译。django-parler提供一个<code>TranslatableModel</code>类<span style="color: red;">（此处作者原文有误，写成了<code>TranslatedModel</code>）</span>和<code>TranslatedFields</code>方法来翻译模型的字段。编辑shop应用的models.py：</p>
+<pre>
+# 新增导入：
+from parler.models import TranslatableModel, TranslatedFields
+
+# 修改Category类让其继承TranlatableModel：
+class Category(TranslatableModel):
+    #修改字段部分：
+    translations = TranslatedFields(
+        name=models.CharField(max_length=200, db_index=True),
+        slug=models.SlugField(max_length=200, db_index=True, unique=True)
+    )
+</pre>
+<p>Category类现在继承了TranslatableModel类，原有的字段现在成为了TranslatedFields方法的属性。</p>
+<p>知道了这个套路，再来编辑同一个文件内的Product类：</p>
+<pre>
+class Product(TranslatableModel):
+    translations = TranslatedFields(
+        name=models.CharField(max_length=200, db_index=True),
+        slug=models.SlugField(max_length=200, db_index=True),
+        description=models.TextField(blank=True)
+    )
+</pre>
+<p>由于一些字段不用翻译，这里我们仅把name, slug 和 description 加入TranslatedFields。</p>
+<p>这个时候如果使用IDE，可能会注意到IDE提示self.name找不到，这个对于实际运行程序没有影响，该字段依然可用。</p>
+<p>这么设置完成之后，如果运行代码，django-parler会对每个模型生成一个新的模型也就是数据表，下图是Product类与其新生成的ProductTranslation类之间的关系：</p>
+<img src="http://img.conyli.cc/django2/C09-10.jpg" alt="">
+<p>可见生成的ProductTranslation类包含name, slug, description, 一个language_code字段，一个外键连接到Product类，Product和ProductTranslation是一对多的关系，针对一个Product对象，会按照每种语言生成一个对应的ProductTranslation对象。</p>
+<p>注意，由于翻译的部分和原始的类是独立的两个表格，因此一些类的功能不能够使用，比如不能在Product类中使用一个翻译后的字段进行排序，即不能在Meta类的ordering属性中使用翻译的字段。</p>
+<p>所以编辑Category类，注释掉按照name排列那一行：</p>
+<pre>
+class Category(TranslatableModel):
+    # ...
+    class Meta:
+        <b># ordering = ('name',)</b>
+        verbose_name = 'category'
+        verbose_name_plural = 'categories'
+</pre>
+<p>对于Product类，也要注释掉ordering，还需要注释掉联合索引那一行，这是因为目前的django-parler不支持联合索引的验证关系。如下图：</p>
+<pre>
+class Product(TranslatableModel):
+    # ...
+    class Meta:
+        <b style="color: red">pass</b>
+        <b># ordering = ('name',)</b>
+        <b># index_together = (('id', 'slug'),)</b>
+</pre>
+<p style="color: red">原书在这里遗漏了pass，不要忘记加上。</p>
+<p>关于django-parler的兼容性，可以在<a href="https://django-parler.readthedocs.io/en/latest/compatibility.html" target="_blank">这里</a>查看。</p>
+
+<h3><b>把经翻译的类通过django-parler集成到管理后台</b></h3>
+<p>django-parler易于集成到django管理后台中，包含一个 <code>TranslatableAdmin</code> 类代替了原来的 ModelAdmin 类。编辑shop应用的admin.py，导入该类：</p>
+<pre>
+from parler.admin import TranslatableAdmin
+</pre>
+<p>之后我们要让 CategoryAdmin 和 ProductAdmin 继承 TranslatableAdmin 而不是 ModelAdmin类，django-parler不支持prepopulated_fields属性，但支持相同功能的<a
+        href="https://docs.djangoproject.com/en/2.1/_modules/django/contrib/admin/options/" target="_blank">get_prepopulated_fields()方法</a>，因此需要对两个类修改：</p>
+<pre>
+@admin.register(Category)
+class CategoryAdmin(<b>TranslatableAdmin</b>):
+    list_display = ['name', 'slug']
+
+    <b>def get_prepopulated_fields(self, request, obj=None):</b>
+        <b>return {'slug': ('name',)}</b>
+
+
+@admin.register(Product)
+class ProductAdmin(<b>TranslatableAdmin</b>):
+    list_display = ['name', 'slug', 'price', 'available', 'created', 'updated']
+    list_filter = ['available', 'created', 'updated']
+    list_editable = ['price', 'available']
+
+    <b>def get_prepopulated_fields(self, request, obj=None):</b>
+        <b>return {'slug': ('name',)}</b>
+</pre>
+
+<h3><b>建立django-parler所需的数据表</b></h3>
+<p>打开shell执行（注意，在Pycharm中通过Tools->Run manage.py task是不行的，会报路径错误，必须到Pycharm的terminal或者系统的cmd内执行）：</p>
+<pre>
+python manage.py makemigrations shop --name "translations"
+</pre>
+<p>会看到如下输出：</p>
+<pre>
+Migrations for 'shop':
+  shop\migrations\0002_translations.py
+    - Create model CategoryTranslation
+    - Create model ProductTranslation
+    - Change Meta options on category
+    - Change Meta options on product
+    - Remove field name from category
+    - Remove field slug from category
+    - Alter index_together for product (0 constraint(s))
+    - Add field master to producttranslation
+    - Add field master to categorytranslation
+    - Remove field description from product
+    - Remove field name from product
+    - Remove field slug from product
+    - Alter unique_together for producttranslation (1 constraint(s))
+    - Alter unique_together for categorytranslation (1 constraint(s))
+</pre>
+<p>可以看到建立了两个表CategoryTranslation和ProductTranslation，但是把需要翻译的字段从模型中删除了（作者不早点说）。这意味着这几个字段的数据全都丢失了，必须启动站点后重新录入。</p>
+<p>之后命令行内输入：</p>
+<pre>
+python manage.py migrate shop
+</pre>
+<p>看到 <code>  Applying shop.0002_translations... OK </code>就表示成功了。启动站点 到 http://127.0.0.1:8000/en/admin/shop/category/ 可以看到已经存在的商品品类因为删除了name和slug，所以变成了空的。随便点一个进去，可以看到带有了多语言的界面：</p>
+<img src="http://img.conyli.cc/django2/C09-11.jpg" alt="">
+<p>这里需要把英语的所有字段和西班牙语对应的翻译全部自己补充好，然后点击SAVE按钮。之后到 http://127.0.0.1:8000/en/admin/shop/product/ 进行同样的工作：补充每个商品的名称和slug以及西班牙语翻译。</p>
+
+<h3><b>为翻译建立视图</b></h3>
+<p>为了正常使用翻译后的模型，必须让shop相关视图对翻译后的字段也能够获取QuerySet，终端内输入 <code>python manage.py shell</code>进入带django环境的命令行模式来试验一下经过翻译后的查询操作：</p>
+<pre>
+>>> from shop.models import Product
+>>> from django.utils.translation import activate
+>>> activate('es')
+>>> product=Product.objects.first()
+>>> product.name
+'Té verde'
+</pre>
+<p>另外一种根据不同语言查询的方式是使用django-parler提供的 language()模型管理器：</p>
+<pre>
+>>> product=Product.objects.language('en').first()
+>>> product.name
+'Green tea'
+</pre>
+<p>这里先导入了Product类，然后导入了django的activate方法，将当前环境语言设置为es。这个时候去查询库里的第一个商品，得到西班牙语名称。语言设置为en重新查询，就得到了英文名称。使用管理器显然比较方便，可以通过设置管理器的属性得到不同语言的结果，类似这样：</p>
+<pre>
+>>> product.set_current_language('es')
+>>> product.name
+'Té verde'
+>>> product.get_current_language()
+'es'
+</pre>
+<p>如果需要使用filter功能，由于我们的Product类里没有了name等字段，需要使用tranlations__name，前边的这个translations名称就是之前执行 <code>python manage.py makemigrations shop --name "translations"</code> 中定义的名称。例子如下：</p>
+<pre>
+>>> Product.objects.filter(translations__name='Green tea')
+&lt;TranslatableQuerySet [&lt;Product: Té verde>]>
+</pre>
+<p>知道了这些基础操作，就可以来修改我们自己的视图中的查询方法了，修改shop应用中的views.py，找到product_list视图中利用slug查询的那一行：</p>
+<pre>category = get_object_or_404(Category, slug=category_slug)</pre>
+<p>替换成如下内容：</p>
+<pre>
+def product_list(request, category_slug=None):
+    category = None
+    categories = Category.objects.all()
+    products = Product.objects.filter(available=True)
+    if category_slug:
+        <b>language = request.LANGUAGE_CODE</b>
+        category = get_object_or_404(Category, <b>translations__language_code=language, translations__slug=category_slug</b>)
+</pre>
+<p>找到product_detail视图中查询那一行：</p>
+<pre>product = get_object_or_404(Product, id=id, slug=slug, available=True)</pre>
+<p>替换成如下内容：</p>
+<pre>
+def product_detail(request, id, slug):
+    <b>language = request.LANGUAGE_CODE</b>
+    product = get_object_or_404(Product, id=id, <b>translations__language_code=language, translations__slug=slug,</b>
+                                <b>available=True</b>)
+</pre>
+<p>之后启动站点，到 http://127.0.0.1:8000/es/ ，应该可以看到商品名称全部都变成了西班牙语：</p>
+<img src="http://img.conyli.cc/django2/C09-12.jpg" alt="">
+<p>如果点到商品详情页，可以看到具体内容都变成了西班牙语，商品的URL也会随着语言而变化，如下图所示：</p>
+<img src="http://img.conyli.cc/django2/C09-13.jpg" alt="">
+<p>通过django-parler可以比较快捷的翻译模型，略有不足就是会对模型的字段进行删除，如果站点需要国际化，则最好在一开始的时候就集成该模块，避免之后的数据修改。</p>
+<p>在 <a href="https://django-parler.readthedocs.io/en/latest/" target="_blank">https://django-parler.readthedocs.io/en/latest/</a>可以查看django-parler的文档。</p>
+<p>现在已经知道了如何翻译Python代码，模板，URL和模型的字段，站点已经可以提供不同语言的服务了。为了完成国际化和本地化的过程，还需要对本地的日期，时间，数字格式进行设置。</p>
+
+<h2><b>本地格式化工作</b></h2>
+<p>根据用户的本地所在，需要以不同的格式显示日期，时间和数字。本地化格式可以通过settings.py里的USE_L10N设置为True来开启。</p>
+<p>当USE_L10N设置为开启的时候，Django在渲染模板的时候，会尽可能的尝试使用当前本地化的方式进行输出。可以看到我们的站点的小数点是一个圆点显示的，切换到西班牙语的时候，小数点显示为一个逗号。这是通过对每种语言进行不同的格式设置实现的，对于支持的每种语言的格式，Django都有对应的配置文件，例如针对西班牙语的配置文件可以看<a
+        href="https://github.com/django/django/blob/stable/2.1.x/django/conf/locale/es/formats.py" target="_blank">这里</a>。</p>
+<p>通常情况下，只要设置USE_L10N为True，Django就会通过读取当前的LANGUAGE设置来应用对应的格式。然而，站点内可能有些内容并不想使用本地化格式，尤其那些标准数据例如代码或者是JSON字符串的内容。</p>
+<p>Django 提供了一个 {% locailze %}模板标签，用于控制模板或者模板片段 开启/关闭 本地化输出。为了使用这个标签，必须在开头使用 {% load l10n %}标签。下边是一个如何在模板中控制 开启/关闭 本地化输出的例子：</p>
+<pre>
+{% load l10n %}
+{% localize on %}
+    {{ value }}
+{% endlocalize %}
+{% localize off %}
+    {{ value }}
+{% endlocalize %}
+</pre>
+<p>Django还提供了两个模板filter用于控制本地化，分别是localize和unlocailze，用来强制让一个值开启/关闭本地化显示。要使用这两个filter也必须在模板中加入{% load l10n %}，用法如下：</p>
+<pre>
+{{ value|localize }}
+{{ value|unlocalize }}
+</pre>
+<p>除了这两个方法之外，还可以采取自定义格式文件方式，具体看<a href="https://docs.djangoproject.com/en/2.1/topics/i18n/formatting/#creating-custom-format-files" target="_blank">官方文档</a>。</p>
+
+<h3><b>用django-localflavor验证表单字段</b></h3>
+<p>与本地化工作相关的一个问题是表单验证。我们的表单验证一般都是基于英语的正则表达式验证的，如果遇到各种本地化的输入和特殊字符，有可能会出问题，常见的比如电话，邮编，地址等，都可能会出问题。django-localflavor是一个第三方模块，包含一系列特别针对本地化验证的工具，比如为每个国家单独设计的表单和模型字段，对于验证某些国家的地区，电话号码，身份证，社会保险号码等非常方便。这个模块是按照ISO 3166 国家代码的标准组织的。</p>
+<p>安装django-localflavor：</p>
+<pre>
+pip install django-localflavor==2.0
+</pre>
+<p>译者在这里安装了2.1版，在settings.py中激活该应用：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    'localflavor',
+]
+</pre>
+<p>为了使用该模块，我们给订单增加一个美国邮编字段和对应验证，必须是一个有效的美国邮编才能建立订单。</p>
+<p>编辑orders应用的forms.py：</p>
+<pre>
+# 新增导入：
+<b>from localflavor.us.forms import USZipCodeField</b>
+
+# 为OrderCreateForm类增加一个新的字段：
+class OrderCreateForm(forms.ModelForm):
+    <b>postal_code = USZipCodeField()</b>
+    class Meta:
+        model = Order
+        fields = ['first_name', 'last_name', 'email', 'address', 'postal_code', 'city']
+</pre>
+<p>重写了Order类中的postal_code字段，将其设置为导入的USZipCodeField类型的字段。</p>
+<p>运行站点，到 http://127.0.0.1:8000/en/orders/create/ ，输入一些不符合美国邮编的邮政编码，可以看到表单的错误提示：</p>
+<pre>
+Enter a zip code in the format XXXXX or XXXXX-XXXX.
+</pre>
+<p>这只是一个针对给字段附加本地化验证的一个简单例子。localflavor提供的组件对于将站点快速适配到某些国家非常有用。详情可以阅读<a href="https://django-localflavor.readthedocs.io/en/latest/" target="_blank">django-flavor的官方文档</a>。</p>
+<p>现在就结束了所有国际化和本地化配置的工作，这大概是目前到现在最漫长的一个章节，经过大量的配置和使用第三方模块，终于将站点变成支持多语言的网站。因此可见，将一个站点国际化并针对不同的地区做本地化配置，需要在站点设计阶段就考虑。</p>
+
+<h1>建立商品推荐系统</h1>
+<p>商品推荐系统可以预测用户对一个商品的喜好程度或者评价高低，根据用户的行为和收集到的用户数据，选择可能和用户相关的产品推荐给用户。在电商行业，推荐系统使用的非常广泛。像淘宝就会自动根据用户的喜欢变换首页的商品。推荐系统可以帮助用户从浩如烟海的商品中选出自己感兴趣的，好的推荐系统可以增加用户粘性，对商家意味着销售额的提高。</p>
+<p>我们准备建立一个简单但是强大的商品推荐系统，用于推荐一同购买的商品，这些商品基于用户过去的购买数据来给用户进行推荐。我们打算在两个页面向用户推荐商品：</p>
+<ul>
+    <li>首先是商品详情页。如果用户对一个商品感兴趣，商品详情页是他停留时间最长的页面。我们会在此展示一些与当前商品一起购买的商品。展示的文字类似：Users who bought this also bought X, Y, Z. 所以我们需要一个数据结构来存放所有与该商品一同购买的商品及次数来进行排名。</li>
+    <li>其次是购物车详情页。这个时候我们对于商品的排名计算方式需要变更一下，应该将不同商品与购物车中所有商品的关联购买次数进行求和再进行排名。</li>
+</ul>
+<p>还记得吗，针对这种动态的排名。常用的后端数据库是Redis，如果还没有安装Redis，安装过程详见第二个项目的追踪用户行为章节。</p>
+
+<h2><b>根据之前的购买记录推荐商品</b></h2>
+<p>现在，需要根据用户加入到购物车内的商品进行排名。对于我们网站每一个被售出的商品，在Redis中存一个键。这个商品键对应的值是一个有序集合，里边的每个键名是商品id，值是数字。只要商品售出，就为同订单的其他商品在当前商品键对应的有序集合中的分数加1。</p>
+
+<p>安装python 的redis模块</p>
+<pre>
+pip install redis==2.10.6
+</pre>
+<p>redis模块是开始翻译本书时，第一个在本书中使用但尚未有最新版本的模块。</p>
+<p>之后在settings.py里配置Redis：</p>
+<pre>
+REDIS_HOST = 'localhost'
+REDIS_PORT = 6379
+REDIS_DB = 1
+</pre>
+<p>Redis为什么默认端口号是6379，这还得看<a href="http://oldblog.antirez.com/post/redis-as-LRU-cache.html" target="_blank">作者本人的解释</a>。</p>
+<p>在shop应用目录下新建recommender.py，作为我们的推荐系统模块所在：</p>
+<pre>
+import redis
+from django.conf import settings
+from .models import Product
+
+# 连接到Redis
+r = redis.StrictRedis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DB)
+
+
+class Recommender:
+
+    # 给一个商品ID，返回Redis 中该商品的键名
+    def get_product_key(self, product_id):
+        return 'product:{}:purchased_with'.format(product_id)
+
+    def products_bought(self, products):
+        product_ids = [p.id for p in products]
+        # 针对订单里的每一个商品，将其他商品在其键内的有序集合中增加1
+        for product_id in product_ids:
+            for with_id in product_ids:
+                if product_id != with_id:
+                    r.zincrby(self.get_product_key(product_id), with_id, amount=1)
+</pre>
+<p>我们用这个类来储存数据和取出一个指定的商品相关的推荐。</p>
+<p>get_product_key方法获取一个Product对象的id，返回一个键，键是这样的：product:[id]:purchased_with。</p>
+<p>关于键为什么长这样，这是使用Redis数据库常用的命名方式，有兴趣可以找一本专门讲解Redis的书一看便知。</p>
+<p>product_bought()方法接受属于同一个订单的Product对象的列表，然后做如下操作：</p>
+<ol>
+    <li>生成所有商品的id的列表</li>
+    <li>针对每一个id，遍历一次全部的id（连续对同一个对象进行了两层迭代），跳过内外循环id相同的部分，这样就针对其中每个商品都遍历了与其一同购买的商品</li>
+    <li>针对每一个id在遍历其所有一同购买的商品时，取得该id对应的键</li>
+    <li>在键对应的有序序列中把一同购买的商品id键对应的值增加1</li>
+</ol>
+<p>还需要一个方法来从Redis中获得推荐的商品，继续编写该类，增加suggest_products_for()方法：</p>
+<pre>
+class Recommender:
+    # ......
+    def suggest_products_for(self, products, max_results=6):
+        product_ids = [p.id for p in products]
+        # 如果当前列表只有一个商品：
+        if len(product_ids) == 1:
+            suggestions = r.zrange(self.get_product_key(product_ids[0]), 0, -1, desc=True)[:max_results]
+        else:
+            # 生成一个临时的key，用于存储临时的有序集合
+            flat_ids = ''.join([str(id) for id in product_ids])
+            tmp_key = 'tmp_{}'.format(flat_ids)
+            # 对于多个商品，取所有商品的键名构成keys列表
+            keys = [self.get_product_key(id) for id in product_ids]
+            # 合并有序集合到临时键
+            r.zunionstore(tmp_key, keys)
+            # 删除与当前列表内商品相同的键。
+            r.zrem(tmp_key, *product_ids)
+            # 获得排名结果
+            suggestions = r.zrange(tmp_key, 0, -1, desc=True)[:max_results]
+            # 删除临时键
+            r.delete(tmp_key)
+        suggested_products_ids = [int(id) for id in suggestions]
+        suggested_products = list(Product.objects.filter(id__in=suggested_products_ids))
+        suggested_products.sort(key=lambda x: suggested_products_ids.index(x.id))
+        return suggested_products
+</pre>
+<p>suggest_products_for()方法接受两个参数，products是订单里的所有商品，max_results表示返回几个推荐结果。在这个方法里我们做了如下的事情：</p>
+<ol>
+    <li>取得当前Products中所有商品的id列表product_ids</li>
+    <li>判断product_ids的长度，如果为1，说明用户订单就买了一个东西，这个时候直接查询这个id对应的有序集合，按降序返回结果即可。</li>
+    <li>如果长度大于1，比如买个两个商品A和B，需要把A对应的有序集合和B对应的有序集合里边的内容相加，然后再返回结果。等于要拼一个临时使用的有序集合出来，所以使用了订单内所有id连起来构成的一个临时key当做这个有序集合的键名。</li>
+    <li>合并所有商品的有序集合：先取所有商品的键名构成keys列表（每个键的值都是一个有序集合），然后调用ZUNIONSTORE命令，合并所有的有序集合中相同键的值，然后将新生成的有序集合存入tmp_key键。关于ZUNIONSTORE可以参考<a
+            href="https://redis.io/commands/ZUNIONSTORE" target="_blank">这里</a>。</li>
+    <li>由于已经在当前购物车内的商品无需被推荐，因此使用ZREM从临时键的有序集合中删除与当前订单内商品id相同的键，使用max_results参数控制结果数量。采用了Python拆解列表的方式传参数。</li>
+    <li>从经过上一步处理的有序集合中内查询到排名结果对应的商品id字符串列表，之后删除临时键。</li>
+    <li>最后是对id字符串列表转int，根据id取查询结果然后生成列表，按照原来的顺序排序等操作，得到最终的结果列表。</li>
+</ol>
+<p>为了更加实用，再给类添加一个清除推荐商品的方法：</p>
+<pre>
+class Recommender:
+    # ......
+    def clear_purchases(self):
+        for id in Product.objects.values_list('id', flat=True):
+            r.delete(self.get_product_key(id))
+</pre>
+<p>我们来测试一下推荐引擎是否正常工作。确保Product表中有一些商品信息，然后先启动Redis：</p>
+<pre>
+src/redis-server
+</pre>
+<p>通过<code>python manage.py shell</code>进入带有django项目环境的shell中：</p>
+<pre>
+from shop.models import Product
+black_tea = Product.objects.get(translations__name='Black tea')
+red_tea = Product.objects.get(translations__name='Red tea')
+green_tea = Product.objects.get(translations__name='Green tea')
+tea_powder = Product.objects.get(translations__name='Tea powder')
+</pre>
+<p>之后增加一些测试购买数据：</p>
+<pre>
+from shop.recommender import Recommender
+r = Recommender()
+r.products_bought([black_tea, red_tea])
+r.products_bought([black_tea, green_tea])
+r.products_bought([red_tea, black_tea, tea_powder])
+r.products_bought([green_tea, tea_powder])
+r.products_bought([black_tea, tea_powder])
+r.products_bought([red_tea, green_tea])
+</pre>
+<p>进行完上述操作后，我们实际为四个商品保存的有序集合是：</p>
+<pre>
+black_tea: red_tea (2), tea_powder (2), green_tea (1)
+red_tea: black_tea (2), tea_powder (1), green_tea (1)
+green_tea: black_tea (1), tea_powder (1), red_tea(1)
+tea_powder: black_tea (2), red_tea (1), green_tea (1)
+</pre>
+<p>下边测试一下取推荐数据：</p>
+<pre>
+>>> from django.utils.translation import activate
+>>> activate('en')
+>>> r.suggest_products_for([black_tea])
+[&lt;Product: Tea powder>, &lt;Product: Red tea>, &lt;Product: Green tea>]
+>>> r.suggest_products_for([red_tea])
+[&lt;Product: Black tea>, &lt;Product: Tea powder>, &lt;Product: Green tea>]
+>>> r.suggest_products_for([green_tea])
+[&lt;Product: Black tea>, &lt;Product: Tea powder>, &lt;Product: Red tea>]
+>>> r.suggest_products_for([tea_powder])
+[&lt;Product: Black tea>, &lt;Product: Red tea>, &lt;Product: Green tea>]
+</pre>
+<p>如果显示与图上一致（最大的那个一定在最前边，数量相等的顺序不一定和这里一致），就说明引擎工作正常了。再测试一下多个商品的推荐：</p>
+<pre>
+>>> r.suggest_products_for([black_tea, red_tea])
+[&lt;Product: Tea powder>, &lt;Product: Green tea>]
+>>> r.suggest_products_for([green_tea, red_tea])
+[&lt;Product: Black tea>, &lt;Product: Tea powder>]
+>>> r.suggest_products_for([tea_powder, black_tea])
+[&lt;Product: Red tea>, &lt;Product: Green tea>]
+</pre>
+<p>可以实际计算一下是否符合合并有序集合后的结果，例如针对第一条程序，tea_powder的分数是2+1，green_tea的分数是1+1</p>
+<p>测试成功之后，下一步就是将该功能集成到站点中，在商品详情页和购物车清单页进行展示。先修改shop应的views.py中的product_detail视图：</p>
+<pre>
+<b>from .recommender import Recommender</b>
+
+def product_detail(request, id, slug):
+    language = request.LANGUAGE_CODE
+    product = get_object_or_404(Product, id=id, translations__language_code=language, translations__slug=slug,
+                                available=True)
+
+    cart_product_form = CartAddProductForm()
+
+    <b>r = Recommender()</b>
+    <b>recommended_products = r.suggest_products_for([product], 4)</b>
+
+    return render(request, 'shop/product/detail.html', {'product': product, 'cart_product_form': cart_product_form,
+                                                        <b>'recommended_products': recommended_products</b>})
+</pre>
+<p>编辑shop/product/detail.html模板，增加下列代码到 <code>{{ product.description|linebreaks }}</code>之后：</p>
+<pre>
+{% if recommended_products %}
+    &lt;div class="recommendations">
+        &lt;h3>{% trans "People who bought this also bought" %}&lt;/h3>
+        {% for p in recommended_products %}
+            &lt;div class="item">
+                &lt;a href="{{ p.get_absolute_url }}">
+                    &lt;img src="{% if p.image %}{{ p.image.url }}{% else %}{% static "img/no_image.png" %}{% endif %}">
+                &lt;/a>
+                &lt;p>&lt;a href="{{ p.get_absolute_url }}">{{ p.name }}&lt;/a>&lt;/p>
+            &lt;/div>
+        {% endfor %}
+    &lt;/div>
+{% endif %}
+</pre>
+<p>然后运行站点，点击商品进入详情页，可以看到类似下图的商品推荐：</p>
+<img src="http://img.conyli.cc/django2/C09-14.jpg" alt="">
+<p>商品详情页所用到的功能是针对单个商品的推荐功能，现在在购物车详情页增加推荐功能，编辑cart应用的views.py中的cart_detail视图：</p>
+<pre>
+<b>from shop.recommender import Recommender</b>
+
+def cart_detail(request):
+    cart = Cart(request)
+    for item in cart:
+        item['update_quantity_form'] = CartAddProductForm(initial={'quantity': item['quantity'], 'update': True})
+    coupon_apply_form = CouponApplyForm()
+
+    <b>r = Recommender()</b>
+    <b>cart_products = [item['product'] for item in cart]</b>
+    <b>recommended_products = r.suggest_products_for(cart_products, max_results=4)</b>
+
+    return render(request, 'cart/detail.html',
+                  {'cart': cart, 'coupon_apply_form': coupon_apply_form, <b>'recommended_products': recommended_products</b>})
+</pre>
+<p>然后修改对应的模板 cart/detail.html，在 <code>&lt;/table&gt;</code> 之后增加下列代码：</p>
+<pre>
+{% if recommended_products %}
+    &lt;div class="recommendations cart">
+        &lt;h3>{% trans "People who bought this also bought" %}&lt;/h3>
+        {% for p in recommended_products %}
+            &lt;div class="item">
+                &lt;a href="{{ p.get_absolute_url }}">
+                    &lt;img src="{% if p.image %}{{ p.image.url }}{% else %}{% static "img/no_image.png" %}{% endif %}">
+                &lt;/a>
+                &lt;p>&lt;a href="{{ p.get_absolute_url }}">{{ p.name }}&lt;/a>&lt;/p>
+            &lt;/div>
+        {% endfor %}
+    &lt;/div>
+{% endif %}
+</pre>
+<p style="color: red;">注意，由于上述内容使用了{% trans %}模板标签，不要忘记在页面上方加入{% load i18n %}，原书这里没有加，会导致报错。</p>
+<p>这段代码的逻辑和商品详情页的几乎相同，都是展示结果。启动站点，将一些商品加入购物车，可以看到出现了推荐商品：</p>
+<img src="http://img.conyli.cc/django2/C09-15.jpg" alt="">
+<p>现在我们就使用Redis配合Django完成了一个推荐系统。</p>
+<p style="color: red">注意，作者这里其实没有将功能写完。可以发现，向Redis写入商品购买数据（调用recommend类的products_bought方法）是在我们测试的时候通过命令行添加的，而不是通过网站功能自动添加。按照一开始的分析，应该在付款成功的时候，更新Redis的数据。需要在payment应用的views.py中，在payment_process视图中付款响应成功，保存交易id和paid字段之后，发送PDF发票之前，添加如下代码：</p>
+<pre>
+<b style="color: red">from shop.recommender import Recommender</b>
+
+def payment_process(request):
+    ......
+    if request.method == "POST":
+    ......
+        if result.is_success:
+            order.paid = True
+            order.braintree_id = result.transaction.id
+            order.save()
+
+            <b style="color: red"># 更新Redis中本次购买的商品分数</b>
+            <b style="color: red">r = Recommender()</b>
+            <b style="color: red">order_items = [order_item.product for order_item in order.items.all()]</b>
+            <b style="color: red">r.products_bought(order_items)</b>
+</pre>
+
+<h1><b>总结</b></h1>
+<p>真是漫长的一章（在翻译和填完了作者的各种坑之后，不知道为什么我想起了“<a href="https://www.wowhead.com/achievement=2144/what-a-long-strange-trip-its-been" target="_blank">千奇百怪的漫长旅行</a>”这个成就），本章先建立了一个优惠码系统，没有采用新的第三方模块，而是重在介绍了优惠码的原理，通过session和在订单中保存优惠码数据，并修改了视图计算总价的方法实现了优惠码系统。</p>
+<p>之后是有关国际化和本地化的内容，国际化和本地化的内容因为涉及到网站的很多方面，看起来比较琐碎，但只要抓住<b>国际化与本地化设置--对模型，Python代码中的常量，模板和URL分别进行翻译设置--添加语言切换器--设置本地化格式</b> 这样一个逻辑流程就可以将整个网站顺利的变更为支持多语言的国际化网站，还带有本地化格式功能。</p>
+<p>最后一部分是一个商品推荐系统，按照关联商品一起购买的次数进行推荐，强化了Redis的使用。</p>
+<p>完成这些以后，我们的电商网站的核心功能都具备了。</p>
+</body>
+</html>
