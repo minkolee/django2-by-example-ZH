@@ -361,101 +361,115 @@ def order_create(request):
 </ul>
 <p>以上是常用的国际化和本地化设置，完整设置请参见<a href="https://docs.djangoproject.com/en/2.1/ref/settings/#globalization-i18n-l10n" target="_blank">https://docs.djangoproject.com/en/2.1/ref/settings/#globalization-i18n-l10n</a>。</p>
 
-<h3><b>国际化和本地化管理命令</b></h3>
+<h4 id="c9-2-1-2"><span class="title">2.1.2</span>国际化和本地化管理命令</h4>
 <p>Django包含了用于管理翻译的命令如下：</p>
 <ul>
-    <li>makemessages：运行该命令，会找到项目中所有标注要翻译的字符串，建立或者更新locale目录下的.po文件，对于settings.py中的配置，每种语言会生成单独的.po文件。</li>
-    <li>compliemessages：编译所有的.po文件为.mo文件。</li>
+    <li><code>makemessages</code>：运行该命令，会找到项目中所有标注要翻译的字符串，建立或者更新<code>locale</code>目录下的<code>.po</code>文件，每种语言会生成单独的<code>.po</code>文件。</li>
+    <li><code>compliemessages</code>：编译所有的<code>.po</code>文件为<code>.mo</code>文件。</li>
 </ul>
-<p>之前提到过，需要使用GNU gettext工具来执行上述过程，大部分linux发行版自带有该工具。如果在使用mac OSX，可以通过 <a href="http://brew.sh/" target="_blank">http://brew.sh/</a> 使用命令 <code>brew install gettext</code>来安装，之后使用 <code>brew link gettext --force</code>强制链接。对于Windows下的安装，参考<a
-        href="https://docs.djangoproject.com/en/2.1/topics/i18n/translation/#gettext-on-windows" target="_blank">django官方文档</a>中的步骤。</p>
+<p>需要使用GNU gettext工具来执行上述过程，大部分linux发行版自带有该工具。如果在使用mac OSX，可以通过 <a href="http://brew.sh/" target="_blank">http://brew.sh/</a> 使用命令<code>brew install gettext</code>来安装，之后使用<code>brew link gettext --force</code>强制链接。对于Windows下的安装，参考<a
+        href="https://docs.djangoproject.com/en/2.0/topics/i18n/translation/#gettext-on-windows" target="_blank">https://docs.djangoproject.com/en/2.0/topics/i18n/translation/#gettext-on-windows</a>中的步骤。</p>
 
-<h3><b>为项目增加翻译功能的流程</b></h3>
-<p>先来看一下增加翻译功能需要进行的流程：</p>
+<h4 id="c9-2-1-3"><span class="title">2.1.3</span>如何为项目增加翻译文件</h4>
+<p>先来看一下增加翻译需要进行的流程：</p>
 <ol>
     <li>在Python代码和模板中标注出需要翻译的字符串</li>
-    <li>运行makemessages命令建立消息文件</li>
-    <li>运行compilemessages命令翻译和编译消息文件</li>
+    <li>运行<code>makemessages</code>命令建立消息文件</li>
+    <li>在消息文件中将字符串翻译成另外一种语言，然后运行<code>compilemessages</code>命令编译消息文件</li>
     <li></li>
 </ol>
 
-<h3><b>本地语言中间件</b></h3>
-<p>Django使用中间件django.middleware.locale. LocaleMiddleware来检查HTTP请求中所使用的本地语言。这个中间件做的工作有如下：</p>
+<h4 id="c9-2-1-4"><span class="title">2.1.4</span>Django如何确定当前语言</h4>
+<p>Django使用中间件<code>django.middleware.locale.LocaleMiddleware</code>来检查HTTP请求中所使用的本地语言。这个中间件做的工作如下：</p>
 <ol>
-    <li>如果使用<a href="https://docs.djangoproject.com/en/2.1/topics/i18n/translation/#language-prefix-in-url-patterns" target="_blank">i18_patterns</a>（django特殊的一种URL方式，里边包含语言前缀），中间件会在请求的URL中寻找特定语言的前缀</li>
-    <li>如果在URL中没有发现语言前缀，会在session 中寻找一个键 LANGUAGE_SESSION_KEY</li>
-    <li>如果session 中没有该键，会在cookie中。可以通过LANGUAGE_COOKIE_NAME自定义该cookie的名称，默认是django_language</li>
-    <li>如果还没有找到，找HTTP请求头的Accept-Language键</li>
-    <li>如果还没有找到，则使用LANGUAGE_CODE设置</li>
+    <li>如果使用<a href="https://docs.djangoproject.com/en/2.0/topics/i18n/translation/#language-prefix-in-url-patterns" target="_blank">i18_patterns</a>（django特殊的一种URL方式，里边包含语言前缀），中间件会在请求的URL中寻找特定语言的前缀</li>
+    <li>如果在URL中没有发现语言前缀，会在session中寻找一个键<code>LANGUAGE_SESSION_KEY</code></li>
+    <li>如果session中没有该键，会在cookie中寻找一个键。可以通过<code>LANGUAGE_COOKIE_NAME</code>自定义该cookie的名称，默认是<code>django_language</code></li>
+    <li>如果cookie中未找到，找HTTP请求头的<code>Accept-Language</code>键</li>
+    <li>如果<code>Accept-Language</code>头部信息未指定具体语言，则使用<code>LANGUAGE_CODE</code>设置</li>
 </ol>
-<p>注意这个过程只有在开启了该中间件的时候才会得到完整执行，如果未开启中间件，Django直接使用LANGUAGE_CODE中的设置。</p>
+<p>注意这个过程只有在开启了该中间件的时候才会得到完整执行，如果未开启中间件，Django直接使用<code>LANGUAGE_CODE</code>中的设置。</p>
 
-<h3><b>为项目使用国际化进行准备</b></h3>
-<p>在了解上述关于国际化和本地化的一些知识之后，来为我们的电商网站增添国际化的支持，这次会增添英语和西班牙语的支持。编辑settings.py：</p>
+<h3 id="c9-2-2"><span class="title">2.2</span>为项目使用国际化进行准备</h3>
+<p>我们准备为电商网站增添各种语言的支持，增添英语和西班牙语的支持。编辑<code>settings.py</code>文件，加入<code>LANGUAGES</code>设置，放在<code>LANGUAGE_CODE</code>的旁边：</p>
 <pre>
-LANGUAGE_CODE = 'en'
 LANGUAGES = (
     ('en', 'English'),
     ('es', 'Spanish'),
 )
 </pre>
-<p>LANGUAGE_CODE可能已经存在于settings.py中，修改其值为'en'，然后增加LANGUAGES配置，其中每一个元组的第一个元素表示语言代码，第二个元素表示显示出来该语言的名称。通过这个设置，我们定义了我们的网站支持语言是英语和西班牙语。如果不定义这些设置，默认支持所有django支持的语言。</p>
-<p>添加'django.middleware.locale.LocaleMiddleware'到settings.py的中间件中，位置在session中间件之后，CommonMiddleware中间件之前，因为语言中间件依赖session中间件，而CommonMiddleware需要一种可用语言来解析URL，MIDDLEWARE设置成如下：</p>
+<p><code>LANGUAGES</code>设置包含两个语言代码和名称组成的元组。语言代码可以指定具体语言如<code>en-us</code>或<code>en-gb</code>，也可以更模糊，如<code>en</code>。通过这个设置，我们定义了我们的网站仅支持英语和西班牙语。如果不定义<code>LANGUAGES</code>设置，默认支持所有django支持的语言。</p>
+<p>设置<code>LANGUAGE_CODE</code>为如下：</p>
+<pre>LANGUAGE_CODE = 'en'</pre>
+<p>添加<code>django.middleware.locale.LocaleMiddleware</code>到<code>settings.py</code>的中间件设置中，位置在<code>SessionMiddleware</code>中间件之后，<code>CommonMiddleware</code>中间件之前，因为<code>LocaleMiddleware</code>需要使用session，而<code>CommonMiddleware</code>需要一种可用语言来解析URL，<code>MIDDLEWARE</code>设置成如下：</p>
 <pre>
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.locale.LocaleMiddleware',
+    <b>'django.middleware.locale.LocaleMiddleware',</b>
     'django.middleware.common.CommonMiddleware',
     # ...
 ]
 </pre>
-<p>django中间件设置的顺序很重要，中间件会在请求上附加额外的数据，某个中间件会依赖于另外一个中间件附加的数据才能正常工作。</p>
-<p>在项目的根目录建立locale目录，在其中再分别建立en和es两个子目录。将该目录设置在 settings.py 中设置为存放翻译文件的路径：</p>
+<p class="hint">django中间件设置的顺序很重要，中间件会在请求上附加额外的数据，某个中间件会依赖于另外一个中间件附加的数据才能正常工作。</p>
+<p>在manage.py文件所在的项目根目录下创建如下目录：</p>
+<pre>
+locale/
+    en/
+    es/
+</pre>
+<p><code>locale</code>目录是用来存放消息文件的目录，编辑<code>settings.py</code>文件加入如下设置：</p>
 <pre>
 LOCALE_PATH = (
     os.path.join(BASE_DIR, 'locale/'),
 )
 </pre>
-<p>LOCALE_PATH可以是一系列路径，最上边的路径优先级最高。当使用makemessages命令的时候，消息文件会在我们创建的locale/目录中创建，然后如果某个应用也有locale/目录，会优先在那个目录中进行创建。</p>
+<p><code>LOCALE_PATH</code>指定了Django寻找消息文件的路径，可以是一系列路径，最上边的路径优先级最高。</p>
+<p>当使用<code>makemessages</code>命令的时候，消息文件会在我们创建的<code>locale/</code>目录中创建，如果某个应用也有<code>locale/</code>目录，那个应用中的翻译内容会优先在那个应用的目录中创建。</p>
 
+<h3 id="c9-2-3"><span class="title">2.3</span>翻译Python代码中的字符串</h3>
+<p>为了翻译Python代码中的字符串字面量，需要使用<code>django.utils.translation</code>模块中的<code>gettext()</code>方法来标注字符串。这个方法返回翻译后的字符串，通常做法是导入该方法然后命名为一个下划线"_"。可以在<a href="https://docs.djangoproject.com/en/2.0/topics/i18n/translation/" target="_blank">https://docs.djangoproject.com/en/2.0/topics/i18n/translation/</a>查看文档。</p>
 
-<h3><b>翻译字符串字面量</b></h3>
-<p>为了翻译Python代码中的字符串字面量，需要使用 django.utils.translation 库中的 gettext() 方法来标注字符串。这个方法返回翻译后的字符串，通常做法是导入该方法然后命名为一个下划线"_"。</p>
-<p>使用标记的示例如下：</p>
+<h4 id="c9-2-3-1"><span class="title">2.3.1</span>标记字符串</h4>
+<p>标记字符串的方法如下：</p>
 <pre>
 from django.utils.translation import gettext as _
 output = _('Text to be translated.')
 </pre>
-<p>这里需要了解惰性翻译。Django 对于所有的翻译函数都有惰性版本，后缀为_lazy()。使用惰性翻译函数的时候，字符串只有被访问的时候才会进行翻译，而不是在翻译函数调用的时候。当字符串位于模块加载的时候才生成的路径中时候特别有效。对于gettext()方法来说，它的惰性版本就是gettext_lazy()。</p>
 
-<h3><b>带有变量的翻译</b></h3>
-<p>被标注的字符串中还可以带有占位符，类似于Python的字符串.format()方法，举个例子：</p>
+<h4 id="c9-2-3-2"><span class="title">2.3.2</span>惰性翻译</h4>
+<p>Django对于所有的翻译函数都有惰性版本，后缀为<code>_lazy()</code>。使用惰性翻译函数的时候，字符串只有被访问的时候才会进行翻译，而不是在翻译函数调用的时候。当字符串位于模块加载的时候才生成的路径中时候特别有效。</p>
+<p class="hint">使用<code>gettext_lazy()</code>代替<code>gettext()</code>方法，只有在该字符串被访问的时候才会进行翻译，所有的翻译函数都有惰性版本。。</p>
+
+<h4 id="c9-2-3-3"><span class="title">2.3.3</span>包含变量的翻译</h4>
+<p>被标注的字符串中还可以带有占位符，以下是一个占位符的例子：</p>
 <pre>
 from django.utils.translation import gettext as _
 month = _('April')
 day = '14'
 output = _('Today is %(month)s %(day)s') % {'month': month, day': day}
 </pre>
-<p>通过使用占位符，可以记录变量。例如，上边这个例子的英语如果是 <em>"Today is April 14"</em>，翻译成的西班牙语就是 <em>"Hoy es 14 de Abril"</em>。当需要翻译的文本中存在变量的时候，推荐使用占位符。</p>
+<p>通过使用占位符，可以使用字符串变量。例如，上边这个例子的英语如果是<em>"Today is April 14"</em>，翻译成的西班牙语就是<em>"Hoy es 14 de Abril"</em>。当需要翻译的文本中存在变量的时候，推荐使用占位符。</p>
 
-<h3><b>复数的翻译</b></h3>
-<p>对于复数形式的翻译，可以采用ngettext()和ngettext_lazy()。这两个函数根据一个对象数量的参数来翻译单数或者复数。使用例子如下：</p>
+<h4 id="c9-2-3-4"><span class="title">2.3.4</span>复数的翻译</h4>
+<p>对于复数形式的翻译，可以采用<code>ngettext()</code>和<code>ngettext_lazy()</code>。这两个函数根据对象的数量来翻译单数或者复数。使用例子如下：</p>
 <pre>
 output = ngettext('there is %(count)d product', 'there are %(count)d products', count) % {'count': count}
 </pre>
-<p>现在我们了解了Python 中翻译字面量的知识，可以来为我们的项目添加翻译功能了。</p>
+<p>现在我们了解了Python中翻译字面量的知识，可以来为我们的项目添加翻译功能了。</p>
 
-<h2><b>翻译Python代码</b></h2>
-<p>编辑setttings.py，导入gettext_lazy()，然后修改LANGUAGES设置：</p>
+<h4 id="c9-2-3-5"><span class="title">2.3.5</span>为项目翻译Python字符串字面量</h4>
+<p>编辑<code>setttings.py</code>，导入<code>gettext_lazy()</code>，然后修改<code>LANGUAGES</code>设置：</p>
 <pre>
+from django.utils.translation import gettext_lazy as _
+
 LANGUAGES = (
     ('en', _('English')),
     ('es', _('Spanish')),
 )
 </pre>
-<p>这里使用了别名"_"来避免重复导入。将显示的名称也进行了翻译，这样对于不同的语言的人来说，当前页面所显示的使用哪种语言是本地化的。</p>
-<p>然后打开shell（Pycharm也可以在 terminal中运行，如果新安装了gettext，需要重启一下Pycharm以让PATH更新） ，运行如下命令：</p>
+<p>这里导入了<code>gettext_lazy()</code>并使用了别名"_"来避免重复导入。将显示的名称也进行了翻译，这样对于不同的语言的人来说，可以看懂并选择他自己的语言。</p>
+<p>然后打开系统命令行窗口，输入如下命令：</p>
 <pre>
 django-admin makemessages --all
 </pre>
@@ -464,7 +478,16 @@ django-admin makemessages --all
 processing locale en
 processing locale es
 </pre>
-<p>然后查看项目的locale目录，可以看到在en和es目录下建立了LC_MESSAGES目录，然后其中均有一个django.po文件。然后使用一个文本编辑器打开es/LC_MESSAGES/django.po文件，可以看到文件最后的内容如下：</p>
+<p>然后查看项目的<code>locale</code>目录，可以看到如下文件和目录结构：</p>
+<pre>
+en/
+    LC_MESSAGES/
+        django.po
+es/
+    LC_MESSAGES/
+        django.po
+</pre>
+<p>每个语言都生成了一个<code>.po</code>消息文件，使用文本编辑器打开<code>es/LC_MESSAGES/django.po</code>文件，在末尾可以看到如下内容：</p>
 <pre>
 #: .\myshop\settings.py:107
 msgid "English"
@@ -474,7 +497,12 @@ msgstr ""
 msgid "Spanish"
 msgstr ""
 </pre>
-<p>这里的每一部分，就类似一个键值对，记录了所有在python代码中发现的被gettext_lazy()作为参数的字符串，msgid就是原始字符串，msgstr就是语言的翻译，默认是空白的。需要我们把实际翻译后的内容填写上去：</p>
+<p>每一部分的第一行表示在那个文件的第几行发现了需翻译的内容，每个翻译包含两个字符串：</p>
+<ul>
+    <li><code>msgid</code>：源代码中的字符串</li>
+    <li><code>msgstr</code>：被翻译成的字符串，默认为空，需要手工添加。</li>
+</ul>
+<p>添加好翻译之后的文件如下：</p>
 <pre>
 #: myshop/settings.py:117
 msgid "English"
@@ -484,7 +512,7 @@ msgstr "Inglés"
 msgid "Spanish"
 msgstr "Español"
 </pre>
-<p>之后执行命令编译消息文件：</p>
+<p>保存这个文件，之后执行命令编译消息文件：</p>
 <pre>
 django-admin compilemessages
 </pre>
@@ -493,23 +521,39 @@ django-admin compilemessages
 processing file django.po in myshop/locale/en/LC_MESSAGES
 processing file django.po in myshop/locale/es/LC_MESSAGES
 </pre>
-<p>此时再看locale目录，就会发现生成了django.mo文件。</p>
-<p>已经翻译好了语言名称本身。现在我们来试着翻译一下Order数据表的所有字段，修改orders应用的models.py：</p>
+<p>这表明已经编译了翻译文件，此时查看<code>locale</code>目录，其结构如下：</p>
 <pre>
-from django.utils.translation import gettext_lazy as _
+en/
+    LC_MESSAGES/
+        django.mo
+        django.po
+es/
+    LC_MESSAGES/
+        django.mo
+        django.po
+</pre>
+<p>可以看到每种语言都生成了<code>.mo</code>文件。</p>
+<p>我们已经翻译好了语言名称本身。现在我们来试着翻译一下<code>Order</code>模型的所有字段，修改<code>orders</code>应用的<code>models.py</code>文件：</p>
+<pre>
+<b>from django.utils.translation import gettext_lazy as _</b>
 
 class Order(models.Model):
-    first_name = models.CharField(_('frist name'), max_length=50)
-    last_name = models.CharField(_('last name'), max_length=50)
-    email = models.EmailField(_('e-mail'), )
-    address = models.CharField(_('address'), max_length=250)
-    postal_code = models.CharField(_('postal code'), max_length=20)
-    city = models.CharField(_('city'), max_length=100)
-    created = models.DateTimeField(auto_now_add=True)
+    first_name = models.CharField(<b>_('frist name')</b>, max_length=50)
+    last_name = models.CharField(<b>_('last name')</b>, max_length=50)
+    email = models.EmailField(<b>_('e-mail')</b>, )
+    address = models.CharField(<b>_('address')</b>, max_length=250)
+    postal_code = models.CharField(<b>_('postal code')</b>, max_length=20)
+    city = models.CharField(<b>_('city'</b>), max_length=100)
     ......
 </pre>
-<p>我们给每个字段加上了给用户显示的字段名称，并且标注了这些名称需要进行翻译，之后在orders应用中也建立locale/目录，在其中建立en和es目录。应用中的翻译会优先存放在我们在应用中建立的locale目录内。</p>
-<p>同样，还是到shell 执行：</p>
+<p>我们为每个显示出来的字段标记了翻译内容，也可以使用<code>verbose_name</code>属性来命名字段。在<code>orders</code>应用中建立如下目录：</p>
+<pre>
+locale/
+    en/
+    es/
+</pre>
+<p>通过创建<code>locale</code>目录，当前应用下的翻译内容会优先保存到这个目录中，而不是保存在项目根目录下的<code>locale</code>目录中。这样就可以为每个应用配置独立的翻译文件。</p>
+<p>在系统命令行中执行：</p>
 <pre>
 django-admin makemessages --all
 </pre>
@@ -518,7 +562,7 @@ django-admin makemessages --all
 processing locale es
 processing locale en
 </pre>
-<p>然后到目录中去看一看，生成了django.po文件，打开西班牙语的django.po文件，手工填入对应的西班牙语翻译：</p>
+<p>使用文本编辑器打开<code>locale/es/LC_MESSAGES/django.po</code>，可以看到Order模型的字段翻译，在<code>msgstr</code>中为对应的<code>msgid</code>字符串加上西班牙语的翻译：</p>
 <pre>
 #: orders/models.py:10
 msgid "first name"
@@ -544,49 +588,35 @@ msgstr "código postal"
 msgid "city"
 msgstr "ciudad"
 </pre>
-<p>除了常用的文本编辑软件，还可以考虑使用Poedit编辑翻译内容，支持Linux，Windows和macOS X。官网 <a href="https://poedit.net/" target="_blank">https://poedit.net/</a></p>
-<p>之后继续翻译我们的项目。OrderCreateForm这个表单类无需翻译，因为它会自动使用Order类中我们刚刚标注翻译的verbose_name。现在我们去翻译cart和coupons应用。</p>
-<p>在cart应用的forms.py文件中，导入翻译函数，为CartAddProductForm类的quantity字段增加一个参数label，这个label的内容采用翻译标注，最终这个label在页面上会和input配对展示：</p>
+<p>添加完翻译之后保存文件。</p>
+<p>除了常用的文本编辑软件，还可以考虑使用Poedit编辑翻译内容，该软件同样依赖gettext，支持Linux，Windows和macOS X。可以在<a href="https://poedit.net/" target="_blank">https://poedit.net/</a>下载该软件。</p>
+<p>下边来翻译项目使用的表单。<code>OrderCreateForm</code>这个表单类无需翻译，因为它会自动使用<code>Order</code>类中我们刚刚翻译的<code>verbose_name</code>。现在我们去翻译<code>cart</code>和<code>coupons</code>应用中的内容。</p>
+<p>在<code>cart</code>应用的<code>forms.py</code>文件中，导入翻译函数，为<code>CartAddProductForm</code>类的<code>quantity</code>字段增加一个参数<code>label</code>，代码如下：</p>
 <pre>
-from django.utils.translation import gettext_lazy as _
+from django import forms
+<b>from django.utils.translation import gettext_lazy as _</b>
+<b style="color: red;">PRODUCT_QUANTITY_CHOICES = [(i, str(i)) for i in range(1, 21)]</b>
 
 class CartAddProductForm(forms.Form):
-    quantity = forms.TypedChoiceField(choices=PRODUCT_QUANTITY_CHOICES, coerce=int, <span style="font-weight: 700">label=_('Quantity')</span>)
-    ......
+    quantity = forms.TypedChoiceField(choices=PRODUCT_QUANTITY_CHOICES, coerce=int, <b>label=_('Quantity')</b>)
+    update = forms.BooleanField(required=False, initial=False, widget=forms.HiddenInput)
 </pre>
-<p>之后修改coupons应用的forms.py，为CouponApplyForm类的code字段也增加label属性：</p>
+<p class="emp">译者注：红字部分是本书上一版的遗留，无任何作用，读者可以忽略。</p>
+<p>之后修改<code>coupons</code>应用的<code>forms.py</code>文件，为<code>CouponApplyForm</code>类增加翻译：</p>
 <pre>
-from django.utils.translation import gettext_lazy as _
-
+from django import forms
+<b>from django.utils.translation import gettext_lazy as _</b>
 
 class CouponApplyForm(forms.Form):
-    code = forms.CharField(<span style="font-weight: 700">label=_('Coupon')</span>)
+    code = forms.CharField(<b>label=_('Coupon')</b>)
 </pre>
-<pre>
-#: .\cart\forms.py:9
-msgid "Quantity"
-msgstr "cantidad"
+<p>我们为<code>code</code>字段增加了一个label标签用于展示翻译后的字段名称。</p>
 
-#: .\coupons\forms.py:6
-msgid "Coupon"
-msgstr "vale descuento"
-</pre>
-<p>然后执行编译，会把项目根目录内和orders应用内的.po文件一并编译：</p>
-<pre>
-processing file django.po in myshop/locale/en/LC_MESSAGES
-processing file django.po in myshop/locale/es/LC_MESSAGES
-processing file django.po in myshop/orders/locale/en/LC_MESSAGES
-processing file django.po in myshop/orders/locale/es/LC_MESSAGES
-</pre>
-<p>现在Python代码的翻译工作做好了，下一步是翻译模板。</p>
+<h3 id="c9-2-4"><span class="title">2.4</span>翻译模板</h3>
+<p>Django为翻译模板内容提供了<code>{% trans %}</code>和<code>{% blocktrans %}</code>两个模板标签用于翻译内容，如果要启用这两个标签，需要在模板顶部加入<code>{% load i18n %}</code>。</p>
 
-
-<h2><b>翻译模板</b></h2>
-<pre>
-Django为翻译模板内容提供了{% trans %} 和 {% blocktrans %}两个模板标签用于翻译内容，如果要启用这两个标签，需要在模板顶部加入 {% load i18n %}。
-</pre>
-
-<h3><b>使用{% trans %}</b></h3>
+<h4 id="c9-2-4-1"><span class="title">2.4.1</span>使用<code>{% trans %}</code>模板标签</h4>
+<h3><b></b></h3>
 <p>这个标签用来标记一个字符串，常量或者变量用于翻译。django内部也是对该文本执行gettext()等翻译函数。标记字符串的方法是：</p>
 <pre>{% trans "Text to be translated" %}</pre>
 <p>也可以像其他标签变量一样，使用as 将 翻译后的结果放入一个变量中，在其他地方使用。例如：</p>
