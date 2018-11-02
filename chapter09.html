@@ -365,7 +365,7 @@ def order_create(request):
 <p>Django包含了用于管理翻译的命令如下：</p>
 <ul>
     <li><code>makemessages</code>：运行该命令，会找到项目中所有标注要翻译的字符串，建立或者更新<code>locale</code>目录下的<code>.po</code>文件，每种语言会生成单独的<code>.po</code>文件。</li>
-    <li><code>compliemessages</code>：编译所有的<code>.po</code>文件为<code>.mo</code>文件。</li>
+    <li><code>compilemessages</code>：编译所有的<code>.po</code>文件为<code>.mo</code>文件。</li>
 </ul>
 <p>需要使用GNU gettext工具来执行上述过程，大部分linux发行版自带有该工具。如果在使用mac OSX，可以通过 <a href="http://brew.sh/" target="_blank">http://brew.sh/</a> 使用命令<code>brew install gettext</code>来安装，之后使用<code>brew link gettext --force</code>强制链接。对于Windows下的安装，参考<a
         href="https://docs.djangoproject.com/en/2.0/topics/i18n/translation/#gettext-on-windows" target="_blank">https://docs.djangoproject.com/en/2.0/topics/i18n/translation/#gettext-on-windows</a>中的步骤。</p>
@@ -376,7 +376,6 @@ def order_create(request):
     <li>在Python代码和模板中标注出需要翻译的字符串</li>
     <li>运行<code>makemessages</code>命令建立消息文件</li>
     <li>在消息文件中将字符串翻译成另外一种语言，然后运行<code>compilemessages</code>命令编译消息文件</li>
-    <li></li>
 </ol>
 
 <h4 id="c9-2-1-4"><span class="title">2.1.4</span>Django如何确定当前语言</h4>
@@ -616,29 +615,28 @@ class CouponApplyForm(forms.Form):
 <p>Django为翻译模板内容提供了<code>{% trans %}</code>和<code>{% blocktrans %}</code>两个模板标签用于翻译内容，如果要启用这两个标签，需要在模板顶部加入<code>{% load i18n %}</code>。</p>
 
 <h4 id="c9-2-4-1"><span class="title">2.4.1</span>使用<code>{% trans %}</code>模板标签</h4>
-<h3><b></b></h3>
-<p>这个标签用来标记一个字符串，常量或者变量用于翻译。django内部也是对该文本执行gettext()等翻译函数。标记字符串的方法是：</p>
+<p><code>{% trans %}</code>标签用来标记一个字符串，常量或者变量用于翻译。Django内部也是该文本执行<code>gettext()</code>等翻译函数。标记字符串的例子是：</p>
 <pre>{% trans "Text to be translated" %}</pre>
-<p>也可以像其他标签变量一样，使用as 将 翻译后的结果放入一个变量中，在其他地方使用。例如：</p>
+<p>也可以像其他标签变量一样，使用as 将 翻译后的结果放入一个变量中，在其他地方使用。下面的例子使用了一个变量<code>greeting</code>：</p>
 <pre>
 {% trans "Hello!" as greeting %}
 &lt;h1>{{ greeting }}&lt;/h1>
 </pre>
-<p>这个标签使用比较简单，但不能用于带占位符的文字翻译。</p>
+<p>这个标签用于比较简单的翻译，但不能用于带占位符的文字翻译。</p>
 
-<h3><b>使用{% blocktrans %}</b></h3>
-<p>这个标签可以标记包含常量和占位符的内容用于翻译，会把其中的模板标签替换成实际内容之后进行翻译，例如：</p>
+<h4 id="c9-2-4-2"><span class="title">2.4.2</span>使用<code>{% blocktrans %}</code>模板标签</h4>
+<p><code>{% blocktrans %}</code>标签可以标记包含常量和占位符的内容用于翻译，下边的例子展示了使用一个<code>name</code>变量的翻译：</p>
 <pre>{% blocktrans %}Hello {{ name }}!{% endblocktrans %}</pre>
-<p>这个标签还可以和with一起用，在这个标签的内部设置具体变量的值。这个时候，必须在标签内部使用占位符，不能够再继续访问表达式和对象的属性。例如：</p>
+<p>可以使用with，将具体的表达式设置为变量的值，此时在<code>blocktrans</code>块内部不能够再继续访问表达式和对象的属性，下面是一个使用了<code>capfirst</code>装饰器的例子：</p>
 <pre>
 {% blocktrans with name=user.name|capfirst %}
     Hello {{ name }}!
 {% endblocktrans %}
 </pre>
-<p>其实这两个标签也就和翻译Python代码中带占位符的形式和功能相同。</p>
+<p class="hint">如果翻译内容中包含变量，使用<code>{% blocktrans %}</code>代替<code>{% trans %}</code>。</p>
 
-<h3><b>翻译商店模板</b></h3>
-<p>了解了翻译标签的使用，下边就来修改一下shop应用的base.html：</p>
+<h4 id="c9-2-4-3"><span class="title">2.4.3</span><b>翻译商店模板</b></h4>
+<p>编辑<code>shop</code>应用的<code>base.html</code>，在其顶部加入<code>i18n</code>标签，然后标注如下要翻译的部分：</p>
 <pre>
 <b>{% load i18n %}</b>
 {% load static %}
@@ -676,42 +674,19 @@ class CouponApplyForm(forms.Form):
 &lt;/body>
 &lt;/html>
 </pre>
-<p>{% trans %}标签的翻译都比较直观，直接应用在需要翻译的内容上就可以。</p>
-<p>在原来的模板中，我们使用了：</p>
+<p>注意<code>{% blocktrans %}</code>展示购物车总价部分的方法，在原来的模板中，我们使用了：</p>
 <pre>
 {{ total_items }} item{{ total_items|pluralize }},
 ${{ cart.get_total_price }}
 </pre>
-<p>来显示商品数量和总价。由于要对这一段进行翻译，则其中不能够访问属性和方法（模板filter也是函数），必须将显示的内容全部换成占位符，所以在{% blocktrans %}中定义了如下关系：</p>
-<ul>
-    <li>total_items|pluralize ---> total_items_plural</li>
-    <li>cart.get_total_price ---> total_price</li>
-</ul>
-<p>完成了base.html的翻译之后，再到shop/product/detail.html中进行修改：</p>
-<pre>
-{% extends "shop/base.html" %}
-<b>{% load i18n %}</b>
-{% load static %}
-{% block title %}
-    {{ product.name }}
-{% endblock %}
-{% block content %}
-    &lt;div class="product-detail">
-        &lt;img src="{% if product.image %}{{ product.image.url }}{% else %}
-{% static "img/no_image.png" %}{% endif %}">
-        &lt;h1>{{ product.name }}&lt;/h1>
-        &lt;h2>&lt;a href="{{ product.category.get_absolute_url }}">{{ product.category }}&lt;/a>&lt;/h2>
-        &lt;p class="price">${{ product.price }}&lt;/p>
-        &lt;form action="{% url 'cart:cart_add' product.id %}" method="post">
-            {{ cart_product_form }}
-            {% csrf_token %}
-            &lt;input type="submit" value="<span style="font-weight: 700">{% trans "Add to cart" %}</span>">
-        &lt;/form>
-        {{ product.description|linebreaks }}
-    &lt;/div>
-{% endblock %}
-</pre>
-<p>注意如果使用{% extends %}，则该句必须是模板的第一行，所以{% load i18n %}只能写在第二行。这里的修改很简单，继续修改orders/order/create.html：</p>
+<p>现在改用<code>{% blocktrans with ... %}</code>来为<code>total_items|pluralize</code>（使用了过滤器）和<code>cart.get_total_price</code>（访问对象的方法）创建占位符：</p>
+<p>编辑<code>shop</code>应用的<code>shop/product/detail.html</code>，紧接着<code>{% extends %}</code>标签导入<code>i18n</code>标签：</p>
+<pre>{% load i18n %}</pre>
+<p>之后找到下边这一行：</p>
+<pre>&lt;input type="submit" value="Add to cart"></pre>
+<p>将其替换成：</p>
+<pre>&lt;input type="submit" value="{% trans "Add to cart" %}"></pre>
+<p>现在来翻译<code>orders</code>应用，编辑<code>orders/order/create.html</code>，标记如下翻译内容：</p>
 <pre>
 {% extends 'shop/base.html' %}
 <b>{% load i18n %}</b>
@@ -720,10 +695,10 @@ ${{ cart.get_total_price }}
 {% endblock %}
 
 {% block content %}
-    &lt;h1><span style="font-weight: 700">{% trans "Checkout" %}</span>&lt;/h1>
+    &lt;h1><b>{% trans "Checkout" %}</b>&lt;/h1>
 
     &lt;div class="order-info">
-        &lt;h3><span style="font-weight: 700">{% trans "Your order" %}</span>&lt;/h3>
+        &lt;h3><b>{% trans "Your order" %}</b>&lt;/h3>
         &lt;ul>
             {% for item in cart %}
                 &lt;li>
@@ -740,74 +715,98 @@ ${{ cart.get_total_price }}
                 &lt;/li>
             {% endif %}
         &lt;/ul>
-        &lt;p><span style="font-weight: 700">{% trans "Total" %}</span>: ${{ cart.get_total_price_after_diccount|floatformat:"2" }}&lt;/p>
+        &lt;p><b>{% trans "Total" %}</b>: ${{ cart.get_total_price_after_diccount|floatformat:"2" }}&lt;/p>
     &lt;/div>
 
     &lt;form action="." method="post" class="order-form" novalidate>
         {{ form.as_p }}
-        &lt;p>&lt;input type="submit" value="<span style="font-weight: 700">{% trans "Place order" %}</span>">&lt;/p>
+        &lt;p>&lt;input type="submit" value="<b>{% trans "Place order" %}</b>">&lt;/p>
         {% csrf_token %}
     &lt;/form>
 {% endblock %}
 </pre>
-<p>完成上述翻译之后，执行 <code>django-admin makemessages --all</code>，此时我们没有在orders应用以外的应用内建立locale/目录，新增的这些翻译内容都会被追加到项目根目录/locale/es/django.po中。在新的.po文件内输入对应的西班牙语翻译，也可以直接使用随书的源代码中的.po文件。之后再执行<code>django-admin compilemessages</code>，就可以看到：</p>
+<p>到现在我们完成了如下文件的翻译：</p>
+<ul>
+    <li><code>shop</code>应用的<code>shop/product/list.html</code>模板</li>
+    <li><code>orders</code>应用的<code>orders/order/created.html</code>模板</li>
+    <li><code>cart</code>应用的<code>cart/detail.html</code>模板</li>
+</ul>
+<p>之后来更新消息文件，打开命令行窗口执行：</p>
+<pre>django-admin makemessages --all</pre>
+<p>此时<code>myshop</code>项目下的<code>locale</code>目录内有了对应的<code>.po</code>文件，而<code>orders</code>应用的翻译文件优先存放在应用内部的<code>locale</code>目录中。</p>
+<p>编辑所有<code>.po</code>文件，在<code>msgstr</code>属性内添加西班牙语翻译。你也可以直接复制随书代码内对应文件的内容。</p>
+<p>执行命令编译消息文件：</p>
+<pre>django-admin compilemessages</pre>
+<p>可以看到如下输出：</p>
 <pre>
 processing file django.po in myshop/locale/en/LC_MESSAGES
 processing file django.po in myshop/locale/es/LC_MESSAGES
 processing file django.po in myshop/orders/locale/en/LC_MESSAGES
 processing file django.po in myshop/orders/locale/es/LC_MESSAGES
 </pre>
-<p>这样就做好了全部的翻译工作。</p>
+<p>针对每一个<code>.po</code>文件都会生成对应的<code>.mo</code>文件。</p>
 
-<h3><b>使用Rosetta翻译界面</b></h3>
-<p>Rosetta（游戏里经常见到的罗塞塔石）是一个第三方应用，使用Django管理后台编辑所有翻译内容，让.po文件的更新变得更加方便，先安装该模块：</p>
+<h3 id="c9-2-5"><span class="title">2.5</span>使用Rosetta翻译界面</h3>
+<p>Rosetta是一个第三方应用，通过Django管理后台编辑所有翻译内容，让<code>.po</code>文件的管理变得更加方便，先通过<code>pip</code>安装该模块：</p>
 <pre>
 pip install django-rosetta==0.8.1
 </pre>
-<p>译者在这里安装了0.9版本，之后将rosetta加入到应用中去：</p>
+<p>之后在<code>settings.py</code>中激活该应用：</p>
 <pre>
 INSTALLED_APPS = [
     # ...
-    'rosetta',
+    <b>'rosetta',</b>
 ]
 </pre>
-<p>然后需要为Rosetta配置相应的url，其二级路由已经配置好，修改项目根路由增加一行：</p>
+<p>然后需要为Rosetta配置相应的URL，其二级路由已经配置好，修改项目根路由增加一行：</p>
 <pre>
-path('rosetta/', include('rosetta.urls')),
+urlpatterns = [
+    # ...
+    <b>path('rosetta/', include('rosetta.urls')),</b>
+    path('', include('shop.urls', namespace='shop')),
+]
 </pre>
-<p>一次又一次的强调新增的具体url匹配路径，都需要在shop.urls上边。</p>
-<p>然后启动站点，登录后进入 http://127.0.0.1:8000/rosetta/ ，点击右上的THIRD PARTY，如下图所示：</p>
-<img src="http://img.conyli.cc/django2/C09-05.jpg" alt="">
-<p>点开Spanish下边的shop应用，可以看到列出了所有需要翻译的内容：</p>
-<img src="http://img.conyli.cc/django2/C09-06.jpg" alt="">
-<p>可以手工编辑任何需要输入对应翻译的地方，对于那些占位符翻译的内容，显示为这样：</p>
-<img src="http://img.conyli.cc/django2/C09-07.jpg" alt="">
-<p>结束输入的时候，点击一下Save即可将当前翻译的内容保存到.po文件中，之后就可以执行 <code>compliemessages</code>命令了。Rosetta会直接修改.po文件，注意要给予其相应的权限。</p>
-<p>如果需要其他用户来编辑翻译内容，可以到 http://127.0.0.1:8000/admin/auth/group/add/ 新增一个用户组叫 translators，然后到 http://127.0.0.1:8000/admin/auth/user/ 对想给修改翻译的用户修改用户权限 Permissions 字段，将该用户加入到translators用户组内。使用Rosetta的权限仅限超级用户和translators用户组。</p>
-<p>Rosetta的官方文档在 <a href="https://django-rosetta.readthedocs.io/en/latest/" target="_blank">https://django-rosetta.readthedocs.io/en/latest/</a></p>
-<p>特别注意的是，当django已经在生产环境运行时，如果修改和新增了翻译，在运行了 <code>compliemessages</code> 命令之后，只有重新启动django才会让新的翻译生效。</p>
+<p>这条路径也需要在<code>shop.urls</code>上边。</p>
+<p>然后启动站点，使用管理员身份登录<a href="http://127.0.0.1:8000/rosetta/" target="_blank">http://127.0.0.1:8000/rosetta/</a> ，再转到<a
+        href="http://127.0.0.1:8000/rosetta/" target="_blank">http://127.0.0.1:8000/rosetta/</a>，点击右上的THIRD PARTY以列出所有的翻译文件，如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C09-05.jpg" alt=""></p>
+<p>点开Spanish下边的Myshop链接，可以看到列出了所有需要翻译的内容：</p>
+<p><img src="http://img.conyli.cc/django2/C09-06.jpg" alt=""></p>
+<p>可以手工编辑需要翻译的地方，OCCURRENCES(S)栏显示了该翻译所在的文件名和行数，对于那些占位符翻译的内容，显示为这样：</p>
+<p><img src="http://img.conyli.cc/django2/C09-07.jpg" alt=""></p>
+<p>Rosetta对占位符使用了不同的背景颜色，在手工输入翻译内容的时候注意不要破坏占位符的结构，例如要翻译下边这一行：</p>
+<pre>%(total_items)s item%(total_items_plural)s, $%(total_price)s</pre>
+<p>应该输入：</p>
+<pre>%(total_items)s producto%(total_items_plural)s, $%(total_price)s</pre>
+<p>可以参考本章随书代码中的西班牙语翻译来录入翻译内容。</p>
+<p>结束输入的时候，点击一下Save即可将当前翻译的内容保存到<code>.po</code>文件中，当保存之后，Rosetta会自动进行编译，所以无需执行<code>compilemessages</code>命令。然而要注意Rosetta会直接读写<code>locale</code>目录，注意要给予其相应的权限。</p>
+<p>如果需要其他用户来编辑翻译内容，可以到<a
+        href="http://127.0.0.1:8000/admin/auth/group/add/" target="_blank">http://127.0.0.1:8000/admin/auth/group/add/</a>新增一个用户组叫<code>translators</code>，然后到<a
+        href="http://127.0.0.1:8000/admin/auth/user/" target="_blank">http://127.0.0.1:8000/admin/auth/user/</a>编辑用户的权限以给予其修改翻译的权限，将该用户加入到<code>translators</code>用户组内。仅限超级用户和<code>translators</code>用户组内的用户才能使用Rosetta。</p>
+<p>Rosetta的官方文档在<a href="https://django-rosetta.readthedocs.io/en/latest/" target="_blank">https://django-rosetta.readthedocs.io/en/latest/</a>。</p>
+<p class="hint">特别注意的是，当Django已经在生产环境运行时，如果修改和新增了翻译，在运行了<code>compilemessages</code>命令之后，只有重新启动Django才会让新的翻译生效。</p>
 
-<h3><b>需要检查的翻译 Fuzzy translations</b></h3>
-<p>你可能注意到了，Rosetta页面上有一列叫做Fuzzy。是一个可供修改的布尔值。这不是Rosetta的功能，而是gettext提供的功能。如果将fuzzy设置为true，则该条翻译不会包含在编译后的消息文件中。这个字段用来标记需要由用户进行检查的翻译内容。当.po文件更新了新的翻译字符串时，很可能一些翻译被自动标成了fuzzy。这是因为：在gettext发现一些msgid被修改过的时候，gettext会将其与它认为的旧有翻译进行匹配，然后标注上fuzzy。看到fuzzy出现的时候，人工翻译者必须检查该条翻译，然后取消fuzzy，之后再行编译。</p>
-<p>对于译者安装的Rosseta 0.9版本，界面与作者的界面有所区别，按照所有.po文件进行列表，而不是按项目，但是其中的操作和旧版本没有任何区别。</p>
+<h3 id="c9-2-6"><span class="title">2.6</span>待校对翻译Fuzzy translations</h3>
+<p>你可能注意到了，Rosetta页面上有一列叫做Fuzzy。这不是Rosetta的功能，而是<code>gettext</code>提供的功能。如果将fuzzy设置为true，则该条翻译不会包含在编译后的消息文件中。这个字段用来标记需要由用户进行检查的翻译内容。当<code>.po</code>文件更新了新的翻译字符串时，很可能一些翻译被自动标成了fuzzy。这是因为：在<code>gettext</code>发现一些<code>msgid</code>被修改过的时候，<code>gettext</code>会将其与它认为的旧有翻译进行匹配，然后标注上fuzzy。看到fuzzy出现的时候，人工翻译者必须检查该条翻译，然后取消fuzzy，之后再行编译。</p>
 
-<h2><b>国际化URL</b></h2>
-<p>如果在之前使用了随书提供的源代码，可以发现其中的翻译内容除了之前我们标注的字符串外，还有一些路径，这是因为Django还提供了国际化URL的方式。</p>
+<h3 id="c9-2-7"><span class="title">2.7</span>国际化URL</h3>
 <p>Django提供两种国际化URL的特性：</p>
 <ul>
-    <li>Language prefix in URL patterns 语言前缀URL模式：在URL的前边加上不同的语言前缀构成不同的基础URL</li>
-    <li>Translated URL patterns 翻译URL模式：基础URL相同，进行翻译URL展示给用户得到对应不同语言的URL</li>
+    <li><b>Language prefix in URL patterns</b> 语言前缀URL模式：在URL的前边加上不同的语言前缀构成不同的基础URL</li>
+    <li><b>Translated URL patterns</b> 翻译URL模式：基础URL相同，把基础URL按照不同语言翻译给用户得到不同语言的URL</li>
 </ul>
 <p>使用翻译URL模式的优点是对搜索引擎友好。如果采用语言前缀URL，则必须要为每一种语言进行索引，使用翻译URL模式，则一条URL就可以匹配全部语言。下边来看一下两种模式的使用：</p>
 
-<h3><b>语言前缀URL模式</b></h3>
-<p>Django可以为不同语言在URL前添加前缀，例如我们的网站，英语版以/en/开头，而西班牙语版以/es/开头。</p>
-<p>要使用语言前缀URL模式，需要启用LocaleMiddleware中间件。在之前我们已经做过该工作。现在需要修改项目的根urls.py：</p>
+<h4 id="c9-2-7-1"><span class="title">2.7.1</span><b>语言前缀URL模式</b></h4>
+
+<h3><b></b></h3>
+<p>Django可以为不同语言在URL前添加前缀，例如我们的网站，英语版以<code>/en/</code>开头，而西班牙语版以<code>/es/</code>开头。</p>
+<p>要使用语言前缀URL模式，需要启用<code>LocaleMiddleware</code>中间件，用于从不同的URL中识别语言，在之前我们已经添加过该中间件。</p>
+<p>我们来为URL模式增加前缀，现在需要修改项目的根<code>urls.py</code>文件：</p>
 <pre>
 from django.conf.urls.i18n import i18n_patterns
 
-
-urlpatterns = <span style="font-weight: 700">i18n_patterns</span>(
+urlpatterns = <b>i18n_patterns</b>(
     path('admin/', admin.site.urls),
     path('cart/', include('cart.urls', namespace='cart')),
     path('orders/', include('orders.urls', namespace='orders')),
@@ -817,48 +816,52 @@ urlpatterns = <span style="font-weight: 700">i18n_patterns</span>(
     path('', include('shop.urls', namespace='shop')),
 )
 </pre>
-<p>可以混用未经翻译的标准URL与i18n_patterns之内的URL，使部分URL带有语言前缀，部分为不变的URL。但最好只使用翻译URL，以避免把翻译过的URL匹配到未经翻译过的URL模式上。</p>
-<p>现在启动站点，到 http://127.0.0.1:8000/ ，Django的语言中间件会按照之前介绍的顺序来确定本地语言，然后重定向到带有语言前缀的URL，例如 http://127.0.0.1:8000/en/ ，你也可以尝试通过各种方式改变本地语言的设置，让Django来显示不同的URL。</p>
+<p>可以混用未经翻译的标准URL与<code>i18n_patterns</code>类型的URL，使部分URL带有语言前缀，部分不带前缀。但最好只使用翻译URL，以避免把翻译过的URL匹配到未经翻译过的URL模式上。</p>
+<p>现在启动站点，到<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a> ，Django的语言中间件会按照之前介绍的顺序来确定本地语言，然后重定向到带有语言前缀的URL。现在看一下浏览器的地址栏，应该是<a href="http://127.0.0.1:8000/en/" target="_blank">http://127.0.0.1:8000/en/</a>。当前语言是由请求头<code>Accept-Language</code>所设置，或者就是<code>LANGUAGE_CODE</code>的设置。</p>
 
-<h3><b>翻译URL模式</b></h3>
-<p>Django 支持在URL模式中翻译字符串。就像我们之前翻译字面量和模板一样，针对不同的语言，作出不同的翻译配置即可。在urls.py中，同样使用ugettext_lazy()来标注字符串。继续修改项目的根urls.py：</p>
+<h4 id="c9-2-7-2"><span class="title">2.7.2</span><b>翻译URL模式</b></h4>
+<p>Django支持在URL模式中翻译字符串。针对不同的语言，可以翻译出不同的URL。在<code>urls.py</code>中，使用<code>ugettext_lazy()</code>来标注字符串。</p>
+<p>编辑<code>myshop</code>应用的根<code>urls.py</code>，为<code>cart</code>，<code>orders</code>，<code>payment</code>和<code>coupons</code>应用配置URL：</p>
 <pre>
-from django.utils.translation import gettext_lazy as _
+<b>from django.utils.translation import gettext_lazy as _</b>
 
 urlpatterns = i18n_patterns(
-    path(_('admin/'), admin.site.urls),
-    path(_('cart/'), include('cart.urls', namespace='cart')),
-    path(_('orders/'), include('orders.urls', namespace='orders')),
-    path(_('payment/'), include('payment.urls', namespace='payment')),
-    path(_('coupons/'), include('coupons.urls', namespace='coupons')),
+    path(<b>_('admin/')</b>, admin.site.urls),
+    path(<b>_('cart/')</b>, include('cart.urls', namespace='cart')),
+    path(<b>_('orders/')</b>, include('orders.urls', namespace='orders')),
+    path(<b>_('payment/')</b>, include('payment.urls', namespace='payment')),
+    path(<b>_('coupons/')</b>, include('coupons.urls', namespace='coupons')),
     path('rosetta/', include('rosetta.urls')),
     path('', include('shop.urls', namespace='shop')),
 )
 </pre>
-<p>可以看到我们将匹配的路径名进行了标注。再修改orders应用的urls.py：</p>
+<p>编辑<code>orders</code>应用的<code>urls.py</code>文件，修改成如下：</p>
 <pre>
-from django.utils.translation import gettext_lazy as _
+<b>from django.utils.translation import gettext_lazy as _</b>
 
 urlpatterns = [
-    path(<span style="font-weight: 700">_('create/')</span>, views.order_create, name='order_create'),
+    path(<b>_('create/')</b>, views.order_create, name='order_create'),
     # ...
 ]
 </pre>
-<p>修改payment应用的urls.py：</p>
+<p>修改<code>payment</code>应用的<code>urls.py</code>文件，修改成如下：</p>
 <pre>
-from django.utils.translation import gettext_lazy as _
+<b>from django.utils.translation import gettext_lazy as _</b>
 
 urlpatterns = [
-    path(_('process/'), views.payment_process, name='process'),
-    path(_('done/'), views.payment_done, name='done'),
-    path(_('canceled/'), views.payment_canceled, name='canceled'),
+    path(<b>_('process/')</b>, views.payment_process, name='process'),
+    path(<b>_('done/')</b>, views.payment_done, name='done'),
+    path(<b>_('canceled/')</b>, views.payment_canceled, name='canceled'),
 ]
 </pre>
-<p>对于shop应用的url不需要修改，因为其URL是动态建立的。这次我们再执行 <code>django-admin makemessages --all</code> ，之后到Rosetta中查看，就会发现所有标注的路径，也都添加到了.po文件中可供编辑。</p>
+<p>对于<code>shop</code>应用的URL不需要修改，因为其URL是动态建立的。</p>
+<p>执行命令进行编译，更新消息文件：</p>
+<pre>django-admin makemessages --all</pre>
+<p>启动站点，访问<a href="http://127.0.0.1:8000/en/rosetta/" target="_blank">http://127.0.0.1:8000/en/rosetta/</a>，点击Spanish下的Myshop，可以看到出现了URL对应的翻译。可以点击Untranslated查看所有尚未翻译的字符串，然后输入翻译内容。</p>
 
-<h2><b>允许用户切换语言</b></h2>
-<p>在之前的工作中，我们配置好了西班牙语下的翻译内容，准备好了URL的两种模式，剩下的一大问题就是给用户提供切换语言的选项，准备给网站增加一个语言选择器，列出支持的语言，显示为一系列链接。</p>
-<p>编辑shop应用下的base.html，找到下边的这三行：</p>
+<h3 id="c9-2-8"><span class="title">2.8</span>允许用户切换语言</h3>
+<p>在之前的工作中，我们配置好了英语和西班牙语的翻译，应该给用户提供切换语言的选项，为此准备给网站增加一个语言选择器，列出所有支持的语言，显示为一系列链接。</p>
+<p>编辑<code>shop</code>应用下的<code>base.html</code>，找到下边这三行：</p>
 <pre>
 &lt;div id="header">
     &lt;a href="/" class="logo">{% trans "My shop" %}&lt;/a>
@@ -868,53 +871,53 @@ urlpatterns = [
 <pre>
 &lt;div id="header">
     &lt;a href="/" class="logo">{% trans "My shop" %}&lt;/a>
-    {% get_current_language as LANGUAGE_CODE %}
-    {% get_available_languages as LANGUAGES %}
-    {% get_language_info_list for LANGUAGES as languages %}
-    &lt;div class="languages">
-        &lt;p>{% trans "Language" %}:&lt;/p>
-        &lt;ul class="languages">
-            {% for language in languages %}
-                &lt;li>
-                    &lt;a href="/{{ language.code }}/"
-                       {% if language.code == LANGUAGE_CODE %} class="selected"{% endif %}>
-                        {{ language.name_local }}
-                    &lt;/a>
-                &lt;/li>
-            {% endfor %}
-        &lt;/ul>
-    &lt;/div>
+    <b>{% get_current_language as LANGUAGE_CODE %}</b>
+    <b>{% get_available_languages as LANGUAGES %}</b>
+    <b>{% get_language_info_list for LANGUAGES as languages %}</b>
+    <b>&lt;div class="languages"></b>
+        <b>&lt;p>{% trans "Language" %}:&lt;/p></b>
+        <b>&lt;ul class="languages"></b>
+            <b>{% for language in languages %}</b>
+                <b>&lt;li></b>
+                    <b>&lt;a href="/{{ language.code }}/"</b>
+                       <b>{% if language.code == LANGUAGE_CODE %} class="selected"{% endif %}></b>
+                        <b>{{ language.name_local }}</b>
+                    <b>&lt;/a></b>
+                <b>&lt;/li></b>
+            <b>{% endfor %}</b>
+        <b>&lt;/ul></b>
+    <b>&lt;/div></b>
 &lt;/div>
 </pre>
 <p>这个就是我们的语言选择器，逻辑如下：</p>
 <ol>
-    <li>页面的最上方，已经加载了{% load i18n %}</li>
-    <li>{% get_current_language %}标签用于获取当前语言</li>
-    <li>{% get_available_languages %}标签用于从settings里获取所有可用的支持语言</li>
-    <li>{% get_language_info_list %}是为了快速获取语言的属性而设置的变量</li>
-    <li>用循环列出了所有可支持的语言，对于当前语言设置CSS类为SELECT</li>
+    <li>页面的最上方加载<code>{% load i18n %}</code></li>
+    <li>使用<code>{% get_current_language %}</code>标签用于获取当前语言</li>
+    <li>使用<code>{% get_available_languages %}</code>标签用于从<code>LANGUAGES</code>里获取所有可用的支持语言</li>
+    <li>使用<code>{% get_language_info_list %}</code>是为了快速获取语言的属性而设置的变量</li>
+    <li>用循环列出了所有可支持的语言，对于当前语言设置CSS类为<code>select</code></li>
 </ol>
-<p>启动站点到 http://127.0.0.1:8000/ ，可以看到页面如下：</p>
-<img src="http://img.conyli.cc/django2/C09-08.jpg" alt="">
-<p>页面右上角出现了语言选择器，其链接的URL就是语言代码例如 /en/, /es/等，由于我们之前设置好了前缀URL，就会自动引导到那个语言的网站。我们已经完成了Order类字段的翻译，切换到西班牙语，然后在创建订单页面就可以看到西班牙语的页面：</p>
-<img src="http://img.conyli.cc/django2/C09-09.jpg" alt="">
+<p>启动站点到<a href="http://127.0.0.1:8000/">http://127.0.0.1:8000/</a> ，可以看到页面右上方出现了语言选择器，如下图：</p>
+<p><img src="http://img.conyli.cc/django2/C09-08.jpg" alt=""></p>
 
-<h2><b>使用django-parler翻译模型</b></h2>
-<p>翻译模型是网站国际化的一个重要内容。类似我们的购物网站，对于商品的介绍有些时候可以不翻译，但是表单字段一般代表着与用户的交互，涉及到实际操作，比如付款和订单主要使用的都是通过模型生成的表单。如果能够方便快捷的国际化项目中的所有模型，站点的国际化就前进了一大步。遗憾的是django对于快捷的翻译模型字段没有提供好的方法，只能自己实现或者借助于第三方软件来翻译模型。</p>
-<p>有若干第三方软件可以实现这个功能，django-parler是其中一个，这个模块提供了高效翻译和平稳集成到django 管理后台的功能。</p>
-<p>django-parler的工作原理是为每个模型建立一个对应的翻译数据表，表内通过外键连到需要翻译的模型，存储该模型的字段与翻译之间的关系，表内每行存储一种语言的翻译，所以还有一个language字段，用于标记是何种语言。</p>
+<h3 id="c9-2-9"><span class="title">2.9</span>使用django-parler翻译模型</h3>
+<p>Django没有提供直接可用的模型翻译功能，必须采用自己的方式实现模型翻译。有一些第三方工具可以翻译模型字段，每个工具存储翻译的方式都不相同。其中一个工具叫做<code>django-parler</code>，提供了高效的翻译管理，还能够与管理后台进行集成。</p>
+<p><code>django-parler</code>的工作原理是为每个模型建立一个对应的翻译数据表，表内每条翻译记录通过外键连到翻译文字所在的模型，表内还有一个<code>language</code>字段，用于标记是何种语言。</p>
 
-<h3><b>安装django-parler</b></h3>
+<h4 id="c9-2-9-1"><span class="title">2.9.1</span><b>安装django-parler</b></h4>
+<p>使用<code>pip</code>安装<code>django-parler</code>：</p>
 <pre>
 pip install django-parler==1.9.2
 </pre>
-<p>这个模块到翻译为止也没有更新过。安装好之后在settings.py内启用该应用并且进行一些配置：</p>
+<p>在<code>settings.py</code>内激活该应用：</p>
 <pre>
 INSTALLED_APPS = [
     # ...
-    'parler',
+    <b>'parler',</b>
 ]
-
+</pre>
+<p>继续添加下列设置：</p>
+<pre>
 PARLER_LANGUAGES = {
     None: (
         {'code': 'en'},
@@ -926,39 +929,42 @@ PARLER_LANGUAGES = {
     }
 }
 </pre>
-<p>配置的含义是指定了两种可用语言为en和es，然后指定了默认语言为en，然后设置django-parler不要隐藏未翻译的内容。</p>
+<p>该配置的含义是指定了<code>django-parler</code>的可用语言为<code>en</code>和<code>es</code>，然后指定了默认语言为<code>en</code>，然后指定<code>django-parler</code>不要隐藏未翻译的内容。</p>
 
-<h3><b>翻译模型的字段</b></h3>
-<p>我们为商品目录来添加翻译。django-parler提供一个<code>TranslatableModel</code>类<span style="color: red;">（此处作者原文有误，写成了<code>TranslatedModel</code>）</span>和<code>TranslatedFields</code>方法来翻译模型的字段。编辑shop应用的models.py：</p>
-<pre>
-# 新增导入：
-from parler.models import TranslatableModel, TranslatedFields
-
-# 修改Category类让其继承TranlatableModel：
-class Category(TranslatableModel):
-    #修改字段部分：
-    translations = TranslatedFields(
-        name=models.CharField(max_length=200, db_index=True),
-        slug=models.SlugField(max_length=200, db_index=True, unique=True)
-    )
+<h4 id="c9-2-9-2"><span class="title">2.9.2</span><b>翻译模型字段</b></h4>
+<p>我们为商品品类添加翻译。<code>django-parler</code>提供一个<code>TranslatableModel</code>类<span style="color: red;">（此处作者原文有误，写成了<code>TranslatedModel</code>）</span>和<code>TranslatedFields</code>方法来翻译模型的字段。编辑<code>shop</code>应用的<code>models.py</code>文件，添加导入语句：</p>
+<pre>from parler.models import TranslatableModel, TranslatedFields
 </pre>
-<p>Category类现在继承了TranslatableModel类，原有的字段现在成为了TranslatedFields方法的属性。</p>
-<p>知道了这个套路，再来编辑同一个文件内的Product类：</p>
+<p>然后修改<code>Category</code>模型的<code>name</code>和<code>slug</code>字段：</p>
 <pre>
-class Product(TranslatableModel):
-    translations = TranslatedFields(
-        name=models.CharField(max_length=200, db_index=True),
-        slug=models.SlugField(max_length=200, db_index=True),
-        description=models.TextField(blank=True)
-    )
+class Category(<b>TranslatableModel</b>):
+    <b>translations = TranslatedFields(</b>
+        <b>name=models.CharField(max_length=200, db_index=True),</b>
+        <b>slug=models.SlugField(max_length=200, db_index=True, unique=True)</b>
+    <b>)</b>
 </pre>
-<p>由于一些字段不用翻译，这里我们仅把name, slug 和 description 加入TranslatedFields。</p>
-<p>这个时候如果使用IDE，可能会注意到IDE提示self.name找不到，这个对于实际运行程序没有影响，该字段依然可用。</p>
-<p>这么设置完成之后，如果运行代码，django-parler会对每个模型生成一个新的模型也就是数据表，下图是Product类与其新生成的ProductTranslation类之间的关系：</p>
-<img src="http://img.conyli.cc/django2/C09-10.jpg" alt="">
-<p>可见生成的ProductTranslation类包含name, slug, description, 一个language_code字段，一个外键连接到Product类，Product和ProductTranslation是一对多的关系，针对一个Product对象，会按照每种语言生成一个对应的ProductTranslation对象。</p>
-<p>注意，由于翻译的部分和原始的类是独立的两个表格，因此一些类的功能不能够使用，比如不能在Product类中使用一个翻译后的字段进行排序，即不能在Meta类的ordering属性中使用翻译的字段。</p>
-<p>所以编辑Category类，注释掉按照name排列那一行：</p>
+<p><code>Category</code>类现在继承了<code>TranslatableModel</code>类，而不是原来的<code>models.Model</code>，<code>name</code>和<code>slug</code>字段被包含在了<code>TranslatedFields</code>包装器里。</p>
+<p>编辑<code>Product</code>，<code>name</code>，<code>slug</code>，<code>description</code>，和上边一样的方式：</p>
+<pre>
+class Product(<b>TranslatableModel</b>):
+    <b>translations = TranslatedFields(</b>
+        <b>name=models.CharField(max_length=200, db_index=True),</b>
+        <b>slug=models.SlugField(max_length=200, db_index=True),</b>
+        <b>description=models.TextField(blank=True)</b>
+    <b>)</b>
+    category = models.ForeignKey(Category, related_name='products')
+    image = models.ImageField(upload_to='products/%Y/%m/%d', blank=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    available = models.BooleanField(default=True)
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+</pre>
+<p><code>django-parler</code>通过新创建模型为其他模型提供翻译，在下图可以看到<code>Product</code>与其对应的翻译模型<code>ProductTranslation</code>之间的关系：</p>
+<p><img src="http://img.conyli.cc/django2/C09-10.jpg" alt=""></p>
+<p class="emp">译者注：此时如果运行站点，一些IDE会提示模型的字段找不到，这个对于实际运行程序没有影响，该字段依然可用。</p>
+<p><code>django-parler</code>生成的<code>ProductTranslation</code>类包含<code>name</code>，<code>slug</code>，<code>description</code>，和一个<code>language_code</code>字段，还有一个外键连接到<code>Product</code>类，针对一个<code>Product</code>模型，会按照每种语言生成一个对应的<code>ProductTranslation</code>对象。</p>
+<p>由于翻译的部分和原始的类是独立的两个模型，因此一些ORM的功能无法使用，比如不能在<code>Product</code>类中根据一个翻译后的字段进行排序，也不能在<code>Meta</code>类的<code>ordering</code>属性中使用翻译的字段。</p>
+<p>所以编辑<code>shop</code>应用的<code>models.py</code>文件，注释掉<code>ordering</code>设置：</p>
 <pre>
 class Category(TranslatableModel):
     # ...
@@ -967,26 +973,31 @@ class Category(TranslatableModel):
         verbose_name = 'category'
         verbose_name_plural = 'categories'
 </pre>
-<p>对于Product类，也要注释掉ordering，还需要注释掉联合索引那一行，这是因为目前的django-parler不支持联合索引的验证关系。如下图：</p>
+<p>对于<code>Product</code>类，也要注释掉<code>ordering</code>，还需要注释掉<code>index_together</code>，这是因为目前的<code>django-parler</code>不支持联合索引的验证关系。如下图：</p>
 <pre>
 class Product(TranslatableModel):
     # ...
     class Meta:
-        <b style="color: red">pass</b>
+        <b>pass</b>
         <b># ordering = ('name',)</b>
         <b># index_together = (('id', 'slug'),)</b>
 </pre>
-<p style="color: red">原书在这里遗漏了pass，不要忘记加上。</p>
-<p>关于django-parler的兼容性，可以在<a href="https://django-parler.readthedocs.io/en/latest/compatibility.html" target="_blank">这里</a>查看。</p>
+<p class="emp">译者注：原书在这里遗漏了pass，不要忘记加上。</p>
+<p>关于<code>django-parler</code>的兼容性，可以在<a href="https://django-parler.readthedocs.io/en/latest/compatibility.html" target="_blank">https://django-parler.readthedocs.io/en/latest/compatibility.html</a>查看。</p>
 
-<h3><b>把经翻译的类通过django-parler集成到管理后台</b></h3>
-<p>django-parler易于集成到django管理后台中，包含一个 <code>TranslatableAdmin</code> 类代替了原来的 ModelAdmin 类。编辑shop应用的admin.py，导入该类：</p>
+<h4 id="c9-2-9-3"><span class="title">2.9.3</span><b>将<code>django-parler</code>集成到管理后台</b></h4>
+<p><code>django-parler</code>易于集成到django管理后台中，包含一个<code>TranslatableAdmin</code>类代替了原来的<code>ModelAdmin</code>类。</p>
+<p>编辑<code>shop</code>应用的<code>admin.py</code>文件，导入该类：</p>
 <pre>
 from parler.admin import TranslatableAdmin
 </pre>
-<p>之后我们要让 CategoryAdmin 和 ProductAdmin 继承 TranslatableAdmin 而不是 ModelAdmin类，django-parler不支持prepopulated_fields属性，但支持相同功能的<a
-        href="https://docs.djangoproject.com/en/2.1/_modules/django/contrib/admin/options/" target="_blank">get_prepopulated_fields()方法</a>，因此需要对两个类修改：</p>
+<p>修改<code>CategoryAdmin</code>和<code>ProductAdmin</code>类，使其继承<code>TranslatableAdmin</code>而不是<code>ModelAdmin</code>类，<code>django-parler</code>不支持<code>prepopulated_fields</code>属性，但支持相同功能的<a
+        href="https://docs.djangoproject.com/en/2.1/_modules/django/contrib/admin/options/" target="_blank">get_prepopulated_fields()方法</a>，因此将两个类修改如下：</p>
 <pre>
+from django.contrib import admin
+from .models import Category, Product
+<b>from parler.admin import TranslatableAdmin</b>
+
 @admin.register(Category)
 class CategoryAdmin(<b>TranslatableAdmin</b>):
     list_display = ['name', 'slug']
@@ -1004,9 +1015,10 @@ class ProductAdmin(<b>TranslatableAdmin</b>):
     <b>def get_prepopulated_fields(self, request, obj=None):</b>
         <b>return {'slug': ('name',)}</b>
 </pre>
+<p>现在在管理后台内也能进行对翻译模型的管理了。现在可以执行数据迁移程序。</p>
 
-<h3><b>建立django-parler所需的数据表</b></h3>
-<p>打开shell执行（注意，在Pycharm中通过Tools->Run manage.py task是不行的，会报路径错误，必须到Pycharm的terminal或者系统的cmd内执行）：</p>
+<h4 id="c9-2-9-4"><span class="title">2.9.4</span>迁移翻译模型数据</h4>
+<p>打开shell执行下列命令：</p>
 <pre>
 python manage.py makemigrations shop --name "translations"
 </pre>
@@ -1029,17 +1041,22 @@ Migrations for 'shop':
     - Alter unique_together for producttranslation (1 constraint(s))
     - Alter unique_together for categorytranslation (1 constraint(s))
 </pre>
-<p>可以看到建立了两个表CategoryTranslation和ProductTranslation，但是把需要翻译的字段从模型中删除了（作者不早点说）。这意味着这几个字段的数据全都丢失了，必须启动站点后重新录入。</p>
-<p>之后命令行内输入：</p>
+<p><code>django-parler</code>动态地创建了<code>CategoryTranslation</code>和<code>ProductTranslation</code>。注意，原模型中需要翻译的字段从原模型中删除了，这意味着这几个字段的数据全都丢失了，必须启动站点后重新录入。</p>
+<p>之后运行数据迁移：</p>
 <pre>
 python manage.py migrate shop
 </pre>
-<p>看到 <code>  Applying shop.0002_translations... OK </code>就表示成功了。启动站点 到 http://127.0.0.1:8000/en/admin/shop/category/ 可以看到已经存在的商品品类因为删除了name和slug，所以变成了空的。随便点一个进去，可以看到带有了多语言的界面：</p>
-<img src="http://img.conyli.cc/django2/C09-11.jpg" alt="">
-<p>这里需要把英语的所有字段和西班牙语对应的翻译全部自己补充好，然后点击SAVE按钮。之后到 http://127.0.0.1:8000/en/admin/shop/product/ 进行同样的工作：补充每个商品的名称和slug以及西班牙语翻译。</p>
+<p>可以看到下列输出：</p>
+<pre>Applying shop.0002_translations... OK</pre>
+<p>现在数据已经和数据库同步好了。</p>
+<p>启动站点，访问<a href="http://127.0.0.1:8000/en/admin/shop/category/" target="_blank">http://127.0.0.1:8000/en/admin/shop/category/</a>，可以看到已经存在的模型失去了那些需要翻译的字段。点击一个<code>category</code>对象进行修改，可以看到包含了两个不同的表格，一个对应英语，一个对应西班牙语，如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C09-11.jpg" alt=""></p>
+<p>为所有已存在category记录都添加名称和简称，再为其添加西班牙语的名称和简称，然后点击SAVE按钮，确保在切换标签之前点击了SAVE按钮，否则数据不会被保存。</p>
+<p>之后到<a href="http://127.0.0.1:8000/en/admin/shop/product/" target="_blank">http://127.0.0.1:8000/en/admin/shop/product/</a>进行同样的工作：补充每个商品的名称、简称、描述以及对应的西班牙语翻译。</p>
 
-<h3><b>为翻译建立视图</b></h3>
-<p>为了正常使用翻译后的模型，必须让shop相关视图对翻译后的字段也能够获取QuerySet，终端内输入 <code>python manage.py shell</code>进入带django环境的命令行模式来试验一下经过翻译后的查询操作：</p>
+<h4 id="c9-2-9-5"><span class="title">2.9.5</span>视图中加入翻译功能</h4>
+<p>为了正常使用翻译后的模型，必须让<code>shop</code>应用的视图对翻译后的字段也能够获取QuerySet，终端内输入<code>python manage.py shell</code>进入带Django环境的命令行模式来试验一下经过翻译后的查询操作：</p>
+<p>看一下如何查询翻译后的字段。为了获取某种语言的查询结果集，需要使用Django的<code>activate()</code>函数：</p>
 <pre>
 >>> from shop.models import Product
 >>> from django.utils.translation import activate
@@ -1048,13 +1065,13 @@ python manage.py migrate shop
 >>> product.name
 'Té verde'
 </pre>
-<p>另外一种根据不同语言查询的方式是使用django-parler提供的 language()模型管理器：</p>
+<p>另外一种根据不同语言查询的方式是使用<code>django-parler</code>提供的<code>language()</code>模型管理器：</p>
 <pre>
 >>> product=Product.objects.language('en').first()
 >>> product.name
 'Green tea'
 </pre>
-<p>这里先导入了Product类，然后导入了django的activate方法，将当前环境语言设置为es。这个时候去查询库里的第一个商品，得到西班牙语名称。语言设置为en重新查询，就得到了英文名称。使用管理器显然比较方便，可以通过设置管理器的属性得到不同语言的结果，类似这样：</p>
+<p>当查询翻译字段时，会根据所指定的语言返回结果。可以通过设置管理器的属性得到不同语言的结果，类似这样：</p>
 <pre>
 >>> product.set_current_language('es')
 >>> product.name
@@ -1062,97 +1079,92 @@ python manage.py migrate shop
 >>> product.get_current_language()
 'es'
 </pre>
-<p>如果需要使用filter功能，由于我们的Product类里没有了name等字段，需要使用tranlations__name，前边的这个translations名称就是之前执行 <code>python manage.py makemigrations shop --name "translations"</code> 中定义的名称。例子如下：</p>
+<p>如果需要使用<code>filter</code>功能，需要使用<code>tranlations__</code>语法，例子如下：</p>
 <pre>
 >>> Product.objects.filter(translations__name='Green tea')
 &lt;TranslatableQuerySet [&lt;Product: Té verde>]>
 </pre>
-<p>知道了这些基础操作，就可以来修改我们自己的视图中的查询方法了，修改shop应用中的views.py，找到product_list视图中利用slug查询的那一行：</p>
+<p>了解了基础操作，可以来修改我们自己的视图中的查询方法了，修改<code>shop</code>应用中的<code>views.py</code>，找到<code>product_list</code>视图中如下这行：</p>
 <pre>category = get_object_or_404(Category, slug=category_slug)</pre>
 <p>替换成如下内容：</p>
 <pre>
-def product_list(request, category_slug=None):
-    category = None
-    categories = Category.objects.all()
-    products = Product.objects.filter(available=True)
-    if category_slug:
-        <b>language = request.LANGUAGE_CODE</b>
-        category = get_object_or_404(Category, <b>translations__language_code=language, translations__slug=category_slug</b>)
+<b>language = request.LANGUAGE_CODE</b>
+category = get_object_or_404(Category, <b>translations__language_code=language, translations__slug=category_slug</b>)
 </pre>
-<p>找到product_detail视图中查询那一行：</p>
+<p>然后编辑<code>product_detail</code>视图，找到下边这行：</p>
 <pre>product = get_object_or_404(Product, id=id, slug=slug, available=True)</pre>
 <p>替换成如下内容：</p>
 <pre>
-def product_detail(request, id, slug):
-    <b>language = request.LANGUAGE_CODE</b>
-    product = get_object_or_404(Product, id=id, <b>translations__language_code=language, translations__slug=slug,</b>
+<b>language = request.LANGUAGE_CODE</b>
+product = get_object_or_404(Product, id=id, <b>translations__language_code=language, translations__slug=slug,</b>
                                 <b>available=True</b>)
 </pre>
-<p>之后启动站点，到 http://127.0.0.1:8000/es/ ，应该可以看到商品名称全部都变成了西班牙语：</p>
-<img src="http://img.conyli.cc/django2/C09-12.jpg" alt="">
-<p>如果点到商品详情页，可以看到具体内容都变成了西班牙语，商品的URL也会随着语言而变化，如下图所示：</p>
-<img src="http://img.conyli.cc/django2/C09-13.jpg" alt="">
-<p>通过django-parler可以比较快捷的翻译模型，略有不足就是会对模型的字段进行删除，如果站点需要国际化，则最好在一开始的时候就集成该模块，避免之后的数据修改。</p>
-<p>在 <a href="https://django-parler.readthedocs.io/en/latest/" target="_blank">https://django-parler.readthedocs.io/en/latest/</a>可以查看django-parler的文档。</p>
+<p><code>product_list</code>和<code>product_detail</code>现在都具备了根据翻译字段查询数据库的功能。启动站点，到<a href="http://127.0.0.1:8000/es/" target="_blank">http://127.0.0.1:8000/es/</a>，应该可以看到商品名称全部都变成了西班牙语，如下图：</p>
+<p><img src="http://img.conyli.cc/django2/C09-12.jpg" alt=""></p>
+<p>可以看到通过每个商品的<code>slug</code>字段生成的URL也变成了西班牙语。比如一个商品的URL在西班牙语下是<code>http://127.0.0.1:8000/es/2/te-rojo/</code>，在英语里则是<code>http://127.0.0.1:8000/en/2/red-tea/</code>。如果到一个商品详情页，能够看到翻译后的URL和内容如下：</p>
+<p><img src="http://img.conyli.cc/django2/C09-13.jpg" alt=""></p>
+<p>在<a href="https://django-parler.readthedocs.io/en/latest/" target="_blank">https://django-parler.readthedocs.io/en/latest/</a>可以查看<code>django-parler</code>的文档。</p>
 <p>现在已经知道了如何翻译Python代码，模板，URL和模型的字段，站点已经可以提供不同语言的服务了。为了完成国际化和本地化的过程，还需要对本地的日期，时间，数字格式进行设置。</p>
 
-<h2><b>本地格式化工作</b></h2>
-<p>根据用户的本地所在，需要以不同的格式显示日期，时间和数字。本地化格式可以通过settings.py里的USE_L10N设置为True来开启。</p>
-<p>当USE_L10N设置为开启的时候，Django在渲染模板的时候，会尽可能的尝试使用当前本地化的方式进行输出。可以看到我们的站点的小数点是一个圆点显示的，切换到西班牙语的时候，小数点显示为一个逗号。这是通过对每种语言进行不同的格式设置实现的，对于支持的每种语言的格式，Django都有对应的配置文件，例如针对西班牙语的配置文件可以看<a
-        href="https://github.com/django/django/blob/stable/2.1.x/django/conf/locale/es/formats.py" target="_blank">这里</a>。</p>
-<p>通常情况下，只要设置USE_L10N为True，Django就会通过读取当前的LANGUAGE设置来应用对应的格式。然而，站点内可能有些内容并不想使用本地化格式，尤其那些标准数据例如代码或者是JSON字符串的内容。</p>
-<p>Django 提供了一个 {% locailze %}模板标签，用于控制模板或者模板片段 开启/关闭 本地化输出。为了使用这个标签，必须在开头使用 {% load l10n %}标签。下边是一个如何在模板中控制 开启/关闭 本地化输出的例子：</p>
+<h3 id="c9-2-10"><span class="title">2.10</span>本地格式化</h3>
+<p>根据用户的国家和地区，需要以不同的格式显示日期，时间和数字。本地化格式可以通过<code>settings.py</code>里的<code>USE_L10N</code>设置为<code>True</code>来开启。</p>
+<p>当<code>USE_L10N</code>设置为开启的时候，Django在渲染模板的时候，会尽可能的尝试使用当前本地化的方式进行输出。可以看到我们的站点的小数点是一个圆点显示的，切换到西班牙语的时候，小数点显示为一个逗号。这是通过对每种语言进行不同的格式设置实现的，对于支持的每种语言的格式，Django都有对应的配置文件，例如针对西班牙语的配置文件可以查看<a
+        href="https://github.com/django/django/blob/stable/2.0.x/django/conf/locale/es/formats.py" target="_blank">https://github.com/django/django/blob/stable/2.0.x/django/conf/locale/es/formats.py</a>。</p>
+<p>通常情况下，只要设置<code>USE_L10N</code>为<code>True</code>，Django就会自动应用本地化格式。然而，站点内可能有些内容并不想使用本地化格式，尤其那些标准数据例如代码或者是JSON字符串的内容。</p>
+<p>Django提供了一个<code>{% locailze %}</code>模板标签，用于控制模板或者模板片段开启或关闭本地化输出。为了使用这个标签，必须在模板开头使用<code>{% load l10n %}</code>标签。下边是一个如何在模板中控制开启/关闭本地化输出的例子：</p>
 <pre>
 {% load l10n %}
+
 {% localize on %}
     {{ value }}
 {% endlocalize %}
+
 {% localize off %}
     {{ value }}
 {% endlocalize %}
 </pre>
-<p>Django还提供了两个模板filter用于控制本地化，分别是localize和unlocailze，用来强制让一个值开启/关闭本地化显示。要使用这两个filter也必须在模板中加入{% load l10n %}，用法如下：</p>
+<p>Django还提供了两个模板过滤器用于控制本地化，分别是<code>localize</code>和<code>unlocailze</code>，用来强制让一个值开启/关闭本地化显示。用法如下：</p>
 <pre>
 {{ value|localize }}
 {{ value|unlocalize }}
 </pre>
-<p>除了这两个方法之外，还可以采取自定义格式文件方式，具体看<a href="https://docs.djangoproject.com/en/2.1/topics/i18n/formatting/#creating-custom-format-files" target="_blank">官方文档</a>。</p>
+<p>除了这两个方法之外，还可以采取自定义格式文件方式，具体看<a href="https://docs.djangoproject.com/en/2.0/topics/i18n/formatting/#creating-custom-format-files" target="_blank">https://docs.djangoproject.com/en/2.0/topics/i18n/formatting/#creating-custom-format-files</a>。</p>
 
-<h3><b>用django-localflavor验证表单字段</b></h3>
-<p>与本地化工作相关的一个问题是表单验证。我们的表单验证一般都是基于英语的正则表达式验证的，如果遇到各种本地化的输入和特殊字符，有可能会出问题，常见的比如电话，邮编，地址等，都可能会出问题。django-localflavor是一个第三方模块，包含一系列特别针对本地化验证的工具，比如为每个国家单独设计的表单和模型字段，对于验证某些国家的地区，电话号码，身份证，社会保险号码等非常方便。这个模块是按照ISO 3166 国家代码的标准组织的。</p>
-<p>安装django-localflavor：</p>
+<h3 id="c9-2-11"><span class="title">2.11</span>用django-localflavor验证表单字段</h3>
+
+<h3><b></b></h3>
+<p><code>django-localflavor</code>是一个第三方模块，包含一系列特别针对本地化验证的工具，比如为每个国家单独设计的表单和模型字段，对于验证某些国家的地区，电话号码，身份证，社会保险号码等非常方便。这个模块是按照ISO 3166国家代码标准编写的。</p>
+<p>安装<code>django-localflavor</code>：</p>
 <pre>
 pip install django-localflavor==2.0
 </pre>
-<p>译者在这里安装了2.1版，在settings.py中激活该应用：</p>
+<p>在<code>settings.py</code>中激活该应用：</p>
 <pre>
 INSTALLED_APPS = [
     # ...
-    'localflavor',
+    <b>'localflavor',</b>
 ]
 </pre>
 <p>为了使用该模块，我们给订单增加一个美国邮编字段和对应验证，必须是一个有效的美国邮编才能建立订单。</p>
-<p>编辑orders应用的forms.py：</p>
+<p>编辑<code>orders</code>应用的<code>forms.py</code>文件，修改成如下：</p>
 <pre>
-# 新增导入：
 <b>from localflavor.us.forms import USZipCodeField</b>
 
-# 为OrderCreateForm类增加一个新的字段：
 class OrderCreateForm(forms.ModelForm):
     <b>postal_code = USZipCodeField()</b>
     class Meta:
         model = Order
         fields = ['first_name', 'last_name', 'email', 'address', 'postal_code', 'city']
 </pre>
-<p>重写了Order类中的postal_code字段，将其设置为导入的USZipCodeField类型的字段。</p>
-<p>运行站点，到 http://127.0.0.1:8000/en/orders/create/ ，输入一些不符合美国邮编的邮政编码，可以看到表单的错误提示：</p>
+<p>从<code>localflaver</code>的<code>us</code>模块中导入<code>USZipCodeField</code>字段类型，将<code>OrderCreateForm</code>类的<code>postal_code</code>字段设置为该类型。</p>
+<p>运行站点，到<a href="http://127.0.0.1:8000/en/orders/create/" target="_blank">http://127.0.0.1:8000/en/orders/create/</a>，输入一些不符合美国邮编的邮政编码，可以看到表单的错误提示：</p>
 <pre>
 Enter a zip code in the format XXXXX or XXXXX-XXXX.
 </pre>
-<p>这只是一个针对给字段附加本地化验证的一个简单例子。localflavor提供的组件对于将站点快速适配到某些国家非常有用。详情可以阅读<a href="https://django-localflavor.readthedocs.io/en/latest/" target="_blank">django-flavor的官方文档</a>。</p>
-<p>现在就结束了所有国际化和本地化配置的工作，这大概是目前到现在最漫长的一个章节，经过大量的配置和使用第三方模块，终于将站点变成支持多语言的网站。因此可见，将一个站点国际化并针对不同的地区做本地化配置，需要在站点设计阶段就考虑。</p>
+<p>这只是一个针对给字段附加本地化验证的一个简单例子。<code>localflavor</code>提供的组件对于将站点快速适配到某些国家非常有用。可以在<a href="https://django-localflavor.readthedocs.io/en/latest/" target="_blank">https://django-localflavor.readthedocs.io/en/latest/</a>阅读<code>django-flavor</code>的官方文档。</p>
+<p>现在就结束了所有国际化和本地化配置的工作，下一步是建立一个商品推荐系统。</p>
 
-<h1>建立商品推荐系统</h1>
+<h2 id="c9-3"><span class="title">3</span>创建商品推荐系统</h2>
 <p>商品推荐系统可以预测用户对一个商品的喜好程度或者评价高低，根据用户的行为和收集到的用户数据，选择可能和用户相关的产品推荐给用户。在电商行业，推荐系统使用的非常广泛。像淘宝就会自动根据用户的喜欢变换首页的商品。推荐系统可以帮助用户从浩如烟海的商品中选出自己感兴趣的，好的推荐系统可以增加用户粘性，对商家意味着销售额的提高。</p>
 <p>我们准备建立一个简单但是强大的商品推荐系统，用于推荐一同购买的商品，这些商品基于用户过去的购买数据来给用户进行推荐。我们打算在两个页面向用户推荐商品：</p>
 <ul>
@@ -1161,7 +1173,7 @@ Enter a zip code in the format XXXXX or XXXXX-XXXX.
 </ul>
 <p>还记得吗，针对这种动态的排名。常用的后端数据库是Redis，如果还没有安装Redis，安装过程详见第二个项目的追踪用户行为章节。</p>
 
-<h2><b>根据之前的购买记录推荐商品</b></h2>
+<h3><b>根据之前的购买记录推荐商品</b></h3>
 <p>现在，需要根据用户加入到购物车内的商品进行排名。对于我们网站每一个被售出的商品，在Redis中存一个键。这个商品键对应的值是一个有序集合，里边的每个键名是商品id，值是数字。只要商品售出，就为同订单的其他商品在当前商品键对应的有序集合中的分数加1。</p>
 
 <p>安装python 的redis模块</p>
