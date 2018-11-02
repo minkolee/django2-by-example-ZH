@@ -88,7 +88,7 @@ def show_latest_posts(count=5):
 </pre>
 <p>在上边的代码里，使用<code>@register.inclusion_tag</code>装饰器装饰了自定义函数<code>show_latest_posts</code>，同时指定了要渲染的模板为<code>blog/post/latest_posts.html</code>。我们的模板标签还接受一个参数<code>count</code>，通过<code>Post.published.order_by('-publish')[:count]</code>切片得到指定数量的最新发布的文章。注意这个自定义函数返回的是一个字典对象而不是一个具体的值。<code>inclusion_tag</code>必须返回一个类似给模板传入变量的字典，用于在<code>blog/post/latest_posts.html</code>中取得数据并渲染模板。刚刚创建的这一切在模板中以类似<code>{% show_latest_posts 3 %}</code>的形式来使用。</p>
 <p>那么在模板里如何使用呢，这是一个带参数的tag，就像之前使用内置的那样，在标签后边加参数： <code>{% show_latest_posts 3 %}</code></p>
-<p>在<code>blog/post/</code>目录下创建<code>latest_post.html</code>文件，添加下列代码：</p>
+<p>在<code>blog/post/</code>目录下创建<code>latest_posts.html</code>文件，添加下列代码：</p>
 <pre>
 &lt;ul>
     {% for post in latest_posts %}
@@ -113,6 +113,8 @@ def show_latest_posts(count=5):
 
 <p>最后再来创建一个<code>simple_tag</code>，将数据存放在这个标签内，而不是像我们创建的第一个标签一样直接展示出来。我们使用这种方法来显示评论最多的文章。编辑<code>blog_tags.py</code>，添加下列代码：</p>
 <pre>
+from django.db.models import Count
+
 @register.simple_tag
 def get_most_commented_posts(count=5):
     return Post.published.annotate(total_comments=Count('comments')).order_by('-total_comments')[:count]
