@@ -1165,30 +1165,29 @@ Enter a zip code in the format XXXXX or XXXXX-XXXX.
 <p>现在就结束了所有国际化和本地化配置的工作，下一步是建立一个商品推荐系统。</p>
 
 <h2 id="c9-3"><span class="title">3</span>创建商品推荐系统</h2>
-<p>商品推荐系统可以预测用户对一个商品的喜好程度或者评价高低，根据用户的行为和收集到的用户数据，选择可能和用户相关的产品推荐给用户。在电商行业，推荐系统使用的非常广泛。像淘宝就会自动根据用户的喜欢变换首页的商品。推荐系统可以帮助用户从浩如烟海的商品中选出自己感兴趣的，好的推荐系统可以增加用户粘性，对商家意味着销售额的提高。</p>
-<p>我们准备建立一个简单但是强大的商品推荐系统，用于推荐一同购买的商品，这些商品基于用户过去的购买数据来给用户进行推荐。我们打算在两个页面向用户推荐商品：</p>
+<p>商品推荐系统可以预测用户对一个商品的喜好程度或者评价高低，根据用户的行为和收集到的用户数据，选择可能和用户相关的产品推荐给用户。在电商行业，推荐系统使用的非常广泛。推荐系统可以帮助用户从浩如烟海的商品中选出自己感兴趣的商品。好的推荐系统可以增加用户粘性，对电商平台则意味着销售额的提高。</p>
+<p>我们准备建立一个简单但是强大的商品推荐系统，用于推荐经常被一起购买的商品，这些商品基于用户过去的购买数据来给用户进行推荐。我们打算在两个页面向用户推荐商品：</p>
 <ul>
-    <li>首先是商品详情页。如果用户对一个商品感兴趣，商品详情页是他停留时间最长的页面。我们会在此展示一些与当前商品一起购买的商品。展示的文字类似：Users who bought this also bought X, Y, Z. 所以我们需要一个数据结构来存放所有与该商品一同购买的商品及次数来进行排名。</li>
-    <li>其次是购物车详情页。这个时候我们对于商品的排名计算方式需要变更一下，应该将不同商品与购物车中所有商品的关联购买次数进行求和再进行排名。</li>
+    <li>首先是商品详情页。我们会在此展示一些与当前商品一起购买的商品。展示的文字类似：Users who bought this also bought X, Y, Z. 所以我们需要一个数据结构来存放所有与该商品一同购买的次数。</li>
+    <li>其次是购物车详情页。这时将不同商品与购物车中所有商品的关联购买次数进行求和再进行排名。</li>
 </ul>
-<p>还记得吗，针对这种动态的排名。常用的后端数据库是Redis，如果还没有安装Redis，安装过程详见第二个项目的追踪用户行为章节。</p>
+<p>我们将使用Redis数据库记录一起购买的商品。我们在第六章已经使用过Redis，如果还没有安装Redis，可以参考该章节的内容。</p>
 
-<h3><b>根据之前的购买记录推荐商品</b></h3>
-<p>现在，需要根据用户加入到购物车内的商品进行排名。对于我们网站每一个被售出的商品，在Redis中存一个键。这个商品键对应的值是一个有序集合，里边的每个键名是商品id，值是数字。只要商品售出，就为同订单的其他商品在当前商品键对应的有序集合中的分数加1。</p>
 
-<p>安装python 的redis模块</p>
+<h3 id="c9-3-1"><span class="title">3.1</span>根据之前的购买记录推荐商品</h3>
+<p>现在，需要根据用户加入到购物车内的商品计算排名。对于我们网站每一个被售出的商品，在Redis中存一个键。这个商品键对应的值是一个有序集合，就为同订单的其他商品在当前商品键对应的有序集合中的分数加1。</p>
+<p>当一个订单成功支付时，我们为订单每个购买的商品存储一个有序集合，这个有序集合将记录一起购买的商品分数。</p>
+<p>安装<code>redis-p</code>模块：</p>
 <pre>
 pip install redis==2.10.6
 </pre>
-<p>redis模块是开始翻译本书时，第一个在本书中使用但尚未有最新版本的模块。</p>
-<p>之后在settings.py里配置Redis：</p>
+<p>之后在<code>settings.py</code>里配置Redis：</p>
 <pre>
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
 REDIS_DB = 1
 </pre>
-<p>Redis为什么默认端口号是6379，这还得看<a href="http://oldblog.antirez.com/post/redis-as-LRU-cache.html" target="_blank">作者本人的解释</a>。</p>
-<p>在shop应用目录下新建recommender.py，作为我们的推荐系统模块所在：</p>
+<p>这是用于建立和Redis服务通信的设置。在<code>shop</code>应用目录下新建<code>recommender.py</code>文件，添加下列代码：</p>
 <pre>
 import redis
 from django.conf import settings
@@ -1197,32 +1196,28 @@ from .models import Product
 # 连接到Redis
 r = redis.StrictRedis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DB)
 
-
 class Recommender:
 
-    # 给一个商品ID，返回Redis 中该商品的键名
     def get_product_key(self, product_id):
         return 'product:{}:purchased_with'.format(product_id)
 
     def products_bought(self, products):
         product_ids = [p.id for p in products]
-        # 针对订单里的每一个商品，将其他商品在其键内的有序集合中增加1
+        # 针对订单里的每一个商品，将其他商品在当前商品的有序集合中增加1
         for product_id in product_ids:
             for with_id in product_ids:
                 if product_id != with_id:
                     r.zincrby(self.get_product_key(product_id), with_id, amount=1)
 </pre>
-<p>我们用这个类来储存数据和取出一个指定的商品相关的推荐。</p>
-<p>get_product_key方法获取一个Product对象的id，返回一个键，键是这样的：product:[id]:purchased_with。</p>
-<p>关于键为什么长这样，这是使用Redis数据库常用的命名方式，有兴趣可以找一本专门讲解Redis的书一看便知。</p>
-<p>product_bought()方法接受属于同一个订单的Product对象的列表，然后做如下操作：</p>
+<p>这个<code>Recommender</code>类用来存储订单购买时的相关信息和根据一个指定的对象获取相关的推荐。<code>get_product_key()</code>方法获取一个<code>Product</code>对象的id，然后创建对应的有序集合，其中的键看起来像这样：<code>product:[id]:purchased_with</code>。</p>
+<p><code>product_bought()</code>方法接受属于同一个订单的<code>Product</code>对象的列表，然后做如下操作：</p>
 <ol>
-    <li>生成所有商品的id的列表</li>
-    <li>针对每一个id，遍历一次全部的id（连续对同一个对象进行了两层迭代），跳过内外循环id相同的部分，这样就针对其中每个商品都遍历了与其一同购买的商品</li>
-    <li>针对每一个id在遍历其所有一同购买的商品时，取得该id对应的键</li>
-    <li>在键对应的有序序列中把一同购买的商品id键对应的值增加1</li>
+    <li>获取所有<code>Product</code>对象的ID</li>
+    <li>针对每一个ID遍历一次全部的ID，跳过内外循环ID相同的部分，这样就针对其中每个商品都遍历了与其一同购买的商品</li>
+    <li>使用<code>get_product_id()</code>方法得到每个商品的Redis键名。例如针对ID为33的商品，返回的键名是<code>product:33:purchased_with</code>，这个键将用于操作有序集合</li>
+    <li>在该商品对应的有序序列将同一订单内的其他商品的分数增加1</li>
 </ol>
-<p>还需要一个方法来从Redis中获得推荐的商品，继续编写该类，增加suggest_products_for()方法：</p>
+<p>我们现在有了一个保存商品相关信息的方法。还需要一个方法来从Redis中获得推荐的商品，继续编写<code>Recommender</code>类，增加<code>suggest_products_for()</code>方法：</p>
 <pre>
 class Recommender:
     # ......
@@ -1245,23 +1240,29 @@ class Recommender:
             suggestions = r.zrange(tmp_key, 0, -1, desc=True)[:max_results]
             # 删除临时键
             r.delete(tmp_key)
+        # 获取关联商品并通过相关性排序
         suggested_products_ids = [int(id) for id in suggestions]
         suggested_products = list(Product.objects.filter(id__in=suggested_products_ids))
         suggested_products.sort(key=lambda x: suggested_products_ids.index(x.id))
         return suggested_products
 </pre>
-<p>suggest_products_for()方法接受两个参数，products是订单里的所有商品，max_results表示返回几个推荐结果。在这个方法里我们做了如下的事情：</p>
+<p><code>suggest_products_for()</code>方法接受两个参数：</p>
+<ul>
+    <li><code>products</code>：表示为哪些商品进行推荐，可以包含一个或多个商品</li>
+    <li><code>max_results</code>：整数值，表示最大推荐几个商品</li>
+</ul>
+<p>在这个方法里我们做了如下的事情：</p>
 <ol>
-    <li>取得当前Products中所有商品的id列表product_ids</li>
-    <li>判断product_ids的长度，如果为1，说明用户订单就买了一个东西，这个时候直接查询这个id对应的有序集合，按降序返回结果即可。</li>
-    <li>如果长度大于1，比如买个两个商品A和B，需要把A对应的有序集合和B对应的有序集合里边的内容相加，然后再返回结果。等于要拼一个临时使用的有序集合出来，所以使用了订单内所有id连起来构成的一个临时key当做这个有序集合的键名。</li>
-    <li>合并所有商品的有序集合：先取所有商品的键名构成keys列表（每个键的值都是一个有序集合），然后调用ZUNIONSTORE命令，合并所有的有序集合中相同键的值，然后将新生成的有序集合存入tmp_key键。关于ZUNIONSTORE可以参考<a
-            href="https://redis.io/commands/ZUNIONSTORE" target="_blank">这里</a>。</li>
-    <li>由于已经在当前购物车内的商品无需被推荐，因此使用ZREM从临时键的有序集合中删除与当前订单内商品id相同的键，使用max_results参数控制结果数量。采用了Python拆解列表的方式传参数。</li>
-    <li>从经过上一步处理的有序集合中内查询到排名结果对应的商品id字符串列表，之后删除临时键。</li>
-    <li>最后是对id字符串列表转int，根据id取查询结果然后生成列表，按照原来的顺序排序等操作，得到最终的结果列表。</li>
+    <li>获取所有<code>Product</code>对象的ID</li>
+    <li>如果仅有一个商品，直接查询这个id对应的有序集合，按降序返回结果。为了实现查询，使用了Redis的<code>ZRANGE</code>命令。我们使用<code>max_results</code>属性指定返回的最大数量。</li>
+    <li>如果商品数量多于1个，通过ID创建一个临时键名。</li>
+    <li>通过Redis的<code>ZUNIONSTORE</code>命令合并所有商品的有序集合。<code>ZUNIONSTORE</code>合并所有的有序集合中相同键的分数，然后将新生成的有序集合存入临时键。关于该命令可以参考<a
+            href="https://redis.io/commands/ZUNIONSTORE" target="_blank">https://redis.io/commands/ZUNIONSTORE</a>。</li>
+    <li>由于已经在当前购物车内的商品无需被推荐，因此使用<code>ZREM</code>命令从临时键的有序集合中删除与当前订单内商品id相同的键。</li>
+    <li>从临时键中获取商品ID，使用<code>ZRANGE</code>命令按照分数排序，通过<code>max_results</code>控制返回数量，之后删除临时键。</li>
+    <li>根据ID获取<code>Product</code>对象，然后按照与取出的ID相同的顺序进行排列。</li>
 </ol>
-<p>为了更加实用，再给类添加一个清除推荐商品的方法：</p>
+<p>为了更加实用，再给<code>Recommender</code>类添加一个清除推荐商品的方法：</p>
 <pre>
 class Recommender:
     # ......
@@ -1269,11 +1270,11 @@ class Recommender:
         for id in Product.objects.values_list('id', flat=True):
             r.delete(self.get_product_key(id))
 </pre>
-<p>我们来测试一下推荐引擎是否正常工作。确保Product表中有一些商品信息，然后先启动Redis：</p>
+<p>我们来测试一下推荐引擎是否正常工作。确保<code>Product</code>数据表中有一些商品信息，然后先启动Redis：</p>
 <pre>
 src/redis-server
 </pre>
-<p>通过<code>python manage.py shell</code>进入带有django项目环境的shell中：</p>
+<p>通过<code>python manage.py shell</code>进入带有Django项目环境的shell中：</p>
 <pre>
 from shop.models import Product
 black_tea = Product.objects.get(translations__name='Black tea')
@@ -1299,7 +1300,7 @@ red_tea: black_tea (2), tea_powder (1), green_tea (1)
 green_tea: black_tea (1), tea_powder (1), red_tea(1)
 tea_powder: black_tea (2), red_tea (1), green_tea (1)
 </pre>
-<p>下边测试一下取推荐数据：</p>
+<p>下边测试一下通过翻译字段获取推荐商品信息：</p>
 <pre>
 >>> from django.utils.translation import activate
 >>> activate('en')
@@ -1312,7 +1313,7 @@ tea_powder: black_tea (2), red_tea (1), green_tea (1)
 >>> r.suggest_products_for([tea_powder])
 [&lt;Product: Black tea>, &lt;Product: Red tea>, &lt;Product: Green tea>]
 </pre>
-<p>如果显示与图上一致（最大的那个一定在最前边，数量相等的顺序不一定和这里一致），就说明引擎工作正常了。再测试一下多个商品的推荐：</p>
+<p>如果看到商品是按照它们的分数进行降序排列的，就说明引擎工作正常了。再测试一下多个商品的推荐：</p>
 <pre>
 >>> r.suggest_products_for([black_tea, red_tea])
 [&lt;Product: Tea powder>, &lt;Product: Green tea>]
@@ -1321,8 +1322,8 @@ tea_powder: black_tea (2), red_tea (1), green_tea (1)
 >>> r.suggest_products_for([tea_powder, black_tea])
 [&lt;Product: Red tea>, &lt;Product: Green tea>]
 </pre>
-<p>可以实际计算一下是否符合合并有序集合后的结果，例如针对第一条程序，tea_powder的分数是2+1，green_tea的分数是1+1</p>
-<p>测试成功之后，下一步就是将该功能集成到站点中，在商品详情页和购物车清单页进行展示。先修改shop应的views.py中的product_detail视图：</p>
+<p>可以实际计算一下是否符合合并有序集合后的结果，例如针对第一条程序，<code>tea_powder</code>的分数是2+1，<code>green_tea</code>的分数是1+1等</p>
+<p>测试之后说明我们的推荐算法正常工作，下一步就是将该功能集成到站点中，在商品详情页和购物车清单页进行展示。先修改<code>shop</code>应用的<code>views.py</code>文件中的<code>product_detail</code>视图：</p>
 <pre>
 <b>from .recommender import Recommender</b>
 
@@ -1339,7 +1340,7 @@ def product_detail(request, id, slug):
     return render(request, 'shop/product/detail.html', {'product': product, 'cart_product_form': cart_product_form,
                                                         <b>'recommended_products': recommended_products</b>})
 </pre>
-<p>编辑shop/product/detail.html模板，增加下列代码到 <code>{{ product.description|linebreaks }}</code>之后：</p>
+<p>编辑<code>shop/product/detail.html</code>模板，增加下列代码到<code>{{ product.description|linebreaks }}</code>之后：</p>
 <pre>
 {% if recommended_products %}
     &lt;div class="recommendations">
@@ -1356,8 +1357,8 @@ def product_detail(request, id, slug):
 {% endif %}
 </pre>
 <p>然后运行站点，点击商品进入详情页，可以看到类似下图的商品推荐：</p>
-<img src="http://img.conyli.cc/django2/C09-14.jpg" alt="">
-<p>商品详情页所用到的功能是针对单个商品的推荐功能，现在在购物车详情页增加推荐功能，编辑cart应用的views.py中的cart_detail视图：</p>
+<p><img src="http://img.conyli.cc/django2/C09-14.jpg" alt=""></p>
+<p>我们还需要在购物车详情页增加推荐功能，编辑<code>cart</code>应用的<code>views.py</code>文件中的<code>cart_detail</code>视图：</p>
 <pre>
 <b>from shop.recommender import Recommender</b>
 
@@ -1390,13 +1391,14 @@ def cart_detail(request):
     &lt;/div>
 {% endif %}
 </pre>
-<p style="color: red;">注意，由于上述内容使用了{% trans %}模板标签，不要忘记在页面上方加入{% load i18n %}，原书这里没有加，会导致报错。</p>
-<p>这段代码的逻辑和商品详情页的几乎相同，都是展示结果。启动站点，将一些商品加入购物车，可以看到出现了推荐商品：</p>
-<img src="http://img.conyli.cc/django2/C09-15.jpg" alt="">
+<p class="emp">译者注，由于上述内容使用了{% trans %}模板标签，不要忘记在页面上方加入{% load i18n %}，原书这里没有加，会导致报错。</p>
+<p>在浏览器中打开<a href="http://127.0.0.1:8000/en/" target="_blank">http://127.0.0.1:8000/en/</a>。将一些商品加入购物车，然后至<a
+        href="http://127.0.0.1:8000/en/cart/" target="_blank">http://127.0.0.1:8000/en/cart/</a>查看购物车详情，可以看到出现了推荐商品：</p>
+<p><img src="http://img.conyli.cc/django2/C09-15.jpg" alt=""></p>
 <p>现在我们就使用Redis配合Django完成了一个推荐系统。</p>
-<p style="color: red">注意，作者这里其实没有将功能写完。可以发现，向Redis写入商品购买数据（调用recommend类的products_bought方法）是在我们测试的时候通过命令行添加的，而不是通过网站功能自动添加。按照一开始的分析，应该在付款成功的时候，更新Redis的数据。需要在payment应用的views.py中，在payment_process视图中付款响应成功，保存交易id和paid字段之后，发送PDF发票之前，添加如下代码：</p>
+<p class="emp">译者注，原书其实并没有将功能写完。可以发现，目前的购买数据（调用<code>Recommender</code>类的<code>products_bought()</code>方法）是在我们测试的时候通过命令行添加的，而不是通过网站功能自动添加。按照一开始的分析，应该在付款成功的时候，更新Redis的数据。需要在<code>payment</code>应用的<code>views.py</code>文件中，在<code>payment_process</code>视图中付款响应成功，保存交易id和<code>paid</code>字段之后，发送PDF发票之前，添加如下代码：</p>
 <pre>
-<b style="color: red">from shop.recommender import Recommender</b>
+<b>from shop.recommender import Recommender</b>
 
 def payment_process(request):
     ......
@@ -1407,16 +1409,14 @@ def payment_process(request):
             order.braintree_id = result.transaction.id
             order.save()
 
-            <b style="color: red"># 更新Redis中本次购买的商品分数</b>
-            <b style="color: red">r = Recommender()</b>
-            <b style="color: red">order_items = [order_item.product for order_item in order.items.all()]</b>
-            <b style="color: red">r.products_bought(order_items)</b>
+            <b># 更新Redis中本次购买的商品分数</b>
+            <b>r = Recommender()</b>
+            <b>order_items = [order_item.product for order_item in order.items.all()]</b>
+            <b>r.products_bought(order_items)</b>
 </pre>
 
 <h1><b>总结</b></h1>
-<p>真是漫长的一章（在翻译和填完了作者的各种坑之后，不知道为什么我想起了“<a href="https://www.wowhead.com/achievement=2144/what-a-long-strange-trip-its-been" target="_blank">千奇百怪的漫长旅行</a>”这个成就），本章先建立了一个优惠码系统，没有采用新的第三方模块，而是重在介绍了优惠码的原理，通过session和在订单中保存优惠码数据，并修改了视图计算总价的方法实现了优惠码系统。</p>
-<p>之后是有关国际化和本地化的内容，国际化和本地化的内容因为涉及到网站的很多方面，看起来比较琐碎，但只要抓住<b>国际化与本地化设置--对模型，Python代码中的常量，模板和URL分别进行翻译设置--添加语言切换器--设置本地化格式</b> 这样一个逻辑流程就可以将整个网站顺利的变更为支持多语言的国际化网站，还带有本地化格式功能。</p>
-<p>最后一部分是一个商品推荐系统，按照关联商品一起购买的次数进行推荐，强化了Redis的使用。</p>
-<p>完成这些以后，我们的电商网站的核心功能都具备了。</p>
+<p>在这一章，学习了创建优惠码系统和国际化与本地化配置工作。还基于Redis创建了一个商品推荐系统。</p>
+<p>在下一章，我们将创建一个新的项目：在线教育平台，里边将使用Django的CBV技术，还会创建一个内容管理系统。</p>
 </body>
 </html>
