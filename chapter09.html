@@ -269,7 +269,7 @@ def cart_detail(request):
 <p>在浏览器中打开<code>http://127.0.0.1:8000/</code>，添加商品到购物车然后生成订单，可以看到订单页面的价格现在是折扣后的价格了：</p>
 <p><img src="http://img.conyli.cc/django2/C09-03.jpg" alt=""></p>
 
-<h3 id="c9-1-3"><span class="title">1.3</span>为购物车增加优惠码功能</h3>
+<h3 id="c9-1-3"><span class="title">1.3</span>在订单中记录优惠码信息</h3>
 <p>像之前说的，我们需要将优惠码信息保存至<code>order</code>对象中，为此需要修改<code>Order</code>模型。编辑</p>
 <p>编辑<code>orders</code>应用的<code>models.py</code>文件，增加导入部分的代码：</p>
 <pre>
