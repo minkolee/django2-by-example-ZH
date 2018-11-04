@@ -1,0 +1,1488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/normalize.min.css">
+    <link rel="stylesheet" href="css/base.css">
+    <title>第十章 创建在线教育平台</title>
+
+</head>
+<body>
+<h1 id="top"><b>第十章 创建在线教育平台</b></h1>
+<p>在上一章，我们为电商网站项目添加了国际化功能，还创建了优惠码和商品推荐系统。在本章，会建立一个新的项目：一个在线教育平台，并创内容管理系统CMS（Content Management System）。</p>
+<p>本章的具体内容有</p>
+<ul>
+    <li>为模型建立<a href="https://code.djangoproject.com/wiki/Fixtures" target="_blank">fixtures</a></li>
+    <li>使用模型的继承关系</li>
+    <li>创建自定义模型字段</li>
+    <li>使用CBV和<a href="https://docs.djangoproject.com/en/2.1/ref/class-based-views/mixins/" target="_blank">mixin</a>
+    </li>
+    <li>建立表单集formsets</li>
+    <li>管理用户组与权限</li>
+    <li>创建CMS</li>
+</ul>
+
+<h2 id="c10-1"><span class="title">1</span>创建在线教育平台项目</h2>
+<p>我们最后一个项目就是这个在线教育平台。在这个项目中，我们将建立一个灵活的CMS系统，让讲师可以创建课程并且管理课程的内容。</p>
+<p>为本项目建立一个虚拟环境，在终端输入如下命令：</p>
+<pre>
+mkdir env
+virtualenv env/educa
+source env/educa/bin/activate
+</pre>
+<p>在虚拟环境中安装Django与Pillow：</p>
+<pre>
+pip install Django==2.0.5
+pip install Pillow==5.1.0
+</pre>
+<p>之后新建项目<code>educa</code>：</p>
+<pre>
+django-admin startproject educa
+</pre>
+<p>进入<code>educa</code>目录然后新建名为<code>courses</code>的应用：</p>
+<pre>
+cd educa
+django-admin startapp courses
+</pre>
+<p>编辑<code>settings.py</code>，将应用激活并且放在最上边一行：</p>
+<pre>
+INSTALLED_APPS = [
+    <b>'courses.apps.CoursesConfig',</b>
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+]
+</pre>
+<p>之后的第一步工作，依然是定义数据模型。</p>
+
+<h2 id="c10-2"><span class="title">2</span>创建课程模型</h2>
+<p>我们的在线教育平台会提供很多不同主题（subject）的课程，每一个课程会被划分为一定数量的课程章节（module），每个章节里边又有一定数量的内容（content）。对于一个课程来说，里边使用到的内容类型很多，包含文本，文件，图片甚至视频，下边的是一个课程的例子：</p>
+<pre>
+Subject 1
+  Course 1
+    Module 1
+      Content 1 (image)
+      Content 2 (text)
+    Module 2
+      Content 3 (text)
+      Content 4 (file)
+      Content 5 (video)
+......
+</pre>
+<p>来建立课程的数据模型，编辑<code>courses</code>应用下的<code>models.py</code>文件：</p>
+<pre>
+from django.db import models
+from django.contrib.auth.models import User
+
+class Subject(models.Model):
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=200, unique=True)
+
+    class Meta:
+        ordering = ['title']
+
+    def __str__(self):
+        return self.title
+
+class Course(models.Model):
+    owner = models.ForeignKey(User, related_name='course_created', on_delete=models.CASCADE)
+    subject = models.ForeignKey(Subject, related_name='courses', on_delete=models.CASCADE)
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=200, unique=True)
+    overview = models.TextField()
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created']
+
+    def __str__(self):
+        return self.title
+
+class Module(models.Model):
+    course = models.ForeignKey(Course,related_name='modules',on_delete=models.CASCADE)
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+
+    def __str__(self):
+        return self.title
+</pre>
+<p>这是初始的<code>Subject</code>，<code>Course</code>和<code>Module</code>模型。<code>Course</code>模型的字段如下：</p>
+<ol>
+    <li><code>owner</code>： 课程讲师，也是课程创建者</li>
+    <li><code>subject</code>： 课程的主体，外键关联到<code>Subject</code>模型</li>
+    <li><code>title</code>： 课程名称</li>
+    <li><code>slug</code>： 课程slug名称，将来用在生成URL</li>
+    <li><code>overview</code>： 课程简介</li>
+    <li><code>created</code>： 课程建立时间，生成数据行时候自动填充</li>
+</ol>
+<p><code>Module</code>从属于一个具体的课程，所以<code>Module</code>模型中有一个外键连接到<code>Course</code>模型。</p>
+<p>之后进行数据迁移，不再赘述。</p>
+
+<h3 id="c10-2-1"><span class="title">2.1</span>在管理后台注册上述模型</h3>
+<p>编辑<code>course</code>应用的<code>admin.py</code>文件，添加如下代码：</p>
+<pre>
+from django.contrib import admin
+from .models import Subject, Course, Module
+
+@admin.register(Subject)
+class SubjectAdmin(admin.ModelAdmin):
+    list_display = ['title', 'slug']
+    prepopulated_fields = {'slug': ('title',)}
+
+class ModuleInline(admin.StackedInline):
+    model = Module
+
+@admin.register(Course)
+class CourseAdmin(admin.ModelAdmin):
+    list_display = ['title', 'subject', 'created']
+    list_filter = ['created', 'subject']
+    search_fields = ['title', 'overview']
+    prepopulated_fields = {'slug': ('title',)}
+    inlines = [ModuleInline]
+</pre>
+<p>这就注册好了应用里的全部模型，记住<code>@admin.register()</code>用于将模型注册到管理后台中。</p>
+
+<h3 id="c10-2-2"><span class="title">2.2</span>使用fixture为模型提供初始化数据</h3>
+<p>有些时候，需要使用原始数据来直接填充数据库，这比每次建立项目之后手工录入原始数据要方便很多。DJango提供了fixtures（可以理解为一个预先格式化好的数据文件）功能，可以方便的从数据库中读取数据到fixture中，或者把fixture中的数据导入至数据库。</p>
+<p>Django支持使用JSON，XML或YAML等格式来使用fixture。来建立一个包含一些初始化的<code>Subject</code>对象的fixture：</p>
+<p>首先创建超级用户：</p>
+<pre>python manage.py createsuperuser</pre>
+<p>之后运行站点：</p>
+<pre>python manage.py runserver</pre>
+<p>进入<a href="http://127.0.0.1:8000/admin/courses/subject/" target="_blank">http://127.0.0.1:8000/admin/courses/subject/</a>可以看到如下界面（需要先输入一些数据）：</p>
+<p><img src="http://img.conyli.cc/django2/C10-01.jpg" alt=""></p>
+<p>在shell中执行如下命令：</p>
+<pre>python manage.py dumpdata courses --indent=2</pre>
+<p>可以看到如下输出：</p>
+<pre>
+[
+  {
+    "model": "courses.subject",
+    "pk": 1,
+    "fields": {
+      "title": "Mathematics",
+      "slug": "mathematics"
+    }
+  },
+  {
+    "model": "courses.subject",
+    "pk": 2,
+    "fields": {
+      "title": "Music",
+      "slug": "music"
+    }
+  },
+  {
+    "model": "courses.subject",
+    "pk": 3,
+    "fields": {
+      "title": "Physics",
+      "slug": "physics"
+    }
+  },
+  {
+    "model": "courses.subject",
+    "pk": 4,
+    "fields": {
+      "title": "Programming",
+      "slug": "programming"
+    }
+  }
+]
+</pre>
+<p><code>dumpdata</code>命令采取默认的JSON格式，将<code>Course</code>类中的数据序列化并且输出。JSON中包含了模型的名称，主键，字段与对应的值。设置了indent=2是表示每行的缩进。</p>
+<p>可以通过向命令行提供应用名和模块名，例如<code>app.Model</code>，让数据直接输出到这个模型中；还可以通过<code>--format</code>参数控制输出的数据格式，默认是使用JSON格式。还可以通过<code>--output</code>参数指定输出到具体文件。</p>
+<p>对于<code>dumpdata</code>的详细参数，可以使用命令<code>python manage.py dumpdata --help</code>查看。</p>
+<p>使用如下命令把这个dump结果保存到<code>courses</code>应用的一个<code>fixture/</code>目录中：</p>
+<pre>
+mkdir courses/fixtures
+python manage.py dumpdata courses --indent=2 --output=courses/fixtures/subjects.json
+</pre>
+<p class="emp">译者注，原书写成了在<code>orders</code>应用下的<code>fixture/</code>目录，显然是将应用名写错了。</p>
+<p>现在进入管理后台，将<code>Subject</code>表中的数据全部删除，之后执行下列语句，从fixture中加载数据：</p>
+<pre>
+python manage.py loaddata subjects.json
+</pre>
+<p>可以发现，所有删除的数据都都回来了。</p>
+<p>默认情况下Django会到每个应用里的<code>fixtures/</code>目录内寻找指定的文件名，也可以在<code>settings.py</code>中设置 <code>FIXTURE_DIRS</code>来告诉Django到哪里寻找fixture。</p>
+<p class="hint">fixture除了初始化数据库之外，还可以方便的为应用提供测试数据。</p>
+<p>有关fixture的详情可以查看<a
+        href="https://docs.djangoproject.com/en/2.0/topics/testing/tools/#fixture-loading" target="_blank">https://docs.djangoproject.com/en/2.0/topics/testing/tools/#fixture-loading</a>。</p>
+<p>如果在进行数据模型移植的时候就加载fixture生成初始数据，可以查看<a href="https://docs.djangoproject.com/en/2.0/topics/migrations/#data-migrations"
+                                   target="_blank">https://docs.djangoproject.com/en/2.0/topics/migrations/#data-migrations</a>。</p>
+
+<h3 id="c10-2-3"><span class="title">2.3</span>创建不同类型内容的模型</h3>
+<p>在课程中会向用户提供不同的内容，包括文字，图片，文件和视频等。我们必须采用一个能够存储各种文件类型的模型。在第二个项目的追踪用户行为中，我们学会了使用generic通用关系来建立指向项目内任何一个数据模型的松散外键关系。这里我们建立一个Content模型，用于存放章节中的内容，定义一个通用关系来连接任何类型的内容。</p>
+<p>编辑courses应用的models.py，增加下列内容：</p>
+<pre>
+from django.contrib.contenttypes.models import ContentType
+from django.contrib.contenttypes.fields import GenericForeignKey
+
+class Content(models.Model):
+    module = models.ForeignKey(Module, related_name='contents', on_delete=models.CASCADE)
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField()
+    item = GenericForeignKey('content_type', 'object_id')
+</pre>
+<p>这就是Content类，设置外键关联到了Module类，同时设置了与ContentType类的通用关联关系，使得Content类可以从项目中的任何数据类的具体对象进行关联。</p>
+<p>这里再复习一下，我们通过三个字段建立GenericForeignKey关系：</p>
+<ol>
+    <li>content_type：一个外键用于关联到ContentType类。</li>
+    <li>object_id： 对象的id，使用正整数字段。</li>
+    <li>item: 通用关联关系，通过合并上两个字段来进行关联。</li>
+</ol>
+<p>在这个Content类中，只有module, content_type, object_id三个字段会实际生成在数据库中，item字段的关系是ORM引擎构建的，不真正被写进数据库中。</p>
+<p>下一步的工作是建立每种具体内容类型的数据库，这些数据库有一些相同的字段用于标识基本信息，也有不同的字段存放具体信息。</p>
+
+<h3><b>使用数据模型继承关系</b></h3>
+<p>Django支持数据模型之间的继承关系，这和Python程序的标准类继承关系很相似，Django提供了以下三种继承的方式：</p>
+<ol>
+    <li>Abstarct model： 接口模型继承，用于方便的向不同的数据模型中添加相同的信息，这种继承方式中的基类不会在数据库中建立数据表，子类会建立数据表。</li>
+    <li>Multi-table model inheritance： 多表模型继承，在继承关系中的每个表都被认为是一个完整的模型时采用此方法，继承关系中的每一个表都会实际在数据库中创建数据表。</li>
+    <li>Proxy models：代理模型继承，在继承的时候需要改变模型的行为时使用，例如加入额外的方法，修改默认的模型管理器或使用新的Meta类设置，此种继承不会在数据库中创建数据表。</li>
+</ol>
+<p>译者的个人理解：三种模式其实很简单：</p>
+<ol>
+    <li>Abstarct model 抽象基类继承方法：概念类似Python的接口类（ABC类）继承，作为基类的接口类只写共同的接口，基类自然不会被写入数据库。</li>
+    <li>Multi-table model inheritance 多表模型继承：实际的功能是通过一对一字段扩展表，和“继承”两个字关系不大。</li>
+    <li>Proxy model 代理模型继承：这种继承类似于Python中的经典类继承，子类可以扩展父类的方法和属性。</li>
+</ol>
+
+<h4><b>Abstract models 接口模型</b></h4>
+<p>接口模型本质上就是接口类，里边定义了所有需要包含在子模型中的字段。Django不会为接口模型创建任何数据库中的数据表。继承接口模型的子模型必须将这些字段完善，每一个子模型会创建数据表，表中的字段包括继承自接口模型的字段和子模型中自定义的字段。</p>
+<p>为了标记一个模型为接口模型，在其Meta设置中，必须设置<code>abstract = True</code>，django就会认为该模型是一个接口模型，不会创建数据表。子模型只需要继承该模型即可。</p>
+<p>下边的例子是如何建立一个接口模型和子模型：</p>
+<pre>
+from django.db import models
+class BaseContent(models.Model):
+    title = models.CharField(max_length=100)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        abstract = True
+
+class Text(BaseContent):
+    body = models.TextField()
+</pre>
+<p>在这个例子中，实际在数据库中创建的是Text类对应的数据表，包含title，created和body字段。</p>
+
+<h4><b>Multi-table model inheritance 多表继承</b></h4>
+<p>多表继承关系中的每一个表都是完整的数据模型。对于继承关系，Django会自动在子模型中创建一个一对一关系的外键连接到父模型。这种关系与其说类似于Python中的继承，倒不如说是扩展表。</p>
+<p>要使用该种继承方式，必须继承一个已经存在的模型，django会把父模型和子模型都写入数据库，下边是一个例子：</p>
+<pre>
+from django.db import models
+class BaseContent(models.Model):
+    title = models.CharField(max_length=100)
+    created = models.DateTimeField(auto_now_add=True)
+
+class Text(BaseContent):
+    body = models.TextField()
+</pre>
+<p>Django会将两张表都写入数据库，Text表中除了body字段，还有一个一对一的外键关联到BaseContent表。</p>
+
+<h4><b>Proxy models 代理模型</b></h4>
+<p>代理模型用于改变类的行为，例如增加额外的方法或者不同的Meta设置。采用代理模型继承方法，只有被继承的模型才会被写入数据库，但操作代理模型和被继承的模型都可以影响数据库中的数据表。在Meta中指定
+    <code>proxy=True</code> 就可以建立一个代理模型。</p>
+<p>下边是一个建立代理模型的例子：</p>
+<pre>
+from django.db import models
+from django.utils import timezone
+
+class BaseContent(models.Model):
+    title = models.CharField(max_length=100)
+    created = models.DateTimeField(auto_now_add=True)
+
+class OrderedContent(BaseContent):
+    class Meta:
+        proxy = True
+        ordering = ['created']
+
+    def created_delta(self):
+        return timezone.now() - self.created
+</pre>
+<p>
+    这里我们定义了一个OrderedContent类，作为BaseContent类的一个代理模型。这个代理模型提供了排序功能和一个新方法created_delta()。在程序中使用OrderedContent和BaseContent都是操作由BaseContent类生成的数据表，但新增的排序和方法，只有通过OrderedContent类才能使用。</p>
+<p>这种方法就类似于经典的Python类继承方式。</p>
+
+<h3><b>建立内容模型</b></h3>
+<p>了解了三种继承关系之后，现在我们要为每种内容建立不同的模型。所有的内容模型都有相同的字段也有不同的字段，采用哪一种继承方式呢？很显然，采用接口类比较符合目前的需求。这里就采取接口模型继承的方式来建立内容模型：</p>
+<p>继续编辑courses应用中的models.py增加基类和各种内容类：</p>
+<pre>
+class ItemBase(models.Model):
+    owner = models.ForeignKey(User, related_name='%(class)s_related', on_delete=models.CASCADE)
+    title = models.CharField(max_length=250)
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+
+    def __str__(self):
+        return self.title
+
+
+class Text(ItemBase):
+    content = models.TextField()
+
+
+class File(ItemBase):
+    file = models.FileField(upload_to='files')
+
+
+class Image(ItemBase):
+    file = models.FileField(upload_to='images')
+
+
+class Video(ItemBase):
+    url = models.URLField()
+</pre>
+<p>在这段代码中，首先建立了一个接口模型ItemBase，其中有四个字段，然后在Meta中设置了该类为接口类。这样该类中定义的owner, title, created, updated字段在所有继承该类的类中都可以使用。</p>
+<p>
+    特别要说明的是owner字段，由于该字段是一个外键，因此不能把related_name的名称写死，否则四个子模型使用同一名称连接User模型会造成错误。这里使用了占位符'%(class)s'，这样每个子模型的外键索引名就会分别成为text_related,
+    file_related, image_related 和 video_retaled。</p>
+<p>为存储不同类型的内容，建立了四个子模型：</p>
+<ul>
+    <li>Text： 存储教学文本</li>
+    <li>File： 存储分发给用户的文件，比如PDF，PPT等教学资料</li>
+    <li>Image: 存储图片</li>
+    <li>Video：存储视频，一般数据库中不直接存放大型文件，都是存放文件服务器上的路径。所以定义了一个URL字段。</li>
+</ul>
+<p>Django会把四个子模型写入到数据库中，但ItemBase类不会被写入。</p>
+<p>继续编辑courses应用的models.py，由于四个子模型的类名已经确定了，需要修改Content模型让其对应到这四个模型上：</p>
+<pre>
+class Content(models.Model):
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE,
+                                 <b>limit_choices_to={'model__in': ('text', 'file', 'image', 'video')}</b>)
+</pre>
+<p>为content_type字段增加了限定选择属性，方便的对应到四个新数据模型上。如此定义之后。在检索的时候还能够使用filter的参数例如 <code>model__in='text'</code>
+    来快速取出所有对应与text模型的数据。</p>
+<p>建立好所有模型之后，现在可以执行makemigrations了：</p>
+<pre>
+python manage.py makemigrations
+</pre>
+<p>可以看到如下输出：</p>
+<pre>
+Migrations for 'courses':
+courses/migrations/0002_content_file_image_text_video.py
+- Create model Content
+- Create model File
+- Create model Image
+- Create model Text
+- Create model Video
+</pre>
+<p>之后执行 migrate将在数据库中建立数据表，不再赘述。</p>
+<p>
+    现在就已经建立了本项目所需要的基本数据表及其结构。然而我们的模型中还缺少一些内容：课程和课程的内容是按照一定顺序排列的，但用户建立课程和上传内容的时候未必是线性的，单独按照某个表排序得到的结果是无用的，我们需要一个排序字段，通过字段可以把课程，章节和内容进行一个跨表的统一排序，之后只要按照这个次序列出所有的模型的数据行就可以了。</p>
+
+<h3><b>建立自定义字段</b></h3>
+<p>Django内置了很完善的模型字段供方便快捷的建立数据模型。然而依然有无法满足用户需求的地方，我们也可以自定义模型字段，来存储个性化的内容，或者修改内置字段的行为。</p>
+<p>
+    上一节分析中我们得出结论，需要一个字段存储课程和内容组织的顺序。通常用于确定顺序可以方便的采用内置的PositiveIntegerField字段，采用一个正整数就可以方便的标记数据的顺序。这里我们继承PositiveIntegerField字段，然后增加额外的行为来完成我们的自定义排序。</p>
+<p>字段确定好了，为了实现排序，还必须增加两个功能来操作该字段：</p>
+<ul>
+    <li>
+        如果序号没有给出，则自动分配一个序号。当内容和课程表中存进一个新的数据对象的时候，如果用户给出了具体的序号，就将该序号存入到排序字段中。如果用户没有给出序号，应该自动按照最大的序号再加1。例如如果已经存在两个数据对象的序号是1和2，如果用户存入第三个数据但未给出序号，则应该自动给新数据对象分配序号3。
+    </li>
+    <li>根据其他相关的内容排序：章节应该按照课程排序，而内容应该按照章节排序</li>
+</ul>
+<p>为了建立自定义字段，在courses目录下建立fields.py：</p>
+<pre>
+from django.db import models
+from django.core.exceptions import ObjectDoesNotExist
+
+
+class OrderField(models.PositiveIntegerField):
+
+    def __init__(self, for_fields=None, *args, **kwargs):
+        # 初始化参数比父类多一个for_fields字段
+        self.for_fields = for_fields
+        # 调用父类初始化方法进行其他参数的初始化
+        super(OrderField, self).__init__(*args, **kwargs)
+
+    # 重写 pre_save()方法
+    def pre_save(self, model_instance, add):
+        # 通过反射取自己的值，attname对应的是自己的内置.name属性也就是字段名
+        if getattr(model_instance, self.attname) is None:
+            # 如果没有值，查询自己所在表的全部内容，找到最后一条字段，设置临时变量value = 最后字段的序号+1
+            try:
+                # 取自己所在数据表内全部对象（行）
+                qs = self.model.objects.all()
+                # 判断是否传入for_fields参数
+                if self.for_fields:
+                    # 存在for_fields参数，通过该参数取对应的数据行
+                    query = {field: getattr(model_instance, field) for field in self.for_fields}
+                    qs = qs.filter(**query)
+
+                last_item = qs.latest(self.attname)
+                value = last_item.order + 1
+            # 如果找不到最后一条数据，说明自己是第一条数据，将临时变量value 设置为0
+            except ObjectDoesNotExist:
+                value = 0
+            # 将 value 变量存入自己内部
+            setattr(model_instance, self.attname, value)
+            return value
+        else:
+            # 如果有值，不做任何处理，直接调用父类的pre_save()方法
+            return super(OrderField, self).pre_save(model_instance, add)
+</pre>
+<p>这是自定义的字段类OrderField，继承了内置的PositiveIntegerField类，还增加了额外的参数for_fields指定按照哪一个字段的顺序进行计算。</p>
+<p>在OrderField中重写了pre_save()方法，这个方法是在将字段的值实际存入到数据库之前执行的。在这个方法里，执行了如下逻辑：</p>
+<ol>
+    <li>检查当前字段是否已经存在值，self.attname表示该字段对应的属性值，也就是字段名。如果属性值是None，说明用户没有设置序号。则按照以下逻辑进行计算：
+        <ol>
+            <li>建立一个QuerySet，查询这个字段所在的model的全部数据行。访问字段所在的模型使用了self.model</li>
+            <li>通过用户给出的for_fields参数，把上一步的QuerySet用其中的字段拆解之后过滤，这样就可以取得具体的用于计算序号的参考数据行。</li>
+            <li>然后从过滤过的QuerySet中使用.latest()方法取出最新一行数据对应的序号。如果取不到，说明自己是第一行。就分配序号0</li>
+            <li>如果能够取到，就把取到的序号+1</li>
+            <li>然后通过setattr将临时变量value赋给自己</li>
+        </ol>
+    </li>
+    <li>如果当前的字段已经有值，说明用户传入了序号，不需要做任何工作。</li>
+</ol>
+<p>在自定义字段时，一定不要硬编码将内容写死，也需要像内置字段一样注意通用性，否则很可能在某些情况下无法正常工作。</p>
+<p>关于自定义字段可以看<a href="https://docs.djangoproject.com/en/2.1/howto/custom-model-fields/" target="_blank">官方文档</a>。</p>
+
+<h3><b>将自定义字段加入到模型中</b></h3>
+<p>建立好自定义的字段类之后，需要在各个模型中设置该字段，编辑courses应用的models.py，增加如下内容：</p>
+<pre>
+<b>from .fields import OrderField</b>
+
+class Module(models.Model):
+    # ......
+    <b>order = OrderField(for_fields=['course'], blank=True)</b>
+</pre>
+<p>给自定义的排序字段起名叫order，然后通过设置 <code>for_fields=['course']</code>，让其根据 Course
+    课程的顺序编写序号。这意味着如果最新的Course对象的序号是3并且没有对应的module对象，为其新增一个对应的modul对象的序号就是4。</p>
+<p>然后编辑Module类的__str__方法：</p>
+<pre>
+class Module(models.Model):
+    def __str__(self):
+        return <b>'{}. {}'.format(self.order,</b> self.title<b>)</b>
+</pre>
+<p>Module字段已经有了顺序，现在为Content模型也增加上该字段：</p>
+<pre>
+class Content(models.Model):
+    # ...
+    <b>order = OrderField(blank=True, for_fields=['module'])</b>
+</pre>
+<p>这次继续设置Content每一行的序号，通过Module对象来计算。这样就把一个顺序串了起来。</p>
+<p>最后我们为引入了该字段的Module和Content类增加排序方式：</p>
+<pre>
+class Module(models.Model):
+    # ...
+    <b>class Meta:</b>
+        <b>ordering = ['order']</b>
+
+class Content(models.Model):
+    # ...
+    <b>class Meta:</b>
+        <b>ordering = ['order']</b>
+</pre>
+<p>最终的Module 和 Content 类应该是这样：</p>
+<pre>
+class Module(models.Model):
+    course = models.ForeignKey(Course, related_name='modules', on_delete=models.CASCADE)
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    order = OrderField(for_fields=['course'], blank=True)
+
+    def __str__(self):
+        return '{}. {}'.format(self.order, self.title)
+
+    class Meta:
+        ordering = ['order']
+
+
+class Content(models.Model):
+    module = models.ForeignKey(Module, related_name='contents', on_delete=models.CASCADE)
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE,
+                                     limit_choices_to={'model__in': ('text', 'video', 'image', 'file')})
+    object_id = models.PositiveIntegerField()
+    item = GenericForeignKey('content_type', 'object_id')
+    order = OrderField(for_fields=['module'], blank=True)
+
+    class Meta:
+        ordering = ['order']
+</pre>
+<p>模型修改好了，执行迁移命令 <code>python manage.py makemigrations courses</code>，可以发现提示如下：</p>
+<pre>
+Tracking file by folder pattern:  migrations
+You are trying to add a non-nullable field 'order' to content without a default; we can't do that (the database needs something to populate existing rows).
+Please select a fix:
+ 1) Provide a one-off default now (will be set on all existing rows with a null value for this column)
+ 2) Quit, and let me add a default in models.py
+Select an option:
+</pre>
+<p>这个提示的意思是说准备增加一个不能为null的新字段order到数据表中，但数据库中已经存在的记录对于这个字段没有值。不提供值的话无法在数据库中创建该字段。</p>
+<p>然后给出了两个选择，选项1是输入一个默认值，作为所有已经存在的数据行该字段的值，选项2是放弃这次makemigrations，在模型中为该字段添加default = xx 属性来设置默认值。</p>
+<p>这里我们选择1，输入1并按回车键，看到如下提示：</p>
+<pre>
+Please enter the default value now, as valid Python
+The datetime and django.utils.timezone modules are available, so you can do e.g. timezone.now
+Type 'exit' to exit this prompt
+</pre>
+<p>系统提示我们输入值，输入0然后按回车，之后django又会对Mudule表询问同样的问题，依然选择第一项然后输入0。之后可以看到：</p>
+<pre>
+Migrations for 'courses':
+  courses\migrations\0003_auto_20181001_1344.py
+    - Change Meta options on content
+    - Change Meta options on module
+    - Add field order to content
+    - Add field order to module
+</pre>
+<p>表示成功，之后执行 <code>python manage.py migrate</code>。然后我们来测试一下排序，打开shell：</p>
+<pre>
+python manage.py shell
+</pre>
+<p>由于目前只有Subject表里有数据，其他数据都还是空的，所以来增加一些新课程：</p>
+<pre>
+>>> from django.contrib.auth.models import User
+>>> from courses.models import Subject, Course, Module
+>>> user = User.objects.last()
+>>> subject = Subject.objects.last()
+>>> c1 = Course.objects.create(subject=subject, owner=user, title='Course 1', slug='course1')
+</pre>
+<p>添加了一个新课程叫做c1，现在我们来为c1添加对应的module对象，来看看是如何自动排序的。</p>
+<pre>
+>>> m1 = Module.objects.create(course=c1, title='Module 1')
+>>> m1.order
+0
+</pre>
+<p>可以看到m1对象的序号字段的值被设置为0，因为这是针对c1课程的第一个module对象，下边再增加一个module对象：</p>
+<pre>
+>>> m2 = Module.objects.create(course=c1, title='Module 2')
+>>> m2.order
+1
+</pre>
+<p>可以看到随后增加的module对象m2的序号自动被设置成了1，这次我们建立第三个对象m3，指定序号为5：</p>
+<pre>
+>>> m3 = Module.objects.create(course=c1, title='Module 3', order=5)
+>>> m3.order
+5
+</pre>
+<p>如果指定了序号，则序号就会是指定的数字。为了继续试验，再增加一个m4对象，不给出序号参数：</p>
+<pre>
+>>> m4 = Module.objects.create(course=c1, title='Module 4')
+>>> m4.order
+6
+</pre>
+<p>可以看到，序号会根据最后保存的数据继续增加1。OrderField字段无法保证序号一定连续，但可以保证添加的内容的序号一定是从小到大排列的。</p>
+<p>继续试验，我们再增加第二个课程c2，然后为c2添加一个关联到c2的m5对象：</p>
+<pre>
+>>> c2 = Course.objects.create(subject=subject, title='Course 2', slug='course2', owner=user)
+>>> m5 = Module.objects.create(course=c2, title='Module 1')
+>>> m5.order
+0
+</pre>
+<p>可以看到序号又从0开始，这是因为在Module类中，我们设置了order字段的for_fields=['course']，就会先从当前所有的Module数据中filter(course =
+    c2)，结果由于此时Module表内并没有关联到C2的数据，所以找不到任何数据，就会认为自己是第一个，然后把序号设置为0。</p>
+<p>
+    到这里我们就做好了第一个自定义的排序字段如果内容也需要在章节内按照一定的顺序排列，就可以把这个字段扩展用到四个具体的内容类上，但是此时代码就需要修改了：每在内容中增加一个任意类型对象，都要遍历四张内容表找到所有对应某个module对象的QuerySet，然后再从其中找到最后添加的按照原来逻辑处理。</p>
+
+<h2><b>建立一个内容管理系统 CMS</b></h2>
+<p>已经建立好了在线学习平台的通用数据模型。下一步就是建立内容管理系统。内容管理系统能够让讲师建立课程然后管理课程资源。什么是内容管理系统可以看<a
+        href="https://en.wikipedia.org/wiki/Content_management_system" target="_blank">这里</a>。</p>
+<p>我们的内容管理系统需要如下几个功能：</p>
+<ul>
+    <li>登录功能</li>
+    <li>列出讲师的全部课程</li>
+    <li>建立，编辑和删除课程</li>
+    <li>为课程增加章节</li>
+    <li>为章节增加不同的内容</li>
+</ul>
+<p>
+    相比前几章，我们站点的角色发生了变化。在之前的单用户博客项目和电商网站中，网站的主要内容和功能比如文字，图片，购物车都是网站本身提供的，用户没有或者仅有部分（比如评论）创造内容的权限。但在内容管理系统中，给用户提供一个开放的平台，主要内容都来自用户，一些用户可以生成内容，一些用户使用内容。有点类似于社交网站。一些大型网站如YouTube，B站，多用户博客系统，都是内容管理系统的不同表现形式。</p>
+
+<h3><b>为站点增加用户验证系统</b></h3>
+<p>这里我们使用Django内置验证模块为网站增加用户验证功能、所有的讲师和学生都是User类的实例，都可以通过django.contrib.auth来控制用户行为。</p>
+<p>编辑educa项目的根urls.py，添加匹配内置验证功能的路由：</p>
+<pre>
+from django.contrib.auth import views as auth_views
+
+urlpatterns = [
+    path('accounts/login/', auth_views.LoginView.as_view(), name='login'),
+    path('accounts/logout/', auth_views.LogoutView.as_view(), name='logout'),
+    path('admin/', admin.site.urls),
+]
+</pre>
+<p>这些配置都已经讲过，不再赘述，读者愿意的话可以将django 的全套内置用户功能都匹配过来。</p>
+
+<h3><b>建立用户验证模板</b></h3>
+<p>由于我们网站的风格不会使用内置的django模板风格，所以依然要自行编写登录和登出模板。在courses应用下建立如下目录和文件：</p>
+<pre>
+templates/
+    base.html
+    registration/
+        login.html
+        logged_out.html
+</pre>
+<p>在编写登录登出和其他任何模板之前，先来编辑base.html作为母版：</p>
+<pre>
+{% load staticfiles %}
+&lt;!DOCTYPE html>
+&lt;html>
+&lt;head>
+    &lt;meta charset="utf-8"/>
+    &lt;title>{% block title %}Educa{% endblock %}&lt;/title>
+    &lt;link href="{% static "css/base.css" %}" rel="stylesheet">
+&lt;/head>
+&lt;body>
+&lt;div id="header">
+    &lt;a href="/" class="logo">Educa&lt;/a>
+    &lt;ul class="menu">
+        {% if request.user.is_authenticated %}
+            &lt;li>&lt;a href="{% url "logout" %}">Sign out&lt;/a>&lt;/li>
+        {% else %}
+            &lt;li>&lt;a href="{% url "login" %}">Sign in&lt;/a>&lt;/li>
+        {% endif %}
+    &lt;/ul>
+&lt;/div>
+&lt;div id="content">
+    {% block content %}
+    {% endblock %}
+&lt;/div>
+&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js">&lt;/script>
+&lt;script>
+    $(document).ready(function () {
+        {% block domready %}
+        {% endblock %}
+    });
+&lt;/script>
+&lt;/body>
+&lt;/html>
+</pre>
+<p>为了使用方便，这里将作者原书存放jquery文件的的Google CDN换成了国内BootCDN的地址。</p>
+<p>在母版中，定义了几个块：</p>
+<ol>
+    <li>title: 用于HEAD标签的TITLE标签使用</li>
+    <li>content: 页面主体内容</li>
+    <li>domready：页面DOM加载完成后执行的JS代码</li>
+</ol>
+<p>这里还用到了CSS文件，在courses应用中建立static/css/目录并将源代码中的CSS文件复制过来。</p>
+<p>有了母版之后，编辑registration/login.html：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}Log-in{% endblock %}
+{% block content %}
+    &lt;h1>Log-in&lt;/h1>
+    &lt;div class="module">
+        {% if form.errors %}
+            &lt;p>Your username and password didn't match. Please try again.&lt;/p>
+        {% else %}
+            &lt;p>Please, use the following form to log-in:&lt;/p>
+        {% endif %}
+        &lt;div class="login-form">
+            &lt;form action="{% url 'login' %}" method="post">
+                {{ form.as_p }}
+                {% csrf_token %}
+                &lt;input type="hidden" name="next" value="{{ next }}"/>
+                &lt;p>&lt;input type="submit" value="Log-in">&lt;/p>
+            &lt;/form>
+        &lt;/div>
+    &lt;/div>
+{% endblock %}
+</pre>
+<p>这是django标准的用于内置 LoginView的模板。继续编写同目录下的logged_out.html：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}Logged out{% endblock %}
+{% block content %}
+    &lt;h1>Logged out&lt;/h1>
+    &lt;div class="module">
+        &lt;p>You have been successfully logged out.
+            You can &lt;a href="{% url "login" %}">log-in again&lt;/a>.&lt;/p>
+    &lt;/div>
+{% endblock %}
+</pre>
+<p>之后启动站点，到 http://127.0.0.1:8000/accounts/login/ 查看，页面如下：</p>
+<img src="http://img.conyli.cc/django2/C10-02.jpg" alt="">
+
+<h3><b>创建基于类的视图CBV</b></h3>
+<p>用户验证功能建立完之后，需要实现的功能是给讲师提供增删改查课程的功能。这里使用基于类的视图进行编写，编辑courses应用的views.py：</p>
+<pre>
+from django.views.generic.list import ListView
+from .models import Course
+
+
+class ManageCourseListView(ListView):
+    model = Course
+    template_name = 'courses/manage/course/list.html'
+
+    def get_queryset(self):
+        qs = super(ManageCourseListView, self).get_queryset()
+        return qs.filter(owner=self.request.user)
+</pre>
+<p>
+    还记得很久以前使用过的ListView吗，可以快捷的生成数据类的列表。这里简单设置了模型为Course，指定了模板位置，然后重写了get_queryset()方法以取得当前用户相关的课程。在增删改的视图中，我们也需要重写get_queryset()方法。</p>
+<p>如果不想在每个CBV中都重写这一个方法，也就是说我们想为一些CBV提供特定的功能和行为，可以使用<em style="font-weight: 700">mixin</em>。</p>
+
+<h3><b>在CBV中使用mixin</b></h3>
+<p>对类来说，<a href="https://en.wikipedia.org/wiki/Mixin" target="_blank">Mixin</a>是一种特殊的多继承方式。通过Mixin可以给类附加一系列功能，自定义类的行为，就像是把一些功能和原来的功能混在一起，得到一个类具有之前两个类的功能，就像混合各种口味的冰淇淋。有两种情况一般都会使用mixins：
+</p>
+<ul>
+    <li>给类提供一系列可选的特性</li>
+    <li>在很多类中使用一种特定的方法</li>
+</ul>
+<p>Django为CBV提供了一系列mixins用来增强CBV的功能，具体可以查询<a
+        href="https://docs.djangoproject.com/en/2.1/topics/class-based-views/mixins/" target="_blank">官方文档</a>。</p>
+<p>我们准备建立一个mixin类，包含一个通用的方法，用于我们与课程相关的CBV中。修改courses应用的views.py，修改成如下内容：</p>
+<pre>
+from django.urls import reverse_lazy
+from django.views.generic.list import ListView
+from django.views.generic.edit import CreateView, UpdateView, DeleteView
+from .models import Course
+
+
+class OwnerMixin:
+    def get_queryset(self):
+        qs = super(OwnerMixin, self).get_queryset()
+        return qs.filter(owner=self.request.user)
+
+
+class OwnerEditMixin:
+    def form_valid(self, form):
+        form.instance.owner = self.request.user
+        return super(OwnerEditMixin, self).form_valid(form)
+
+
+class OwnerCourseMixin(OwnerMixin):
+    model = Course
+
+
+class OwnerCourseEditMixin(OwnerCourseMixin, OwnerEditMixin):
+    fields = ['subject', 'title', 'slug', 'overview']
+    success_url = reverse_lazy('manage_course_list')
+    template_name = 'courses/manage/course/form.html'
+
+
+class ManageCourseListView(OwnerCourseMixin, ListView):
+    template_name = 'courses/manage/course/list.html'
+
+
+class CourseCreateView(OwnerCourseEditMixin, CreateView):
+    pass
+
+
+class CourseUpdateView(OwnerCourseEditMixin, UpdateView):
+    pass
+
+
+class CourseDeleteView(OwnerCourseMixin, DeleteView):
+    template_name = 'courses/manage/course/delete.html'
+    success_url = reverse_lazy('manage_course_list')
+
+</pre>
+<p>
+    在新的views.py中，建立了两个mixin类OwnerMixin和OwnerEditMixin，将这些mixins和Django内置的ListView，CreateView，UpdateView，DeleteView一起使用。</p>
+<p>这里新建的mixin类和CBV视图解释如下：</p>
+<ol>
+    <li>OwnerMixin
+        <ul>
+            <li>get_queryset()：这个方法默认是ListView类用来获取该模型的全部数据对象，我们的mixin重写了该方法，让该方法只返回与当前用户request.user关联的查询结果。</li>
+            <li>OwnerMixin类还可以加载到任何处理模型owner字段的视图中。</li>
+        </ul>
+    </li>
+
+    <li>OwnerEditMixin
+        <ul>
+            <li>
+                form_valid()：所有使用了Django内置的ModelFormMixin的视图，都具有该方法。这个方法具体工作机制是：如CreateView和UpdateView这种需要处理表单数据的视图，当表单验证通过时，就会执行form_valid()方法。该方法的默认行为是保存数据对象，然后重定向到一个保存成功的URL。这里重写了该方法，自动给当前的数据对象设置上用户数据，以便能够保存，否则便会因为外键没有设置而无法保存。在之前的FBV内，我们都是在调用form.save()的时候要么传参数commit=False，要么先添加用户属性再保存。
+            </li>
+        </ul>
+    </li>
+
+    <li>OwnerCourseMixin(OwnerMixin)
+        <ul>
+            <li>继承OwnerMixin，包含重写的get_queryset()方法来查询与当前用户相关的数据</li>
+            <li>model：进行查询的模型，可以被所有CBV使用。</li>
+        </ul>
+    </li>
+
+    <li>OwnerCourseEditMixin(OwnerCourseMixin, OwnerEditMixin)
+        <ul>
+            <li>fields：指定CreateView和UpdateView等处理表单的视图在建立表单对象的时候使用的字段。</li>
+            <li>success_url：表单提交成功后的跳转地址，这里定义了一个URL名称，稍后会在路由中配置该名称</li>
+            <li>template_name：指定了模板地址</li>
+            <li>继承OwnerCourseMixin：拥有了指定模型为Course了重写后的get_queryset()功能</li>
+            <li>继承OwnerEditMixin：拥有了表单验证通过时给数据附加当前用户对象的功能</li>
+        </ul>
+    </li>
+    <li>ManageCourseListView(OwnerCourseMixin, ListView)
+        <ul>
+            <li>继承OwnerCourseMixin，拥有了查询当前用户关联数据，和指定模型为course的功能，</li>
+            <li>继承ListView，拥有了该内置CBV所有功能</li>
+        </ul>
+    </li>
+    <li>CourseCreateView(OwnerCourseEditMixin, CreateView)
+        <ul>
+            <li>继承OwnerCourseEditMixin，拥有了上边所有以Owner开头的mixin的功能</li>
+            <li>继承CreateView，拥有该内置CBV所有功能</li>
+        </ul>
+    </li>
+    <li>CourseUpdateView(OwnerCourseEditMixin, UpdateView)
+        <ul>
+            <li>继承OwnerCourseEditMixin，拥有了上边所有以Owner开头的mixin的功能</li>
+            <li>继承UpdateView，拥有该内置CBV所有功能</li>
+        </ul>
+    </li>
+    <li>CourseDeleteView(OwnerCourseMixin, DeleteView)
+        <ul>
+            <li>继承OwnerCourseMixin，拥有将模型设置为Course，重写get_queryset()方法的功能</li>
+            <li>继承DeleteView，拥有该内置CBV所有功能</li>
+        </ul>
+    </li>
+</ol>
+<p>原来的CBV编写方式继承内置CBV，然后根据需要一个个重写类的属性或者方法。改成使用mixin后，实际上是将各种配置分离到不同的类中，然后通过类继承关系，就想插件一样来修改类的设置。</p>
+<p>这里作者没有提到，但是应该默认大家知道的是Python对于类继承的MRO查找顺序，想要确保mixin生效，必须在继承关系中把mixin类放在内置CBV的左侧。</p>
+<p>如果觉得多继承关系看上去比较累，使用Pycharm 专业版可以在当前文件空白地方 <b>点击右键--Diagrams--Show Diagrams--Python Class Diagram</b> 查看当前文件的类图来了解继承关系。</p>
+
+
+<h3><b>使用用户组和权限</b></h3>
+<p>我们已经通过mixin建立好了所有的管理课程的视图。目前所有的已登录用户都可以访问我们的视图。但是课程相关的内容只能有讲师进行操作。在之前的项目中，我们只对用户设置了登录/未登录两种验证要求。随着需求的深入，现在就必须要使用用户权限设置了。</p>
+<p>Django的内置用户验证模块提供了权限系统，用于向用户和用户组分派权限。我们准备针对讲师建立一个用户组，然后给这个用户组内用户授予增删改课程的权限。</p>
+<p>启动站点，进入 http://127.0.0.1:8000/admin/auth/group/add/ ，然后建立一个新的Group，名字叫做Instructors，然后为其选择除了与Subject模型相关的以外的，所有与courses应用相关的权限。如下图所示：</p>
+<img src="http://img.conyli.cc/django2/C10-03.jpg" alt="">
+<p>可以看到，对于每个应用中的每个模型，都有三个权限can add, can change, can delete。选好之后，点击SAVE保存。</p>
+<p style="color: red">译者使用的Django 2.1是四个权限，还包括can view</p>
+<p>Django会为其中的模型自动设置权限，如果需要的话，也可以编写自定义权限。具体可以查看<a href="https://docs.djangoproject.com/en/2.1/topics/auth/customizing/#custom-permissions" target="_blank">官方文档</a>。</p>
+<p>打开 http://127.0.0.1:8000/admin/auth/user/add/ 添加一个用户，然后设置其为Instructors用户组的成员，如下图所示：</p>
+<img src="http://img.conyli.cc/django2/C10-04.jpg" alt="">
+<p>默认情况下，用户会继承其用户组设置的权限，也可以自行选择任意的单独权限。如果用户被设置成具有超级用户权限（即选中Superuser status），则自动具有全部权限，无需具体设置。</p>
+
+<h3><b>限制对CBV的访问</b></h3>
+<p>在用户权限内设置好了对于模型的权限，还需要限制用户对于视图的访问。这里使用两个django.contrib.auth提供的mixins来限制对视图的访问：</p>
+<ol>
+    <li>LoginRequiredMixin: 与 @login_required 装饰器功能一样</li>
+    <li>PermissionRequiredMixin: 允许具有特定权限的用户访问该视图</li>
+</ol>
+<p>编辑courses应用的views.py，新增如下导入代码：</p>
+<pre>
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+</pre>
+<p>让OwnerCourseMixin类继承LoginRequiredMixin类，然后添加属性：</p>
+<pre>
+class OwnerCourseMixin(OwnerMixin, <b>LoginRequiredMixin</b>):
+    model = Course
+    <b>fields = ['subject', 'title', 'slug', 'overview']</b>
+    <b>success_url = reverse_lazy('manage_course_list')</b>
+</pre>
+<p>然后让增删改视图都继承PermissionRequiredMixin，再配置一个 permission_required 属性：</p>
+<pre>
+class CourseCreateView(<b>PermissionRequiredMixin</b>, OwnerCourseEditMixin, CreateView):
+    <b>permission_required = 'courses.add_course'</b>
+
+
+class CourseUpdateView(<b>PermissionRequiredMixin</b>, OwnerCourseEditMixin, UpdateView):
+    <b>permission_required = 'courses.change_course'</b>
+
+
+class CourseDeleteView(<b>PermissionRequiredMixin</b>, OwnerCourseMixin, DeleteView):
+    template_name = 'courses/manage/course/delete.html'
+    success_url = reverse_lazy('manage_course_list')
+    <b>permission_required = 'courses.delete_course'</b>
+</pre>
+<p>PermissionRequiredMixin会检查用户是否具备在permission_required参数里指定的权限。现在视图就只能供指定权限的用户使用了。</p>
+<p>视图编写完毕之后，为视图配置url，先在courses应用中建立urls.py：</p>
+<pre>
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('mine/', views.ManageCourseListView.as_view(), name='manage_course_list'),
+    path('create/', views.CourseCreateView.as_view(), name='course_create'),
+    path('&lt;pk>/edit/', views.CourseUpdateView.as_view(), name='course_edit'),
+    path('&lt;pk>/delete/', views.CourseDeleteView.as_view(), name='course_delete'),
+]
+</pre>
+<p>再来配置项目的根路由：</p>
+<pre>
+from django.contrib import admin
+from django.urls import path, <b>include</b>
+from django.contrib.auth import views as auth_views
+
+urlpatterns = [
+    path('accounts/login/', auth_views.LoginView.as_view(), name='login'),
+    path('accounts/logout/', auth_views.LogoutView.as_view(), name='logout'),
+    path('admin/', admin.site.urls),
+    <b>path('course/', include('courses.urls')),</b>
+]
+</pre>
+<p>然后需要建立模板，在courses应用的templates/ 目录下建立如下目录和文件：</p>
+<pre>
+courses/
+    manage/
+        course/
+            list.html
+            form.html
+            delete.html
+</pre>
+<p>编辑其中的list.html：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}My courses{% endblock %}
+{% block content %}
+    &lt;h1>My courses&lt;/h1>
+    &lt;div class="module">
+        {% for course in object_list %}
+            &lt;div class="course-info">
+                &lt;h3>{{ course.title }}&lt;/h3>
+                &lt;p>
+                    &lt;a href="{% url "course_edit" course.id %}">Edit&lt;/a>
+                    &lt;a href="{% url "course_delete" course.id %}">Delete&lt;/a>
+                &lt;/p>
+            &lt;/div>
+        {% empty %}
+            &lt;p>You haven't created any courses yet.&lt;/p>
+        {% endfor %}
+        &lt;p>
+            &lt;a href="{% url "course_create" %}" class="button">Create new
+                course&lt;/a>
+        &lt;/p>
+    &lt;/div>
+{% endblock %}
+</pre>
+<p>这是供ManageCourseListView使用的视图。在这个视图里列出了所有的课程，然后生成对应的编辑和删除功能链接。</p>
+<p>启动站点，到 http://127.0.0.1:8000/accounts/login/?next=/course/mine/ 用一个在Instructors用户组内的用户登录，可以看到如下界面：</p>
+<img src="http://img.conyli.cc/django2/C10-05.jpg" alt="">
+<p>再来编辑form.html：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}
+    {% if object %}
+        Edit course "{{ object.title }}"
+    {% else %}
+        Create a new course
+    {% endif %}
+{% endblock %}
+{% block content %}
+    &lt;h1>
+        {% if object %}
+            Edit course "{{ object.title }}"
+        {% else %}
+            Create a new course
+        {% endif %}
+    &lt;/h1>
+    &lt;div class="module">
+        &lt;h2>Course info&lt;/h2>
+        &lt;form action="." method="post">
+            {{ form.as_p }}
+            {% csrf_token %}
+            &lt;p>&lt;input type="submit" value="Save course">&lt;/p>
+        &lt;/form>
+    &lt;/div>
+{% endblock %}
+</pre>
+<p>这个页面由CourseCreateView和CourseUpdateView进行操作，先检查object变量是否存在，如果存在则显示针对该对象的修改功能。如果不存在就建立一个新的Course对象。</p>
+<p>到 http://127.0.0.1:8000/course/mine/ 点击 CREATE NEW COURSE 按钮，可以看到如下界面：</p>
+<img src="http://img.conyli.cc/django2/C10-06.jpg" alt="">
+<p>输入课程内容后点击保存，可以看到如下界面：</p>
+<img src="http://img.conyli.cc/django2/C10-07.jpg" alt="">
+<p>最后来编写delete.html：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}Delete course{% endblock %}
+{% block content %}
+    &lt;h1>Delete course "{{ object.title }}"&lt;/h1>
+    &lt;div class="module">
+        &lt;form action="" method="post">
+            {% csrf_token %}
+            &lt;p>Are you sure you want to delete "{{ object }}"?&lt;/p>
+            &lt;input type="submit" class<b style="color:red">=</b>"button" value="Confirm">
+        &lt;/form>
+    &lt;/div>
+{% endblock %}
+</pre>
+<p style="color: red">注意原书的代码在submit按钮的class后边漏了一个"="号</p>
+<p>这个视图由DeleteView操作，负责确认删除课程。打开站点点击刚才的 Delete 链接，跳转到如下页面：</p>
+<img src="http://img.conyli.cc/django2/C10-08.jpg" alt="">
+<p>现在就建立了讲师组用户对课程进行增删改的功能。下一个大功能是为讲师组用户编写管理章节和内容的功能。</p>
+
+
+<h2><b>管理章节与内容</b></h2>
+<p>在上一节里建立了让讲师用户进行编辑课程的功能。这一章里来建立一个管理课程中章节和内容的关系，将为同时管理课程中的多个章节及其中不同的内容建立表单。章节和内容同样都需要按照特定的顺序记录在我们的CMS中。</p>
+
+
+<h3><b>在章节相关功能中使用表单集（Formsets）</b></h3>
+<p>
+    Django通过一个抽象层控制页面中的所有表单对象。一组表单对象被成为表单集。表单集由多个Form类或者ModelForm类的实例组成。表单集内的所有表单在提交的时候会一并提交，表单集可以控制显示的表单数量，对提交的最大表单数量做限制，也可以同时对其中的全部表单进行验证。</p>
+<p>表单集包含一个 is_valid() 方法用于一次验证所有表单。可以给表单集传参数让其每次显示多少个空白表单。表单集可以细分为普通form类构成表单集（通常的Formsets，官方文档<a
+        href="https://docs.djangoproject.com/en/2.1/topics/forms/formsets/" target="_blank">见此</a>）及有ModelForml类构成的表单集（model
+    formset，官方文档<a
+            href="https://docs.djangoproject.com/en/2.1/topics/forms/modelforms/#model-formsets" target="_blank">见此</a>）。
+</p>
+<p>由于一个课程由多个章节组成，方便运用表单集进行管理。在courses应用中建立forms.py：</p>
+<pre>
+from django import forms
+from django.forms.models import inlineformset_factory
+from .models import Course, Module
+
+ModuleFormSet = inlineformset_factory(Course, Module, fields=['title', 'description'], extra=2, can_delete=True)
+</pre>
+<p>我们使用内置的<code>inlineformset_factory()方法</code>构建了表单集<code>ModuleFormSet</code>。内联表单是在普通的表单集之上的一个抽象。这个函数允许我们动态的通过互相关联的两个数据类建立表单集。
+</p>
+<p>对这个表单集我们应用的如下字段：</p>
+<ul>
+    <li>fields：表示表单集中每个表单的字段</li>
+    <li>extra：设置每次显示表单集时候的表单数量</li>
+    <li>can_delete：该项如果设置True，Django会在每个表单内包含一个布尔字段（被渲染成为一个CHECKBOX类型的INPUT元素），供用户选中需要删除的表单</li>
+</ul>
+<p>编辑courses应用的views.py，增加下列代码：</p>
+<pre>
+from django.shortcuts import redirect, get_object_or_404
+from django.views.generic.base import TemplateResponseMixin, View
+from .forms import ModuleFormSet
+
+class CourseModuleUpdateView(TemplateResponseMixin, View):
+    template_name = 'courses/manage/module/formset.html'
+    course = None
+
+    def get_formset(self, data=None):
+        return ModuleFormSet(instance=self.course, data=data)
+
+    def dispatch(self, request, pk):
+        self.course = get_object_or_404(Course, id=pk, owner=request.user)
+        return super(CourseModuleUpdateView, self).dispatch(request, pk)
+
+    def get(self, request, *args, **kwargs):
+        formset = self.get_formset()
+        return self.render_to_response({'course': self.course, 'formset': formset})
+
+    def post(self, request, *args, **kwargs):
+        formset = self.get_formset(data=request.POST)
+        if formset.is_valid():
+            formset.save()
+            return redirect('manage_course_list')
+        return self.render_to_response({'course': self.course, 'formset': formset})
+</pre>
+<p>编写了一个新的CBV视图 CourseModuleUpdateView 用于对一个课程的章节进行增删改。这个视图继承了以下的mixins和视图：</p>
+<ol>
+    <li>TemplateResponseMixin：这个mixin提供的功能是渲染模块并且返回HTTP响应，需要一个 template_name 属性用于指定模板位置，提供了一个 render_to_response()
+        给模板传入上下文并且渲染之
+    </li>
+    <li>View：基础的CBV视图，由Django内置提供。简单继承该类就可以得到一个基本的CBV。</li>
+</ol>
+<p>在这个视图中，实现了如下的方法：</p>
+<ol>
+    <li>get_formset()：这个方法是formset对象的过程，为了避免重复编写所以写了一个方法。功能是根据获得的Course对象和可选的data参数来构建一个formset对象。</li>
+    <li>
+        dispatch()：这个方法是View类的方法，是一个分发器，HTTP请求进来之后，最先执行的是dispatch()方法。该方法把小写的HTTP请求的种类分发给同名方法：例如GET请求会被发送到get()方法进行处理，POST请求会被发送到post()方法进行处理。在这个方法里。使用get_object_or_404()加一个特定的id，从Course类中获取对象。把这段代码包含在dispatch()方法中是因为无论GET还是POST请求，都会用Course对象。在请求一进来的时候，就把Course对象存入self.course然后再分发请求。
+    </li>
+    <li>get()：处理GET请求。建立一个空的 ModuleFormSet 然后渲染模板，使用了TemplateResponseMixin提供render_to_response()方法</li>
+    <li>post()：处理POST请求，在这个方法中执行了如下动作：
+        <ol>
+            <li>使用传入的POST数据建立ModuleFormSet</li>
+            <li>执行is_valid()验证所有表单</li>
+            <li>验证通过则使用save()方法保存，这时增删改都会写入数据库。然后重定向到manage_course_list URL。如果formset没通过，就返回当前表单（已经带有错误信息）。</li>
+        </ol>
+    </li>
+</ol>
+<p>编辑courses应用中的urls.py，为刚写的视图配置URL：</p>
+<pre>
+path('&lt;pk>/module/', views.CourseModuleUpdateView.as_view(), name='course_module_update'),
+</pre>
+<p>然后在courses应用中建立templates/courses/manage/module/formset.html 目录及文件，然后编辑 formset.html：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}
+    Edit "{{ course.title }}"
+{% endblock %}
+{% block content %}
+    &lt;h1>Edit "{{ course.title }}"&lt;/h1>
+    &lt;div class="module">
+        &lt;h2>Course modules&lt;/h2>
+        &lt;form action="" method="post">
+            {{ formset }}
+            {{ formset.management_form }}
+            {% csrf_token %}
+            &lt;input type="submit" class="button" value="Save modules">
+        &lt;/form>
+    &lt;/div>
+{% endblock %}
+</pre>
+<p>在这个模板中，建立了一个表单元素 &lt;form> ，其中包含了formset对象，还包含了一个 <code>{{ formset.management_form }}</code>
+    对象。这个模板包含隐藏的字段用于控制显示起始，总计，最小和最大编号的表单。可以看到建立表单集比单纯使用一个表单要复杂很多。</p>
+<p>编辑courses/templates/course/list.html，为编辑该课程的module增加一行：</p>
+<pre>
+&lt;a href="{% url "course_edit" course.id %}">Edit&lt;/a>
+&lt;a href="{% url "course_delete" course.id %}">Delete&lt;/a>
+<b>&lt;a href="{% url "course_module_update" course.id %}">Edit modules&lt;/a></b>
+</pre>
+<p>现在启动站点，到 http://127.0.0.1:8000/course/mine/ 建立一个课程然后点击 Edit modules，可以看到如下页面：</p>
+<img src="http://img.conyli.cc/django2/C10-09.jpg" alt="">
+<p>这个表单集合包含了该课程中的每个章节，然后还多出来2个空白的表单可供填写，这是因为我们设置了extra=2。输入两个新的章节内容，然后保存表单，再进编辑页面，可以看到又多出来了两个空白表单。</p>
+
+<h3><b>向章节内增加内容</b></h3>
+<p>
+    现在的章节编辑部分仅有标题和说明，以及一个是否删除的字段。现在要为章节添加具体的内容。在之前我们定义了四种内容对应四个模型：文字，图片，文件和视频。可能会考虑建立四个不同的视图操作这四个不同的类，但这里我们采用更加通用的方式：建立一个视图来对这四个类进行增删改。</p>
+<p>编辑courses.应用中的views.py文件，添加如下代码：</p>
+<pre>
+from django.forms.models import modelform_factory
+from django.apps import apps
+from .models import Module, Content
+
+
+class ContentCreateUpdateView(TemplateResponseMixin, View):
+    module = None
+    model = None
+    obj = None
+    template_name = 'courses/manage/content/form.html'
+
+    def get_model(self, model_name):
+        if model_name in ['text', 'video', 'image', 'file']:
+            return apps.get_model(app_label='courses', model_name=model_name)
+        return None
+
+    def get_form(self, model, *args, **kwargs):
+        Form = modelform_factory(model, exclude=['owner', 'order', 'created', 'updated'])
+        return Form(*args, **kwargs)
+
+    def dispatch(self, request, module_id, model_name, id=None):
+        self.module = get_object_or_404(Module, id=module_id, course__owner=request.user)
+        self.model = self.get_model(model_name)
+        if id:
+            self.obj = get_object_or_404(self.model, id=id, owner=request.user)
+        return super(ContentCreateUpdateView, self).dispatch(request, module_id, model_name, id)
+</pre>
+<p>这是ContentCreateUpdateView的第一部分。这个类用于建立和更新章节中的内容，这个类定义了如下方法：</p>
+<ol>
+    <li>get_model()：检查给出的名字是否在指定的四个类名中，然后用Django的apps模块，从courses应用中取出对应的模块，如果没有找到，就返回None</li>
+    <li>get_form()：使用内置的modelform_factory()方法建立表单集，去掉了四个指定的字段，使用剩下的字段建立。这么做，我们可以不考虑具体是哪个模型，只去掉通用的字段保留剩下的字段。</li>
+    <li>dispatch()：这个方法接收下列的URL参数，然后为当前对象设置module和model属性：
+        <ul>
+            <li>module_id：章节的id</li>
+            <li>model_name：内容模型的名称</li>
+            <li>id：要更新的内容的id，默认值为None，后续视图处理时当成新建内容。</li>
+        </ul>
+    </li>
+</ol>
+<p>然后来编写该视图的get()和post()方法：</p>
+<pre>
+def get(self, request, module_id, model_name, id=None):
+    form = self.get_form(self.model, instance=self.obj)
+    return self.render_to_response({'form': form, 'object': self.obj})
+
+
+def post(self, request, module_id, model_name, id=None):
+    form = self.get_form(self.model, instance=self.obj, data=request.POST, files=request.FILES)
+    if form.is_valid():
+        obj = form.save(commit=False)
+        obj.owner = request.user
+        obj.save()
+        if not id:
+            # 新内容
+            Content.objects.create(module=self.module, item=obj)
+        return redirect('module_content_list', self.module.id)
+    return self.render_to_response({'form': form, 'object': self.obj})
+</pre>
+<p>这两个方法解释如下：</p>
+<ul>
+    <li>get()：处理GET请求。通过get_form()方法拿到需要修改的四种内容之一生成的表单。由于没有id，前置的dispatch方法里不设置self.obj，所以instance=None，表示新建</li>
+    <li>
+        post()：处理POST请求。通过传入的所有URL参数，取得表单集对象，然后进行验证。如果验证通过，给当前对象设置上user属性，然后保存。如果没有传入id，说明是新建内容，需要在Content中追加一条记录关联到module对象和新建的内容对象。
+    </li>
+</ul>
+<p>编辑courses应用的urls.py，为新视图配置URL：</p>
+<pre>
+    path('module/&lt;int:module_id>/content/&lt;model_name>/create/', views.ContentCreateUpdateView.as_view(),
+         name='module_content_create'),
+    path('module/&lt;int:module_id>/content/&lt;model_name>/&lt;id>/', views.ContentCreateUpdateView.as_view(),
+         name='module_content_update'),
+</pre>
+<p>这两条路由解释如下：</p>
+<ul>
+    <li>module_content_create：用于建立新内容的URL，带有 module_id 和 model_name 两个参数，第一个是用来取得对应的module，第二个用来取得对应的内容数据模型。</li>
+    <li>module_content_update：用于修改原有内容的URL，除了带有 module_id 和 model_name 两个参数之外，还带有id用于确定具体修改哪一个内容对象。</li>
+    <li></li>
+</ul>
+<p>在courses/manage/目录下建立一个新目录叫content，再建立courses/manage/content/form.html：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}
+    {% if object %}
+        Edit content "{{ object.title }}"
+    {% else %}
+        Add a new content
+    {% endif %}
+{% endblock %}
+{% block content %}
+    &lt;h1>
+        {% if object %}
+            Edit content "{{ object.title }}"
+        {% else %}
+            Add a new content
+        {% endif %}
+    &lt;/h1>
+    &lt;div class="module">
+        &lt;h2>Course info&lt;/h2>
+        &lt;form action="" method="post" enctype="multipart/form-data">
+            {{ form.as_p }}
+            {% csrf_token %}
+            &lt;p>&lt;input type="submit" value="Save content">&lt;/p>
+        &lt;/form>
+    &lt;/div>
+{% endblock %}
+</pre>
+<p>这是视图ContentCreateUpdateView控制的模板。在这个模板里，使用了一个object变量，如果object变量不为None，说明在修改一个已经存在的内容。如果object变量为None，说明在新建一个内容。</p>
+<p>&lt;form&gt;标签中的属性 enctype="multipart/form-data" 是因为可能会有图片和文件上传。</p>
+<p>启动站点，到 http://127.0.0.1:8000/course/mine/ 点击任何一个已经存在的课程的Edit modules，之后新建一个module。</p>
+<p>然后到python shell中来进行一些测试，首先取到最后一个建立的module对象：</p>
+<pre>
+>>> from courses.models import Module
+>>> Module.objects.latest('id').id
+6
+</pre>
+<p>取到了这个id之后， 打开 http://127.0.0.1:8000/course/module/6/content/image/create/ ，把6替换成你实际取到的结果，可以看到下边的页面：</p>
+<img src="http://img.conyli.cc/django2/C10-10.jpg" alt="">
+<p>不要提交这个表单，如果提交会报错，因为我们还没有定义module_content_list URL。</p>
+<p>现在还需要一个视图用来删除内容。编辑courses应用的views.py：</p>
+<pre>
+class ContentDeleteView(View):
+    def post(self, request, id):
+        content = get_object_or_404(Content, id=id, module__course__owner=request.user)
+        module = content.module
+        content.item.delete()
+        content.delete()
+        return redirect('module_content_list', module.id)
+</pre>
+<p>这个ContentDeleteView视图获取ID参数，通过content表拿到关联的对象，燃烧删除该对象，再把content中的该行也删除，之后重定向到module_content_list URL，现在就在courses应用的urls.py中设置该URL:</p>
+<pre>
+    path('content/&lt;int:id>/delete/', views.ContentDeleteView.as_view(), name='module_content_delete'),
+</pre>
+<p>现在讲师用户就可以增删改内容了。</p>
+
+<h3><b>管理章节与内容</b></h3>
+<p>在上一节里编写好了增删改的视图，现在需要一个视图将一个课程的全部Module和其中的Content按照顺序展示出来：</p>
+<p>编辑courses应用的views.py，增加如下代码：</p>
+<pre>
+class ModuleContentListView(TemplateResponseMixin, View):
+    template_name = 'courses/manage/module/content_list.html'
+
+    def get(self, request, module_id):
+        module = get_object_or_404(Module,
+                                   id=module_id,
+                                   course__owner=request.user)
+        return self.render_to_response({'module': module})
+</pre>
+<p>这个视图通过一个指定的Module对象的id和当前用户，来获取Module对象，然后为该对象渲染一个模板。</p>
+<p>在courses应用的urls.py内加入该视图的路由：</p>
+<pre>
+path('module/&lt;int:module_id>/', views.ModuleContentListView.as_view(), name='module_content_list'),
+</pre>
+<p>在templates/courses/manage/module/目录中新建content_list.html：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}
+    Module {{ module.order|add:1 }}: {{ module.title }}
+{% endblock %}
+{% block content %}
+    {% with course=module.course %}
+        &lt;h1>Course "{{ course.title }}"&lt;/h1>
+        &lt;div class="contents">
+            &lt;h3>Modules&lt;/h3>
+            &lt;ul id="modules">
+                {% for m in course.modules.all %}
+                    &lt;li data-id="{{ m.id }}" {% if m == module %}
+                        class="selected"{% endif %}>
+                        &lt;a href="{% url "module_content_list" m.id %}">
+                            &lt;span>
+                            Module &lt;span class="order">{{ m.order|add:1 }}&lt;/span>
+                            &lt;/span>
+                            &lt;br>
+                            {{ m.title }}
+                        &lt;/a>
+                    &lt;/li>
+                {% empty %}
+                    &lt;li>No modules yet.&lt;/li>
+                {% endfor %}
+            &lt;/ul>
+            &lt;p>&lt;a href="{% url "course_module_update" course.id %}">
+                Edit modules&lt;/a>&lt;/p>
+        &lt;/div>
+        &lt;div class="module">
+            &lt;h2>Module {{ module.order|add:1 }}: {{ module.title }}&lt;/h2>
+            &lt;h3>Module contents:&lt;/h3>
+            &lt;div id="module-contents">
+                {% for content in module.contents.all %}
+                    &lt;div data-id="{{ content.id }}">
+                        {% with item=content.item %}
+                            &lt;p>{{ item }}&lt;/p>
+                            <b>&lt;a href="#">Edit&lt;/a></b>
+                            &lt;form action="{% url "module_content_delete" content.id %}"
+                                  method="post">
+                                &lt;input type="submit" value="Delete">
+                                {% csrf_token %}
+                        &lt;/form>
+                        {% endwith %}
+                    &lt;/div>
+                {% empty %}
+                    &lt;p>This module has no contents yet.&lt;/p>
+                {% endfor %}
+            &lt;/div>
+            &lt;h3>Add new content:&lt;/h3>
+            &lt;ul class="content-types">
+                &lt;li>&lt;a href="{% url "module_content_create" module.id "text" %}">
+                    Text&lt;/a>&lt;/li>
+                &lt;li>&lt;a href="{% url "module_content_create" module.id "image" %}">
+                    Image&lt;/a>&lt;/li>
+                &lt;li>&lt;a href="{% url "module_content_create" module.id "video" %}">
+                    Video&lt;/a>&lt;/li>
+                &lt;li>&lt;a href="{% url "module_content_create" module.id "file" %}">
+                    File&lt;/a>&lt;/li>
+            &lt;/ul>
+        &lt;/div>
+    {% endwith %}
+{% endblock %}
+</pre>
+<p>这是用来展示该课程中全部Module和内容的模板。首先迭代全部的module对象，显示在侧边栏中，然后针对每个Module，通过content.item迭代其中的相关的所有内容进行展示，然后配上链接。</p>
+<p>注意加粗行，该行用于显示编辑该内容的链接，我们想知道每个item对象究竟是text, video, image或者file的哪一种，因为我们需要模型的名称传给用来修改模型的视图。除了这个，我们可以在模板中按照类别单独把每个内容展示出来。对于一个数据对象，可以通过_meta_属性获取该数据所属的模型类，但Django不允许在视图中使用以下划线开头的模板变量或者属性，以防访问到私有属性或方法。可以通过编写一个自定义的模板filter来解决：</p>
+<p>在courses应用中建立如下目录和文件：</p>
+<pre>
+templatetags/
+    __init__.py
+    course.py
+</pre>
+<p>在其中的course.py中编写：</p>
+<pre>
+from django import template
+
+register = template.Library()
+
+@register.filter
+def model_name(obj):
+    try:
+        return obj._meta.model_name
+    except AttributeError:
+        return None
+</pre>
+<p>编写了一个叫做 model_name 的模板filter，在模板里可以通过 object|model_name 来获得object所属的模型名称。</p>
+<p>编辑刚才的 templates/courses/manage/module/content_list.html，在{% extend %}的下一行添加：</p>
+<pre>
+{% load course %}
+</pre>
+<p>然后找到：</p>
+<pre>
+&lt;p>{{ item }}&lt;/p>
+&lt;a href="#">Edit&lt;/a>
+</pre>
+<p>修改成：</p>
+<pre>
+&lt;p>{{ item }} ({{ item|model_name }})&lt;/p>
+&lt;a href="{% url "module_content_update" module.id item|model_name item.id %}">Edit&lt;/a>
+</pre>
+<p>使用了自定义模板filter之后，我们在模板中显示item对象时，就可以通过对象所属模型的名称来生成编辑链接了。编辑courses/manage/course/list.html，在几个链接的地方增加一个列表页的链接：</p>
+<pre>
+&lt;a href="{% url "course_module_update" course.id %}">Edit modules&lt;/a>
+<b>{% if course.modules.count > 0 %}</b>
+    <b>&lt;a href="{% url "module_content_list" course.modules.first.id %}">Manage contents&lt;/a></b>
+<b>{% endif %}</b>
+</pre>
+<p>这个新连接跳转到新的列表页，即显示第一个module的内容。</p>
+<p>打开 http://127.0.0.1:8000/course/mine/ 可以看到页面中多出来了Manage contents，点击之后如下图所示：</p>
+<img src="http://img.conyli.cc/django2/C10-11.jpg" alt="">
+<p>这个页面还带了链接到添加四种类型的内容界面。实际添加一些内容然后看一下页面效果，具体内容会显示在右侧：</p>
+<img src="http://img.conyli.cc/django2/C10-12.jpg" alt="">
+<p>这样内容管理系统就做好了。</p>
+
+<h3><b>重新排列章节和内容的顺序</b></h3>
+<p>我们需要给用户提供一个简单的可以重新排序的方法。通过JavaScrip的拖动插件来实现用户通过拖动就可以重新排列章节和内容的顺序。在用户结束拖动的时候，我们使用AJAX发送请求来记录当前的新顺序。</p>
+
+<h4><b>使用django-braces模块中的mixins</b></h4>
+<p>django-braces是一个第三方模块，包含了一系列通用的Mixin，为CBV提供额外的功能。可以查看其<a href="https://django-braces.readthedocs.io/en/latest/" target="_blank">官方文档</a>来获得完整的mixin列表。</p>
+<p>我们要使用django-braces中下列mixin：</p>
+<ul>
+    <li>CsrfExemptMixin：在POST中不检查CSRF，为了让AJAX请求更简单一些，就不使用验证CSRF了。（译者，不推荐该方法）</li>
+    <li>JsonRequestResponseMixin：以JSON字符串形式解析请求中的数据，并且序列化响应数据为JSON格式，带有application/json头部信息</li>
+</ul>
+<p>安装django-braces：</p>
+<pre>
+pip install django-braces==1.13.0
+</pre>
+<p>这个模块也没更新过。我们需要一个视图，能够接受JSON格式的新的模块顺序。编辑courses应用的views.py增加下列代码：</p>
+<pre>
+from braces.views import CsrfExemptMixin, JsonRequestResponseMixin
+
+class ModuleOrderView(CsrfExemptMixin, JsonRequestResponseMixin, View):
+
+    def post(self, request):
+        for id, order in self.request_json.items():
+            Module.objects.filter(id=id, course__owner=request.user).update(order=order)
+        return self.render_json_response({'saved': 'OK'})
+</pre>
+<p>这个视图的逻辑就是拿到JSON数据后，对于其中的每一条记录，更新module的order字段。</p>
+<p>基于类似的逻辑，来编写章节内容的重新排列视图，继续追加代码：</p>
+<pre>
+class ContentOrderView(CsrfExemptMixin, JsonRequestResponseMixin, View):
+    def post(self, request):
+        for id, order in self.request_json.items():
+            Content.objects.filter(id=id, module__course__owner=request.user).update(order=order)
+        return self.render_json_response({'saved': 'OK'})
+</pre>
+<p>然后编辑courses应用的urls.py，为这两个视图配置URL：</p>
+<pre>
+    path('module/order/', views.ModuleOrderView.as_view(), name='module_order'),
+    path('content/order/', views.ContentOrderView.as_view(), name='content_order'),
+</pre>
+<p>最后，需要把拖动功能集成到模板中。使用jQuery UI 库来完成这个功能。jQuery UI基于jQuery，提个了一系列的界面互动操作，效果和插件。会使用其中的sortable 元素。首先，需要把jQuery加载到母版中。打开base.html，在加载jQuery的script标签之后加入jQuery UI。</p>
+<pre>
+&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js">&lt;/script>
+<b>&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.css">&lt;/script></b>
+</pre>
+<p>依然使用了国内的CDN。由于jQueryUI依赖jQuery，所以要在其后载入。之后编辑courses/manage/module/content_list.html，在底部添加如下代码：</p>
+<pre>
+{% block domready %}
+$('#modules').sortable({
+    stop: function (event, ui) {
+        let modules_order = {};
+        $('#modules').children().each(function () {
+            $(this).find('.order').text($(this).index() + 1);
+            modules_order[$(this).data('id')] = $(this).index();
+        });
+        $.ajax({
+            type: 'POST',
+            url: '{% url "module_order" %}',
+            contentType: 'application/json; charset=utf-8',
+            dataType: 'json',
+            data: JSON.stringify(modules_order)
+        });
+    }
+});
+
+$('#module-contents').sortable({
+    stop: function (event, ui) {
+        let contents_order = {};
+        $('#module-contents').children().each(function () {
+            contents_order[$(this).data('id')] = $(this).index();
+        });
+        $.ajax({
+            type: 'POST',
+            url: '{% url "content_order" %}',
+            contentType: 'application/json; charset=utf-8',
+            dataType: 'json',
+            data: JSON.stringify(contents_order),
+        });
+    }
+});
+{% endblock %}
+</pre>
+<p>原书的代码没有使用let进行变量声明，此处按照ES5的要求补上了。</p>
+<p>这段代码加载在 {% domready %} 块中，会在页面DOM加载完成后立刻执行。在代码中为所有的侧边栏中的module列表定义了一个sortable方法，为内容也定义了一个同样功能的方法。这个方法执行如下逻辑：</p>
+<ol>
+    <li>通过jQuery的ID选择器定位到存放module（或content)的列表元素。</li>
+    <li>为两个使用了jQueryUI中的sortable方法，定义了一个stop函数，用于用户停止拖动后触发事件</li>
+    <li>建立了一个新的空字典（JS里叫做对象），其中的键是module的ID（LI元素的data-id属性的值），值是重新排列后的值。</li>
+    <li>遍历拖动后的子元素，取得此时每个元素的data-id和此时在列表中的索引，然后组成一个JSON对象。同时修改页面中显示的顺序文本为index+1</li>
+    <li>通过AJAX发送JSON数据到后端进行处理，记录此时的顺序。</li>
+</ol>
+<p>启动站点，重新加载编辑内容页面，试着拖动一下，然后退出页面再进来，看一下顺序是不是已经更新为用户拖动后的顺序。页面如下所示：</p>
+<img src="http://img.conyli.cc/django2/C10-13.jpg" alt="">
+<p>这样就实现了拖动功能</p>
+
+<h1><b>总结</b></h1>
+<p>这一章学习了如何建立一个CMS。使用了基于类的视图，类的mixin，数据模型类的多继承和自定义字段等方式，同时涉及的高级的Python编程技巧和Django深度应用。还使用了表单集来控制一次性填写多个表单的方式。还学习了基本的用户权限管理。</p>
+<p>CMS系统是很多网站的核心系统，第一章的博客，也可以通过采用本章学习到的内容，将其改造成为一个多用户的博客系统。在下一章，将学习为学生用户建立注册和选课系统的功能。这中间还将学习如何应用Django的缓存系统。</p>
+</body>
+</html>
