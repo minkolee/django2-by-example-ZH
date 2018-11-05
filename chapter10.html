@@ -215,49 +215,47 @@ python manage.py loaddata subjects.json
 <p>如果在进行数据模型移植的时候就加载fixture生成初始数据，可以查看<a href="https://docs.djangoproject.com/en/2.0/topics/migrations/#data-migrations"
                                    target="_blank">https://docs.djangoproject.com/en/2.0/topics/migrations/#data-migrations</a>。</p>
 
-<h3 id="c10-2-3"><span class="title">2.3</span>创建不同类型内容的模型</h3>
-<p>在课程中会向用户提供不同的内容，包括文字，图片，文件和视频等。我们必须采用一个能够存储各种文件类型的模型。在第二个项目的追踪用户行为中，我们学会了使用generic通用关系来建立指向项目内任何一个数据模型的松散外键关系。这里我们建立一个Content模型，用于存放章节中的内容，定义一个通用关系来连接任何类型的内容。</p>
-<p>编辑courses应用的models.py，增加下列内容：</p>
+<h2 id="c10-3"><span class="title">3</span>创建不同类型内容的模型</h2>
+<p>在课程中会向用户提供不同类型的内容，包括文字，图片，文件和视频等。我们必须采用一个能够存储各种文件类型的通用模型。在第六章中，我们学会了使用通用关系来创建与项目内任何一个数据模型的关系。这里我们建立一个Content模型，用于存放章节中的内容，定义一个通用关系来连接任何类型的内容。</p>
+<p>编辑<code>courses</code>应用的<code>models.py</code>文件，增加下列内容：</p>
 <pre>
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
-
+</pre>
+<p>之后在文件末尾添加下列内容：</p>
+<pre>
 class Content(models.Model):
     module = models.ForeignKey(Module, related_name='contents', on_delete=models.CASCADE)
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     object_id = models.PositiveIntegerField()
     item = GenericForeignKey('content_type', 'object_id')
 </pre>
-<p>这就是Content类，设置外键关联到了Module类，同时设置了与ContentType类的通用关联关系，使得Content类可以从项目中的任何数据类的具体对象进行关联。</p>
-<p>这里再复习一下，我们通过三个字段建立GenericForeignKey关系：</p>
+<p>这就是<code>Content</code>模型，设置外键关联到了<code>Module</code>模型，同时设置了与<code>ContentType</code>模型的通用关联关系，可以从获取任意模型的内容。复习一下创建通用关系的所需的三个字的：</p>
 <ol>
-    <li>content_type：一个外键用于关联到ContentType类。</li>
-    <li>object_id： 对象的id，使用正整数字段。</li>
-    <li>item: 通用关联关系，通过合并上两个字段来进行关联。</li>
+    <li><code>content_type</code>：一个外键用于关联到<code>ContentType</code>模型。</li>
+    <li><code>object_id</code>： 对象的id，使用<code>PositiveIntegerField</code>字段。</li>
+    <li><code>item</code>: 通用关联关系字段，通过合并上两个字段来进行关联。</li>
 </ol>
-<p>在这个Content类中，只有module, content_type, object_id三个字段会实际生成在数据库中，item字段的关系是ORM引擎构建的，不真正被写进数据库中。</p>
-<p>下一步的工作是建立每种具体内容类型的数据库，这些数据库有一些相同的字段用于标识基本信息，也有不同的字段存放具体信息。</p>
+<p><code>content_type</code>, <code>object_id</code>两个字段会实际生成在数据库中，<code>item</code>字段的关系是ORM引擎构建的，不真正被写进数据库中。</p>
+<p>下一步的工作是建立每种具体内容类型的数据库，这些数据库有一些相同的字段用于标识基本信息，也有不同的字段存放该模型独特的信息。</p>
 
-<h3><b>使用数据模型继承关系</b></h3>
-<p>Django支持数据模型之间的继承关系，这和Python程序的标准类继承关系很相似，Django提供了以下三种继承的方式：</p>
-<ol>
-    <li>Abstarct model： 接口模型继承，用于方便的向不同的数据模型中添加相同的信息，这种继承方式中的基类不会在数据库中建立数据表，子类会建立数据表。</li>
-    <li>Multi-table model inheritance： 多表模型继承，在继承关系中的每个表都被认为是一个完整的模型时采用此方法，继承关系中的每一个表都会实际在数据库中创建数据表。</li>
-    <li>Proxy models：代理模型继承，在继承的时候需要改变模型的行为时使用，例如加入额外的方法，修改默认的模型管理器或使用新的Meta类设置，此种继承不会在数据库中创建数据表。</li>
-</ol>
-<p>译者的个人理解：三种模式其实很简单：</p>
-<ol>
-    <li>Abstarct model 抽象基类继承方法：概念类似Python的接口类（ABC类）继承，作为基类的接口类只写共同的接口，基类自然不会被写入数据库。</li>
-    <li>Multi-table model inheritance 多表模型继承：实际的功能是通过一对一字段扩展表，和“继承”两个字关系不大。</li>
-    <li>Proxy model 代理模型继承：这种继承类似于Python中的经典类继承，子类可以扩展父类的方法和属性。</li>
-</ol>
 
-<h4><b>Abstract models 接口模型</b></h4>
-<p>接口模型本质上就是接口类，里边定义了所有需要包含在子模型中的字段。Django不会为接口模型创建任何数据库中的数据表。继承接口模型的子模型必须将这些字段完善，每一个子模型会创建数据表，表中的字段包括继承自接口模型的字段和子模型中自定义的字段。</p>
+<h3 id="c10-3-1"><span class="title">3.1</span>模型的继承</h3>
+<p>Django支持数据模型之间的继承关系，这和Python程序的类继承关系很相似，Django提供了以下三种继承的方式：</p>
+<ol>
+    <li><b>Abstarct model</b>： 接口模型继承，用于方便的向不同的数据模型中添加相同的信息，这种继承方式中的基类不会在数据库中建立数据表，子类会建立数据表。</li>
+    <li><b>Multi-table model inheritance</b>： 多表模型继承，在继承关系中的每个表都被认为是一个完整的模型时采用此方法，继承关系中的每一个表都会实际在数据库中创建数据表。</li>
+    <li><b>Proxy models</b>：代理模型继承，在继承的时候需要改变模型的行为时使用，例如加入额外的方法，修改默认的模型管理器或使用新的Meta类设置，此种继承不会在数据库中创建数据表。</li>
+</ol>
+<p>让我们详细看一下这三种方式。</p>
+
+<h4 id="c10-3-1-1"><span class="title">3.1.1</span>Abstract models 抽象基类继承</h4>
+<p>接口模型本质上是一个基类类，其中定义了所有需要包含在子模型中的字段。Django不会为接口模型创建任何数据库中的数据表。继承接口模型的子模型必须将这些字段完善，每一个子模型会创建数据表，表中的字段包括继承自接口模型的字段和子模型中自定义的字段。</p>
 <p>为了标记一个模型为接口模型，在其Meta设置中，必须设置<code>abstract = True</code>，django就会认为该模型是一个接口模型，不会创建数据表。子模型只需要继承该模型即可。</p>
-<p>下边的例子是如何建立一个接口模型和子模型：</p>
+<p>下边的例子是如何建立一个接口模型<code>Content</code>和子模型<code>Text</code>：</p>
 <pre>
 from django.db import models
+
 class BaseContent(models.Model):
     title = models.CharField(max_length=100)
     created = models.DateTimeField(auto_now_add=True)
@@ -268,13 +266,14 @@ class BaseContent(models.Model):
 class Text(BaseContent):
     body = models.TextField()
 </pre>
-<p>在这个例子中，实际在数据库中创建的是Text类对应的数据表，包含title，created和body字段。</p>
+<p>在这个例子中，实际在数据库中创建的是<code>Text</code>类对应的数据表，包含<code>title</code>，<code>created</code>和<code>body</code>字段。</p>
 
-<h4><b>Multi-table model inheritance 多表继承</b></h4>
-<p>多表继承关系中的每一个表都是完整的数据模型。对于继承关系，Django会自动在子模型中创建一个一对一关系的外键连接到父模型。这种关系与其说类似于Python中的继承，倒不如说是扩展表。</p>
+<h4 id="c10-3-1-2"><span class="title">3.1.2</span>Multi-table model inheritance 多表继承</h4>
+<p>多表继承关系中的每一个表都是完整的数据模型。对于继承关系，Django会自动在子模型中创建一个一对一关系的外键连接到父模型。</p>
 <p>要使用该种继承方式，必须继承一个已经存在的模型，django会把父模型和子模型都写入数据库，下边是一个例子：</p>
 <pre>
 from django.db import models
+
 class BaseContent(models.Model):
     title = models.CharField(max_length=100)
     created = models.DateTimeField(auto_now_add=True)
@@ -282,12 +281,11 @@ class BaseContent(models.Model):
 class Text(BaseContent):
     body = models.TextField()
 </pre>
-<p>Django会将两张表都写入数据库，Text表中除了body字段，还有一个一对一的外键关联到BaseContent表。</p>
+<p>Django会将两张表都写入数据库，<code>Text</code>表中除了<code>body</code>字段，还有一个一对一的外键关联到<code>BaseContent</code>表。</p>
 
-<h4><b>Proxy models 代理模型</b></h4>
-<p>代理模型用于改变类的行为，例如增加额外的方法或者不同的Meta设置。采用代理模型继承方法，只有被继承的模型才会被写入数据库，但操作代理模型和被继承的模型都可以影响数据库中的数据表。在Meta中指定
-    <code>proxy=True</code> 就可以建立一个代理模型。</p>
-<p>下边是一个建立代理模型的例子：</p>
+<h4 id="c10-3-1-3"><span class="title">3.1.3</span>Proxy models 代理模型</h4>
+<p>代理模型用于改变类的行为，例如增加额外的方法或者不同的Meta设置。父模型和子模型操作一张相同的数据表。<code>Meta</code>类中指定<code>proxy=True</code> 就可以建立一个代理模型。</p>
+<p>下边是一个创建代理模型的例子：</p>
 <pre>
 from django.db import models
 from django.utils import timezone
@@ -304,13 +302,12 @@ class OrderedContent(BaseContent):
     def created_delta(self):
         return timezone.now() - self.created
 </pre>
-<p>
-    这里我们定义了一个OrderedContent类，作为BaseContent类的一个代理模型。这个代理模型提供了排序功能和一个新方法created_delta()。在程序中使用OrderedContent和BaseContent都是操作由BaseContent类生成的数据表，但新增的排序和方法，只有通过OrderedContent类才能使用。</p>
+<p>这里我们定义了一个<code>OrderedContent</code>模型，作为<code>BaseContent</code>模型的一个代理模型。这个代理模型提供了排序设置和一个新方法<code>created_delta()</code>。<code>OrderedContent</code>和<code>BaseContent</code>都是操作由<code>BaseContent</code>模型生成的数据表，但新增的排序和方法，只有通过<code>OrderedContent</code>对象才能使用。</p>
 <p>这种方法就类似于经典的Python类继承方式。</p>
 
-<h3><b>建立内容模型</b></h3>
-<p>了解了三种继承关系之后，现在我们要为每种内容建立不同的模型。所有的内容模型都有相同的字段也有不同的字段，采用哪一种继承方式呢？很显然，采用接口类比较符合目前的需求。这里就采取接口模型继承的方式来建立内容模型：</p>
-<p>继续编辑courses应用中的models.py增加基类和各种内容类：</p>
+<h3 id="c10-3-2"><span class="title">3.2</span>创建内容的模型</h3>
+<p><code>courses</code>应用中的<code>Content</code>模型现在有着通用关系，可以取得任何模型的数据。我们要为每种内容建立不同的模型。所有的内容模型都有相同的字段也有不同的字段，这里就采取接口模型继承的方式来建立内容模型：</p>
+<p>编辑<code>courses</code>应用中的<code>models.py</code>文件，添加下列代码：</p>
 <pre>
 class ItemBase(models.Model):
     owner = models.ForeignKey(User, related_name='%(class)s_related', on_delete=models.CASCADE)
@@ -340,114 +337,86 @@ class Image(ItemBase):
 class Video(ItemBase):
     url = models.URLField()
 </pre>
-<p>在这段代码中，首先建立了一个接口模型ItemBase，其中有四个字段，然后在Meta中设置了该类为接口类。这样该类中定义的owner, title, created, updated字段在所有继承该类的类中都可以使用。</p>
-<p>
-    特别要说明的是owner字段，由于该字段是一个外键，因此不能把related_name的名称写死，否则四个子模型使用同一名称连接User模型会造成错误。这里使用了占位符'%(class)s'，这样每个子模型的外键索引名就会分别成为text_related,
-    file_related, image_related 和 video_retaled。</p>
-<p>为存储不同类型的内容，建立了四个子模型：</p>
+<p>在这段代码中，首先建立了一个接口模型<code>ItemBase</code>，其中有四个字段，然后在<code>Meta</code>中设置了<code>abstract=True</code>以使该类为接口类。该类中定义了<code>owner</code>, <code>title</code>,
+    <code>created</code>, <code>updated</code>四个字段，将在所有的内容模型中使用。<code>owner</code>是关联到用户的外键，存放当前内容的创建者。由于这是一个基类，必须要为不同的模型指定不同的<code>related_name</code>。Django允许在<code>related_name</code>属性中使用类似<code>%(class)s</code>之类的占位符。设置之后，<code>related_name</code>就会动态生成。这里我们使用了<code>'%(class)s_related'</code>，最后实际的名称是<code>text_related</code>,
+    <code>file_related</code>, <code>image_related</code> 和 <code>video_retaled</code>。</p>
+<p>我们定义了四种类型的内容模型，均继承<code>ItemBase</code>抽象基类：</p>
 <ul>
-    <li>Text： 存储教学文本</li>
-    <li>File： 存储分发给用户的文件，比如PDF，PPT等教学资料</li>
-    <li>Image: 存储图片</li>
-    <li>Video：存储视频，一般数据库中不直接存放大型文件，都是存放文件服务器上的路径。所以定义了一个URL字段。</li>
+    <li><code>Text</code>： 存储教学文本</li>
+    <li><code>File</code>： 存储分发给用户的文件，比如PDF文件等教学资料</li>
+    <li><code>Image</code>: 存储图片</li>
+    <li><code>Video</code>：存储视频，定义了一个<code>URLField</code>字段存储视频的路径。</li>
 </ul>
-<p>Django会把四个子模型写入到数据库中，但ItemBase类不会被写入。</p>
-<p>继续编辑courses应用的models.py，由于四个子模型的类名已经确定了，需要修改Content模型让其对应到这四个模型上：</p>
+<p>每个子模型中都包含<code>ItemBase</code>中定义的字段。Django会针对四个子模型分别在数据库中创建数据表，但<code>ItemBase</code>类不会被写入数据库。</p>
+<p>继续编辑<code>courses</code>应用的<code>models.py</code>文件，由于四个子模型的类名已经确定了，需要修改<code>Content</code>模型让其对应到这四个模型上，修改<code>content_type</code>字段如下：</p>
 <pre>
 class Content(models.Model):
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE,
                                  <b>limit_choices_to={'model__in': ('text', 'file', 'image', 'video')}</b>)
 </pre>
-<p>为content_type字段增加了限定选择属性，方便的对应到四个新数据模型上。如此定义之后。在检索的时候还能够使用filter的参数例如 <code>model__in='text'</code>
-    来快速取出所有对应与text模型的数据。</p>
-<p>建立好所有模型之后，现在可以执行makemigrations了：</p>
-<pre>
-python manage.py makemigrations
-</pre>
-<p>可以看到如下输出：</p>
-<pre>
-Migrations for 'courses':
-courses/migrations/0002_content_file_image_text_video.py
-- Create model Content
-- Create model File
-- Create model Image
-- Create model Text
-- Create model Video
-</pre>
-<p>之后执行 migrate将在数据库中建立数据表，不再赘述。</p>
-<p>
-    现在就已经建立了本项目所需要的基本数据表及其结构。然而我们的模型中还缺少一些内容：课程和课程的内容是按照一定顺序排列的，但用户建立课程和上传内容的时候未必是线性的，单独按照某个表排序得到的结果是无用的，我们需要一个排序字段，通过字段可以把课程，章节和内容进行一个跨表的统一排序，之后只要按照这个次序列出所有的模型的数据行就可以了。</p>
+<p>这里使用了<code>limit_choices_to</code>属性，以使<code>ContentType</code>对象限于这四个模型中。如此定义之后，在查询数据库的时候还能够使用filter的参数例如<code>model__in='text'</code>来检索具体某个模型的对象。</p>
+<p>建立好所有模型之后，执行数据迁移程序，不再赘述。</p>
+<p>现在就已经建立了本项目所需要的基本数据表及其结构。然而我们的模型中还缺少一些内容：课程和课程的内容是按照一定顺序排列的，但用户建立课程和上传内容的时候未必是线性的，我们需要一个排序字段，通过字段可以把课程，章节和内容进行排序。</p>
 
-<h3><b>建立自定义字段</b></h3>
+<h3 id="c10-3-3"><span class="title">3.3</span>创建自定义字段</h3>
 <p>Django内置了很完善的模型字段供方便快捷的建立数据模型。然而依然有无法满足用户需求的地方，我们也可以自定义模型字段，来存储个性化的内容，或者修改内置字段的行为。</p>
-<p>
-    上一节分析中我们得出结论，需要一个字段存储课程和内容组织的顺序。通常用于确定顺序可以方便的采用内置的PositiveIntegerField字段，采用一个正整数就可以方便的标记数据的顺序。这里我们继承PositiveIntegerField字段，然后增加额外的行为来完成我们的自定义排序。</p>
-<p>字段确定好了，为了实现排序，还必须增加两个功能来操作该字段：</p>
+<p>我们需要一个字段存储课程和内容组织的顺序。通常用于确定顺序可以方便的采用内置的<code>PositiveIntegerField</code>字段，采用一个正整数就可以方便的标记数据的顺序。这里我们继承<code>PositiveIntegerField</code>字段，然后增加额外的行为来完成我们的自定义排序。</p>
+<p>我们要给自定义字段增加增加如下两个功能：</p>
 <ul>
     <li>
         如果序号没有给出，则自动分配一个序号。当内容和课程表中存进一个新的数据对象的时候，如果用户给出了具体的序号，就将该序号存入到排序字段中。如果用户没有给出序号，应该自动按照最大的序号再加1。例如如果已经存在两个数据对象的序号是1和2，如果用户存入第三个数据但未给出序号，则应该自动给新数据对象分配序号3。
     </li>
     <li>根据其他相关的内容排序：章节应该按照课程排序，而内容应该按照章节排序</li>
 </ul>
-<p>为了建立自定义字段，在courses目录下建立fields.py：</p>
+<p>在<code>courses</code>应用下建立<code>fields.py</code>文件，添加如下代码：</p>
 <pre>
 from django.db import models
 from django.core.exceptions import ObjectDoesNotExist
 
-
 class OrderField(models.PositiveIntegerField):
 
     def __init__(self, for_fields=None, *args, **kwargs):
-        # 初始化参数比父类多一个for_fields字段
         self.for_fields = for_fields
-        # 调用父类初始化方法进行其他参数的初始化
         super(OrderField, self).__init__(*args, **kwargs)
 
-    # 重写 pre_save()方法
     def pre_save(self, model_instance, add):
-        # 通过反射取自己的值，attname对应的是自己的内置.name属性也就是字段名
         if getattr(model_instance, self.attname) is None:
             # 如果没有值，查询自己所在表的全部内容，找到最后一条字段，设置临时变量value = 最后字段的序号+1
             try:
-                # 取自己所在数据表内全部对象（行）
                 qs = self.model.objects.all()
-                # 判断是否传入for_fields参数
                 if self.for_fields:
                     # 存在for_fields参数，通过该参数取对应的数据行
                     query = {field: getattr(model_instance, field) for field in self.for_fields}
                     qs = qs.filter(**query)
-
+                # 取最后一个数据对象的序号
                 last_item = qs.latest(self.attname)
                 value = last_item.order + 1
-            # 如果找不到最后一条数据，说明自己是第一条数据，将临时变量value 设置为0
             except ObjectDoesNotExist:
                 value = 0
-            # 将 value 变量存入自己内部
             setattr(model_instance, self.attname, value)
             return value
         else:
-            # 如果有值，不做任何处理，直接调用父类的pre_save()方法
             return super(OrderField, self).pre_save(model_instance, add)
 </pre>
-<p>这是自定义的字段类OrderField，继承了内置的PositiveIntegerField类，还增加了额外的参数for_fields指定按照哪一个字段的顺序进行计算。</p>
-<p>在OrderField中重写了pre_save()方法，这个方法是在将字段的值实际存入到数据库之前执行的。在这个方法里，执行了如下逻辑：</p>
+<p>这是自定义的字段类<code>OrderField</code>，继承了内置的<code>PositiveIntegerField</code>类，还增加了额外的参数<code>for_fields</code>指定按照哪一个字段的顺序进行计算。</p>
+<p>我们重写了<code>pre_save()</code>方法，这个方法是在将字段的值实际存入到数据库之前执行的。在这个方法里，执行了如下逻辑：</p>
 <ol>
-    <li>检查当前字段是否已经存在值，self.attname表示该字段对应的属性值，也就是字段名。如果属性值是None，说明用户没有设置序号。则按照以下逻辑进行计算：
+    <li>检查当前字段是否已经存在值，<code>self.attname</code>表示该字段对应的属性名，也就是字段属性。如果属性名是<code>None</code>，说明用户没有设置序号。则按照以下逻辑进行计算：
         <ol>
-            <li>建立一个QuerySet，查询这个字段所在的model的全部数据行。访问字段所在的模型使用了self.model</li>
-            <li>通过用户给出的for_fields参数，把上一步的QuerySet用其中的字段拆解之后过滤，这样就可以取得具体的用于计算序号的参考数据行。</li>
-            <li>然后从过滤过的QuerySet中使用.latest()方法取出最新一行数据对应的序号。如果取不到，说明自己是第一行。就分配序号0</li>
-            <li>如果能够取到，就把取到的序号+1</li>
-            <li>然后通过setattr将临时变量value赋给自己</li>
+            <li>建立一个QuerySet，查询这个字段所在的模型的全部数据行。访问字段所在的模型使用了<code>self.model</code></li>
+            <li>通过用户给出的<code>for_fields</code>参数，把上一步的QuerySet用其中的字段拆解之后过滤，这样就可以取得具体的用于计算序号的参考数据行。</li>
+            <li>然后从过滤过的QuerySet中使用<code>last_item = qs.latest(self.attname)</code>方法取出最新一行数据对应的序号。如果取不到，说明自己是第一行。就将临时变量设置为0</li>
+            <li>如果能够取到，就把取到的序号+1然后赋给<code>value</code>临时变量</li>
+            <li>然后通过<code>setattr()</code>将临时变量<code>value</code>添加为字段名属性对应的值</li>
         </ol>
     </li>
     <li>如果当前的字段已经有值，说明用户传入了序号，不需要做任何工作。</li>
 </ol>
-<p>在自定义字段时，一定不要硬编码将内容写死，也需要像内置字段一样注意通用性，否则很可能在某些情况下无法正常工作。</p>
-<p>关于自定义字段可以看<a href="https://docs.djangoproject.com/en/2.1/howto/custom-model-fields/" target="_blank">官方文档</a>。</p>
+<p class="hint">在自定义字段时，一定不要硬编码将内容写死，也需要像内置字段一样注意通用性。</p>
+<p>关于自定义字段可以看<a href="https://docs.djangoproject.com/en/2.0/howto/custom-model-fields/" target="_blank">https://docs.djangoproject.com/en/2.0/howto/custom-model-fields/</a>。</p>
 
-<h3><b>将自定义字段加入到模型中</b></h3>
-<p>建立好自定义的字段类之后，需要在各个模型中设置该字段，编辑courses应用的models.py，增加如下内容：</p>
+<h3 id="c10-3-4"><span class="title">3.4</span>将自定义字段加入到模型中</h3>
+<p>建立好自定义的字段类之后，需要在各个模型中设置该字段，编辑<code>courses</code>应用的<code>models.py</code>文件，添加如下内容：</p>
 <pre>
 <b>from .fields import OrderField</b>
 
@@ -455,22 +424,20 @@ class Module(models.Model):
     # ......
     <b>order = OrderField(for_fields=['course'], blank=True)</b>
 </pre>
-<p>给自定义的排序字段起名叫order，然后通过设置 <code>for_fields=['course']</code>，让其根据 Course
-    课程的顺序编写序号。这意味着如果最新的Course对象的序号是3并且没有对应的module对象，为其新增一个对应的modul对象的序号就是4。</p>
-<p>然后编辑Module类的__str__方法：</p>
+<p>我们给自定义的排序字段起名叫<code>order</code>，然后通过设置<code>for_fields=['course']</code>，让该字段按照课程来排序。这意味着如果最新的某个<code>Course</code>对象关联的<code>module</code>对象的序号是3，为该<code>Course</code>对象其新增一个关联的<code>module</code>对象的序号就是4。</p>
+<p>然后编辑<code>Module</code>模型的<code>__str__()</code>方法：</p>
 <pre>
 class Module(models.Model):
     def __str__(self):
-        return <b>'{}. {}'.format(self.order,</b> self.title<b>)</b>
+        <b>return '{}. {}'.format(self.order,</b> self.title<b>)</b>
 </pre>
-<p>Module字段已经有了顺序，现在为Content模型也增加上该字段：</p>
+<p>章节对应的内容也必须有序号，现在为<code>Content</code>模型也增加上<code>OrderField</code>类型的字段：</p>
 <pre>
 class Content(models.Model):
     # ...
     <b>order = OrderField(blank=True, for_fields=['module'])</b>
 </pre>
-<p>这次继续设置Content每一行的序号，通过Module对象来计算。这样就把一个顺序串了起来。</p>
-<p>最后我们为引入了该字段的Module和Content类增加排序方式：</p>
+<p>这样就指定了<code>Content</code>对象的序号根据其对应的<code>module</code>字段来排序，最后为两个模型添加默认的排序，为两个模型添加如下<code>Meta</code>类：</p>
 <pre>
 class Module(models.Model):
     # ...
@@ -482,7 +449,7 @@ class Content(models.Model):
     <b>class Meta:</b>
         <b>ordering = ['order']</b>
 </pre>
-<p>最终的Module 和 Content 类应该是这样：</p>
+<p>最终的<code>Module</code>和<code>Content</code>模型应该是这样：</p>
 <pre>
 class Module(models.Model):
     course = models.ForeignKey(Course, related_name='modules', on_delete=models.CASCADE)
@@ -517,15 +484,14 @@ Please select a fix:
  2) Quit, and let me add a default in models.py
 Select an option:
 </pre>
-<p>这个提示的意思是说准备增加一个不能为null的新字段order到数据表中，但数据库中已经存在的记录对于这个字段没有值。不提供值的话无法在数据库中创建该字段。</p>
-<p>然后给出了两个选择，选项1是输入一个默认值，作为所有已经存在的数据行该字段的值，选项2是放弃这次makemigrations，在模型中为该字段添加default = xx 属性来设置默认值。</p>
-<p>这里我们选择1，输入1并按回车键，看到如下提示：</p>
+<p>这个提示的意思是说不能添加值为<code>null</code>的新字段<code>order</code>到数据表中，必须提供一个默认值。如果字段有<code>null=True</code>属性，就不会提示此问题。我们有两个选择，选项1是输入一个默认值，作为所有已经存在的数据行该字段的值，选项2是放弃这次操作，在模型中为该字段添加<code>default=xx</code>属性来设置默认值。</p>
+<p>这里我们输入1并按回车键，看到如下提示：</p>
 <pre>
 Please enter the default value now, as valid Python
 The datetime and django.utils.timezone modules are available, so you can do e.g. timezone.now
 Type 'exit' to exit this prompt
 </pre>
-<p>系统提示我们输入值，输入0然后按回车，之后django又会对Mudule表询问同样的问题，依然选择第一项然后输入0。之后可以看到：</p>
+<p>系统提示我们输入值，输入0然后按回车，之后Django又会对<code>Module</code>模型询问同样的问题，依然选择第一项然后输入0。之后可以看到：</p>
 <pre>
 Migrations for 'courses':
   courses\migrations\0003_auto_20181001_1344.py
@@ -534,11 +500,11 @@ Migrations for 'courses':
     - Add field order to content
     - Add field order to module
 </pre>
-<p>表示成功，之后执行 <code>python manage.py migrate</code>。然后我们来测试一下排序，打开shell：</p>
+<p>表示成功，之后执行<code>python manage.py migrate</code>。然后我们来测试一下排序，打开系统命令行窗口：</p>
 <pre>
 python manage.py shell
 </pre>
-<p>由于目前只有Subject表里有数据，其他数据都还是空的，所以来增加一些新课程：</p>
+<p>创建一个新课程：</p>
 <pre>
 >>> from django.contrib.auth.models import User
 >>> from courses.models import Subject, Course, Module
@@ -546,44 +512,42 @@ python manage.py shell
 >>> subject = Subject.objects.last()
 >>> c1 = Course.objects.create(subject=subject, owner=user, title='Course 1', slug='course1')
 </pre>
-<p>添加了一个新课程叫做c1，现在我们来为c1添加对应的module对象，来看看是如何自动排序的。</p>
+<p>添加了一个新课程，现在我们来为新课程添加对应的章节，来看看是如何自动排序的。</p>
 <pre>
 >>> m1 = Module.objects.create(course=c1, title='Module 1')
 >>> m1.order
 0
 </pre>
-<p>可以看到m1对象的序号字段的值被设置为0，因为这是针对c1课程的第一个module对象，下边再增加一个module对象：</p>
+<p>可以看到<code>m1</code>对象的序号字段的值被设置为0，因为这是针对课程的第一个<code>Module</code>对象，下边再增加一个<code>Module</code>对象：</p>
 <pre>
 >>> m2 = Module.objects.create(course=c1, title='Module 2')
 >>> m2.order
 1
 </pre>
-<p>可以看到随后增加的module对象m2的序号自动被设置成了1，这次我们建立第三个对象m3，指定序号为5：</p>
+<p>可以看到随后增加的<code>Module</code>对象的序号自动被设置成了1，这次我们创建第三个对象，指定序号为5：</p>
 <pre>
 >>> m3 = Module.objects.create(course=c1, title='Module 3', order=5)
 >>> m3.order
 5
 </pre>
-<p>如果指定了序号，则序号就会是指定的数字。为了继续试验，再增加一个m4对象，不给出序号参数：</p>
+<p>如果指定了序号，则序号就会是指定的数字。为了继续试验，再增加一个对象，不给出序号参数：</p>
 <pre>
 >>> m4 = Module.objects.create(course=c1, title='Module 4')
 >>> m4.order
 6
 </pre>
-<p>可以看到，序号会根据最后保存的数据继续增加1。OrderField字段无法保证序号一定连续，但可以保证添加的内容的序号一定是从小到大排列的。</p>
-<p>继续试验，我们再增加第二个课程c2，然后为c2添加一个关联到c2的m5对象：</p>
+<p>可以看到，序号会根据最后保存的数据继续增加1。<code>OrderField</code>字段无法保证序号一定连续，但可以保证添加的内容的序号一定是从小到大排列的。</p>
+<p>继续试验，我们再增加第二个课程，然后第二个课程添加一个<code>Module</code>对象：</p>
 <pre>
 >>> c2 = Course.objects.create(subject=subject, title='Course 2', slug='course2', owner=user)
 >>> m5 = Module.objects.create(course=c2, title='Module 1')
 >>> m5.order
 0
 </pre>
-<p>可以看到序号又从0开始，这是因为在Module类中，我们设置了order字段的for_fields=['course']，就会先从当前所有的Module数据中filter(course =
-    c2)，结果由于此时Module表内并没有关联到C2的数据，所以找不到任何数据，就会认为自己是第一个，然后把序号设置为0。</p>
-<p>
-    到这里我们就做好了第一个自定义的排序字段如果内容也需要在章节内按照一定的顺序排列，就可以把这个字段扩展用到四个具体的内容类上，但是此时代码就需要修改了：每在内容中增加一个任意类型对象，都要遍历四张内容表找到所有对应某个module对象的QuerySet，然后再从其中找到最后添加的按照原来逻辑处理。</p>
+<p>可以看到序号又从0开始，该字段在生成序号的时候只会考虑同属于同一个外键字段下边的对象，第二个课程的第一个<code>Module</code>对象的序号又从0开始，正是由于<code>order</code>字段设置了<code>for_fields=['course']</code>所致。</p>
+<p>祝贺你成功创建了第一个自定义字段。</p>
 
-<h2><b>建立一个内容管理系统 CMS</b></h2>
+<h2 id="c10-4"><span class="title">4</span>创建内容管理系统CMS</h2>
 <p>已经建立好了在线学习平台的通用数据模型。下一步就是建立内容管理系统。内容管理系统能够让讲师建立课程然后管理课程资源。什么是内容管理系统可以看<a
         href="https://en.wikipedia.org/wiki/Content_management_system" target="_blank">这里</a>。</p>
 <p>我们的内容管理系统需要如下几个功能：</p>
