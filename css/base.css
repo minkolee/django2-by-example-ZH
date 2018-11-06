@@ -82,6 +82,7 @@ p.hint {
 p.emp {
     font-style: italic;
     color: darkred;
+    letter-spacing: 1px;
 }
 
 p a, ul a, ol a, code {

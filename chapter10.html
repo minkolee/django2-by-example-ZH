@@ -548,35 +548,33 @@ python manage.py shell
 <p>祝贺你成功创建了第一个自定义字段。</p>
 
 <h2 id="c10-4"><span class="title">4</span>创建内容管理系统CMS</h2>
-<p>已经建立好了在线学习平台的通用数据模型。下一步就是建立内容管理系统。内容管理系统能够让讲师建立课程然后管理课程资源。什么是内容管理系统可以看<a
-        href="https://en.wikipedia.org/wiki/Content_management_system" target="_blank">这里</a>。</p>
+<p>在创建好了完整的数据模型之后，需要创建内容管理系统。内容管理系统能够让讲师创建课程然后管理课程资源。</p>
 <p>我们的内容管理系统需要如下几个功能：</p>
 <ul>
     <li>登录功能</li>
     <li>列出讲师的全部课程</li>
-    <li>建立，编辑和删除课程</li>
+    <li>新建，编辑和删除课程</li>
     <li>为课程增加章节</li>
     <li>为章节增加不同的内容</li>
 </ul>
-<p>
-    相比前几章，我们站点的角色发生了变化。在之前的单用户博客项目和电商网站中，网站的主要内容和功能比如文字，图片，购物车都是网站本身提供的，用户没有或者仅有部分（比如评论）创造内容的权限。但在内容管理系统中，给用户提供一个开放的平台，主要内容都来自用户，一些用户可以生成内容，一些用户使用内容。有点类似于社交网站。一些大型网站如YouTube，B站，多用户博客系统，都是内容管理系统的不同表现形式。</p>
 
-<h3><b>为站点增加用户验证系统</b></h3>
-<p>这里我们使用Django内置验证模块为网站增加用户验证功能、所有的讲师和学生都是User类的实例，都可以通过django.contrib.auth来控制用户行为。</p>
-<p>编辑educa项目的根urls.py，添加匹配内置验证功能的路由：</p>
+<h3 id="c10-4-1"><span class="title">4.1</span>为站点增加用户验证系统</h3>
+<p>这里我们使用Django内置验证模块为项目增加用户验证功能、所有的讲师和学生都是<code>User</code>模型的实例，都可以通过<code>django.contrib.auth</code>来管理用户。</p>
+<p>编辑<code>educa</code>项目的根<code>urls.py</code>文件，添加连接到内置验证函数<code>login</code>和<code>logout</code>的路由：</p>
 <pre>
-from django.contrib.auth import views as auth_views
+from django.contrib import admin
+from django.urls import path
+<b>from django.contrib.auth import views as auth_views</b>
 
 urlpatterns = [
-    path('accounts/login/', auth_views.LoginView.as_view(), name='login'),
-    path('accounts/logout/', auth_views.LogoutView.as_view(), name='logout'),
+    <b>path('accounts/login/', auth_views.LoginView.as_view(), name='login'),</b>
+    <b>path('accounts/logout/', auth_views.LogoutView.as_view(), name='logout'),</b>
     path('admin/', admin.site.urls),
 ]
 </pre>
-<p>这些配置都已经讲过，不再赘述，读者愿意的话可以将django 的全套内置用户功能都匹配过来。</p>
 
-<h3><b>建立用户验证模板</b></h3>
-<p>由于我们网站的风格不会使用内置的django模板风格，所以依然要自行编写登录和登出模板。在courses应用下建立如下目录和文件：</p>
+<h3 id="c10-4-2"><span class="title">4.2</span>创建用户验证模板</h3>
+<p>在<code>courses</code>应用下建立如下目录和文件：</p>
 <pre>
 templates/
     base.html
@@ -584,7 +582,7 @@ templates/
         login.html
         logged_out.html
 </pre>
-<p>在编写登录登出和其他任何模板之前，先来编辑base.html作为母版：</p>
+<p>在编写登录登出和其他模板之前，先来编辑<code>base.html</code>作为母版，在其中添加如下内容：</p>
 <pre>
 {% load staticfiles %}
 &lt;!DOCTYPE html>
@@ -619,18 +617,20 @@ templates/
 &lt;/body>
 &lt;/html>
 </pre>
-<p>为了使用方便，这里将作者原书存放jquery文件的的Google CDN换成了国内BootCDN的地址。</p>
+<p class="emp">译者注：为了使用方便，这里将作者原书存放jQuery文件的的Google CDN换成了国内BootCDN的地址。下边很多地方都作类似处理。</p>
 <p>在母版中，定义了几个块：</p>
 <ol>
-    <li>title: 用于HEAD标签的TITLE标签使用</li>
-    <li>content: 页面主体内容</li>
-    <li>domready：页面DOM加载完成后执行的JS代码</li>
+    <li><code>title</code>: 用于HEAD标签的TITLE标签使用</li>
+    <li><code>content</code>: 页面主体内容</li>
+    <li><code>domready</code>：包含jQuery的<code>$document.ready()</code>代码，为页面DOM加载完成后执行的JS代码</li>
 </ol>
-<p>这里还用到了CSS文件，在courses应用中建立static/css/目录并将源代码中的CSS文件复制过来。</p>
-<p>有了母版之后，编辑registration/login.html：</p>
+<p>这里还用到了CSS文件，在<code>courses</code>应用中建立<code>static/css/</code>目录并将随书源代码中的CSS文件复制过来。</p>
+<p>有了母版之后，编辑<code>registration/login.html</code>：</p>
 <pre>
 {% extends "base.html" %}
+
 {% block title %}Log-in{% endblock %}
+
 {% block content %}
     &lt;h1>Log-in&lt;/h1>
     &lt;div class="module">
@@ -650,7 +650,7 @@ templates/
     &lt;/div>
 {% endblock %}
 </pre>
-<p>这是django标准的用于内置 LoginView的模板。继续编写同目录下的logged_out.html：</p>
+<p>这是Django标准的用于内置<code>login</code>视图的模板。继续编写同目录下的<code>logged_out.html</code>：</p>
 <pre>
 {% extends "base.html" %}
 {% block title %}Logged out{% endblock %}
@@ -662,15 +662,15 @@ templates/
     &lt;/div>
 {% endblock %}
 </pre>
-<p>之后启动站点，到 http://127.0.0.1:8000/accounts/login/ 查看，页面如下：</p>
-<img src="http://img.conyli.cc/django2/C10-02.jpg" alt="">
+<p>这是用户登出之后展示的页面。启动站点，到<a href="http://127.0.0.1:8000/accounts/login/" target="_blank">http://127.0.0.1:8000/accounts/login/</a> 查看，页面如下：</p>
+<p><img src="http://img.conyli.cc/django2/C10-02.jpg" alt=""></p>
 
-<h3><b>创建基于类的视图CBV</b></h3>
-<p>用户验证功能建立完之后，需要实现的功能是给讲师提供增删改查课程的功能。这里使用基于类的视图进行编写，编辑courses应用的views.py：</p>
+
+<h3 id="c10-4-3"><span class="title">4.3</span>创建CBV</h3>
+<p>我们将来创建增加，编辑和删除课程的功能。这次使用基于类的视图进行编写，编辑<code>courses</code>应用的<code>views.py</code>文件：</p>
 <pre>
 from django.views.generic.list import ListView
 from .models import Course
-
 
 class ManageCourseListView(ListView):
     model = Course
@@ -680,177 +680,134 @@ class ManageCourseListView(ListView):
         qs = super(ManageCourseListView, self).get_queryset()
         return qs.filter(owner=self.request.user)
 </pre>
-<p>
-    还记得很久以前使用过的ListView吗，可以快捷的生成数据类的列表。这里简单设置了模型为Course，指定了模板位置，然后重写了get_queryset()方法以取得当前用户相关的课程。在增删改的视图中，我们也需要重写get_queryset()方法。</p>
-<p>如果不想在每个CBV中都重写这一个方法，也就是说我们想为一些CBV提供特定的功能和行为，可以使用<em style="font-weight: 700">mixin</em>。</p>
+<p>这是<code>ManageCourseListView</code>视图，继承自内置的<code>ListView</code>视图。为了避免用户操作不属于该用户的内容，重写了<code>get_queryset()</code>方法以取得当前用户相关的课程，在其他增删改内容的视图中，我们同样需要重写<code>get_queryset()</code>方法。</p>
+<p>如果想为一些CBV提供特定的功能和行为（而不是在每个类内重写某个方法），可以使用<em>mixins</em>。</p>
 
-<h3><b>在CBV中使用mixin</b></h3>
-<p>对类来说，<a href="https://en.wikipedia.org/wiki/Mixin" target="_blank">Mixin</a>是一种特殊的多继承方式。通过Mixin可以给类附加一系列功能，自定义类的行为，就像是把一些功能和原来的功能混在一起，得到一个类具有之前两个类的功能，就像混合各种口味的冰淇淋。有两种情况一般都会使用mixins：
+<h3 id="c10-4-4"><span class="title">4.4</span>在CBV中使用mixin</h3>
+<p>对类来说，<a href="https://en.wikipedia.org/wiki/Mixin" target="_blank">Mixin</a>是一种特殊的多继承方式。通过Mixin可以给类附加一系列功能，自定义类的行为。有两种情况一般都会使用mixins：
 </p>
 <ul>
     <li>给类提供一系列可选的特性</li>
-    <li>在很多类中使用一种特定的方法</li>
+    <li>在很多类中实现一种特定的功能</li>
 </ul>
-<p>Django为CBV提供了一系列mixins用来增强CBV的功能，具体可以查询<a
-        href="https://docs.djangoproject.com/en/2.1/topics/class-based-views/mixins/" target="_blank">官方文档</a>。</p>
-<p>我们准备建立一个mixin类，包含一个通用的方法，用于我们与课程相关的CBV中。修改courses应用的views.py，修改成如下内容：</p>
+<p>Django为CBV提供了一系列mixins用来增强CBV的功能，具体可以看<a
+        href="https://docs.djangoproject.com/en/2.0/topics/class-based-views/mixins/" target="_blank">https://docs.djangoproject.com/en/2.0/topics/class-based-views/mixins/</a>。</p>
+<p>我们准备创建一个mixin，包含一个通用的方法，用于我们与课程相关的CBV中。修改<code>courses</code>应用的<code>views.py</code>文件，修改成下面这样：</p>
 <pre>
 from django.urls import reverse_lazy
 from django.views.generic.list import ListView
 from django.views.generic.edit import CreateView, UpdateView, DeleteView
-from .models import Course
 
+from .models import Course
 
 class OwnerMixin:
     def get_queryset(self):
         qs = super(OwnerMixin, self).get_queryset()
         return qs.filter(owner=self.request.user)
 
-
 class OwnerEditMixin:
     def form_valid(self, form):
         form.instance.owner = self.request.user
         return super(OwnerEditMixin, self).form_valid(form)
 
-
 class OwnerCourseMixin(OwnerMixin):
     model = Course
-
 
 class OwnerCourseEditMixin(OwnerCourseMixin, OwnerEditMixin):
     fields = ['subject', 'title', 'slug', 'overview']
     success_url = reverse_lazy('manage_course_list')
     template_name = 'courses/manage/course/form.html'
 
-
 class ManageCourseListView(OwnerCourseMixin, ListView):
     template_name = 'courses/manage/course/list.html'
-
 
 class CourseCreateView(OwnerCourseEditMixin, CreateView):
     pass
 
-
 class CourseUpdateView(OwnerCourseEditMixin, UpdateView):
     pass
-
 
 class CourseDeleteView(OwnerCourseMixin, DeleteView):
     template_name = 'courses/manage/course/delete.html'
     success_url = reverse_lazy('manage_course_list')
 
 </pre>
-<p>
-    在新的views.py中，建立了两个mixin类OwnerMixin和OwnerEditMixin，将这些mixins和Django内置的ListView，CreateView，UpdateView，DeleteView一起使用。</p>
-<p>这里新建的mixin类和CBV视图解释如下：</p>
+<p>在上述代码中，创建了两个mixin类<code>OwnerMixin</code>和<code>OwnerEditMixin</code>，将这些mixins和Django内置的<code>ListView</code>，<code>CreateView</code>，<code>UpdateView</code>，<code>DeleteView</code>一起使用。</p>
+<p>这里创建的mixin类解释如下：</p>
+<p><code>OwnerMixin</code>实现了下列方法：</p>
+    <ul>
+        <li><code>get_queryset()</code>：这个方法是内置视图用于获取QuerySet的方法，我们的mixin重写了该方法，让该方法只返回与当前用户<code>request.user</code>关联的查询结果。</li>
+    </ul>
+
+<p><code>OwnerEditMixin</code>实现下列方法：</p>
+    <ul>
+        <li>
+            <code>form_valid()</code>：所有使用了Django内置的<code>ModelFormMixin</code>的视图，都具有该方法。这个方法具体工作机制是：如<code>CreateView</code>和<code>UpdateView</code>这种需要处理表单数据的视图，当表单验证通过时，就会执行<code>form_valid()</code>方法。该方法的默认行为是保存数据对象，然后重定向到一个保存成功的URL。这里重写了该方法，自动给当前的数据对象设置上<code>owner</code>属性对应的用户对象，这样我们就在保存过程中自动附加上用户信息。</li>
+    </ul>
+
+<p><code>OwnerMixin</code>可以用于任何带有owner字段的模型。</p>
+<p>我们还定义了继承自<code>OwnerMixin</code>的<code>OwnerCourseMixin</code>，然后指定了下列参数：</p>
+    <ul>
+        <li><code>model</code>：进行查询的模型，可以被所有CBV使用。</li>
+    </ul>
+
+<p>定义了<code>OwnerCourseEditMixin</code>，具有下列属性：</p>
+<ul>
+    <li><code>fields</code>：指定<code>CreateView</code>和<code>UpdateView</code>等处理表单的视图在建立表单对象的时候使用的字段。</li>
+    <li><code>success_url</code>：<code>CreateView</code>和<code>UpdateView</code>视图在表单提交成功后的跳转地址，这里定义了一个URL名称<code>manage_course_list</code>，稍后会在路由中配置该名称</li>
+</ul>
+<p>最后我们创建了如下几个<code>OwnerCourseMixin</code>的子类</p>
+<ul>
+    <li><code>ManageCourseListView</code>：展示当前用户创建的课程，继承<code>OwnerCourseMixin</code>和<code>ListView</code></li>
+    <li><code>CourseCreateView</code>：使用一个模型表单创建一个新的Course对象，使用<code>OwnerCourseEditMixin</code>定义的字段，并且继承内置的<code>CreateView</code></li>
+    <li><code>CourseUpdateView</code>：允许编辑和修改已经存在的Course对象，继承<code>OwnerCourseEditMixin</code>和<code>UpdateView</code></li>
+    <li><code>CourseDeleteView</code>：继承<code>OwnerCourseMixin</code>和内置的<code>DeleteView</code>，定义了成功删除对象之后跳转的<code>success_url</code></li>
+</ul>
+<p class="emp">译者注：使用mixin时必须了解Python 3对于类继承的MRO查找顺序，想要确保mixin中重写的方法生效，必须在继承时把mixin放在内置CBV的左侧。对于刚开始使用mixin的读者，可以使用Pycharm 专业版<b>点击右键--Diagrams--Show Diagrams--Python Class Diagram</b>查看当前文件的类图来了解继承关系。</p>
+
+<h3 id="c10-4-5"><span class="title">4.5</span>使用用户组和权限</h3>
+<p>我们已经创建好了所有管理课程的视图。目前任何已登录用户都可以访问这些视图。但是我们要限制课程相关的内容只能由创建者进行操作，Django的内置用户验证模块提供了权限系统，用于向用户和用户组分派权限。我们准备针对讲师建立一个用户组，然后给这个用户组内用户授予增删改课程的权限。</p>
+<p>启动站点，进入<a href="http://127.0.0.1:8000/admin/auth/group/add/" target="_blank">http://127.0.0.1:8000/admin/auth/group/add/</a> ，然后创建一个新的<code>Group</code>，名字叫做<code>Instructors</code>，然后为其选择除了<code>Subject</code>模型之外，所有与<code>courses</code>应用相关的权限。如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C10-03.jpg" alt=""></p>
+<p>可以看到，对于每个应用中的每个模型，都有三个权限<em>can add</em>, <em>can change</em>, <em>can delete</em>。选好之后，点击SAVE按钮保存。</p>
+<p class="emp">译者住：如果读者使用2.1或者更新版本的Django，权限还包括<em>can view</em>。</p>
+<p>Django会为项目内的模型自动设置权限，如果需要的话，也可以编写自定义权限。具体可以查看<a href="https://docs.djangoproject.com/en/2.0/topics/auth/customizing/#custom-permissions" target="_blank">https://docs.djangoproject.com/en/2.0/topics/auth/customizing/#custom-permissions</a>。</p>
+<p>打开<a href="http://127.0.0.1:8000/admin/auth/user/add/" target="_blank">http://127.0.0.1:8000/admin/auth/user/add/</a>添加一个新用户，然后设置其为<code>Instructors</code>用户组的成员，如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C10-04.jpg" alt=""></p>
+<p>默认情况下，用户会继承其用户组设置的权限，也可以自行选择任意的其他单独权限。如果用户的<code>is_superuser</code>属性被设置为<code>True</code>，则自动具有全部权限。</p>
+
+<h4 id="c10-4-5-1"><span class="title">4.5.1</span>限制访问CBV</h4>
+<p>我们将限制用户对于视图的访问，使具有对应权限的用户才能进行增删改<code>Course</code>对象的操作。这里使用两个<code>django.contrib.auth</code>提供的mixins来限制对视图的访问：</p>
 <ol>
-    <li>OwnerMixin
-        <ul>
-            <li>get_queryset()：这个方法默认是ListView类用来获取该模型的全部数据对象，我们的mixin重写了该方法，让该方法只返回与当前用户request.user关联的查询结果。</li>
-            <li>OwnerMixin类还可以加载到任何处理模型owner字段的视图中。</li>
-        </ul>
-    </li>
-
-    <li>OwnerEditMixin
-        <ul>
-            <li>
-                form_valid()：所有使用了Django内置的ModelFormMixin的视图，都具有该方法。这个方法具体工作机制是：如CreateView和UpdateView这种需要处理表单数据的视图，当表单验证通过时，就会执行form_valid()方法。该方法的默认行为是保存数据对象，然后重定向到一个保存成功的URL。这里重写了该方法，自动给当前的数据对象设置上用户数据，以便能够保存，否则便会因为外键没有设置而无法保存。在之前的FBV内，我们都是在调用form.save()的时候要么传参数commit=False，要么先添加用户属性再保存。
-            </li>
-        </ul>
-    </li>
-
-    <li>OwnerCourseMixin(OwnerMixin)
-        <ul>
-            <li>继承OwnerMixin，包含重写的get_queryset()方法来查询与当前用户相关的数据</li>
-            <li>model：进行查询的模型，可以被所有CBV使用。</li>
-        </ul>
-    </li>
-
-    <li>OwnerCourseEditMixin(OwnerCourseMixin, OwnerEditMixin)
-        <ul>
-            <li>fields：指定CreateView和UpdateView等处理表单的视图在建立表单对象的时候使用的字段。</li>
-            <li>success_url：表单提交成功后的跳转地址，这里定义了一个URL名称，稍后会在路由中配置该名称</li>
-            <li>template_name：指定了模板地址</li>
-            <li>继承OwnerCourseMixin：拥有了指定模型为Course了重写后的get_queryset()功能</li>
-            <li>继承OwnerEditMixin：拥有了表单验证通过时给数据附加当前用户对象的功能</li>
-        </ul>
-    </li>
-    <li>ManageCourseListView(OwnerCourseMixin, ListView)
-        <ul>
-            <li>继承OwnerCourseMixin，拥有了查询当前用户关联数据，和指定模型为course的功能，</li>
-            <li>继承ListView，拥有了该内置CBV所有功能</li>
-        </ul>
-    </li>
-    <li>CourseCreateView(OwnerCourseEditMixin, CreateView)
-        <ul>
-            <li>继承OwnerCourseEditMixin，拥有了上边所有以Owner开头的mixin的功能</li>
-            <li>继承CreateView，拥有该内置CBV所有功能</li>
-        </ul>
-    </li>
-    <li>CourseUpdateView(OwnerCourseEditMixin, UpdateView)
-        <ul>
-            <li>继承OwnerCourseEditMixin，拥有了上边所有以Owner开头的mixin的功能</li>
-            <li>继承UpdateView，拥有该内置CBV所有功能</li>
-        </ul>
-    </li>
-    <li>CourseDeleteView(OwnerCourseMixin, DeleteView)
-        <ul>
-            <li>继承OwnerCourseMixin，拥有将模型设置为Course，重写get_queryset()方法的功能</li>
-            <li>继承DeleteView，拥有该内置CBV所有功能</li>
-        </ul>
-    </li>
+    <li><code>LoginRequiredMixin</code>: 与<code>@login_required</code>装饰器功能一样</li>
+    <li><code>PermissionRequiredMixin</code>: 允许具有特定权限的用户访问该视图，超级用户具备所有权限。</li>
 </ol>
-<p>原来的CBV编写方式继承内置CBV，然后根据需要一个个重写类的属性或者方法。改成使用mixin后，实际上是将各种配置分离到不同的类中，然后通过类继承关系，就想插件一样来修改类的设置。</p>
-<p>这里作者没有提到，但是应该默认大家知道的是Python对于类继承的MRO查找顺序，想要确保mixin生效，必须在继承关系中把mixin类放在内置CBV的左侧。</p>
-<p>如果觉得多继承关系看上去比较累，使用Pycharm 专业版可以在当前文件空白地方 <b>点击右键--Diagrams--Show Diagrams--Python Class Diagram</b> 查看当前文件的类图来了解继承关系。</p>
-
-
-<h3><b>使用用户组和权限</b></h3>
-<p>我们已经通过mixin建立好了所有的管理课程的视图。目前所有的已登录用户都可以访问我们的视图。但是课程相关的内容只能有讲师进行操作。在之前的项目中，我们只对用户设置了登录/未登录两种验证要求。随着需求的深入，现在就必须要使用用户权限设置了。</p>
-<p>Django的内置用户验证模块提供了权限系统，用于向用户和用户组分派权限。我们准备针对讲师建立一个用户组，然后给这个用户组内用户授予增删改课程的权限。</p>
-<p>启动站点，进入 http://127.0.0.1:8000/admin/auth/group/add/ ，然后建立一个新的Group，名字叫做Instructors，然后为其选择除了与Subject模型相关的以外的，所有与courses应用相关的权限。如下图所示：</p>
-<img src="http://img.conyli.cc/django2/C10-03.jpg" alt="">
-<p>可以看到，对于每个应用中的每个模型，都有三个权限can add, can change, can delete。选好之后，点击SAVE保存。</p>
-<p style="color: red">译者使用的Django 2.1是四个权限，还包括can view</p>
-<p>Django会为其中的模型自动设置权限，如果需要的话，也可以编写自定义权限。具体可以查看<a href="https://docs.djangoproject.com/en/2.1/topics/auth/customizing/#custom-permissions" target="_blank">官方文档</a>。</p>
-<p>打开 http://127.0.0.1:8000/admin/auth/user/add/ 添加一个用户，然后设置其为Instructors用户组的成员，如下图所示：</p>
-<img src="http://img.conyli.cc/django2/C10-04.jpg" alt="">
-<p>默认情况下，用户会继承其用户组设置的权限，也可以自行选择任意的单独权限。如果用户被设置成具有超级用户权限（即选中Superuser status），则自动具有全部权限，无需具体设置。</p>
-
-<h3><b>限制对CBV的访问</b></h3>
-<p>在用户权限内设置好了对于模型的权限，还需要限制用户对于视图的访问。这里使用两个django.contrib.auth提供的mixins来限制对视图的访问：</p>
-<ol>
-    <li>LoginRequiredMixin: 与 @login_required 装饰器功能一样</li>
-    <li>PermissionRequiredMixin: 允许具有特定权限的用户访问该视图</li>
-</ol>
-<p>编辑courses应用的views.py，新增如下导入代码：</p>
+<p>编辑<code>courses</code>应用的<code>views.py</code>文件，新增如下导入代码：</p>
 <pre>
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 </pre>
-<p>让OwnerCourseMixin类继承LoginRequiredMixin类，然后添加属性：</p>
+<p>让<code>OwnerCourseMixin</code>类继承<code>LoginRequiredMixin</code>类，然后添加属性：</p>
 <pre>
 class OwnerCourseMixin(OwnerMixin, <b>LoginRequiredMixin</b>):
     model = Course
     <b>fields = ['subject', 'title', 'slug', 'overview']</b>
     <b>success_url = reverse_lazy('manage_course_list')</b>
 </pre>
-<p>然后让增删改视图都继承PermissionRequiredMixin，再配置一个 permission_required 属性：</p>
+<p>然后为几个视图都配置一个<code>permission_required</code>属性：</p>
 <pre>
 class CourseCreateView(<b>PermissionRequiredMixin</b>, OwnerCourseEditMixin, CreateView):
     <b>permission_required = 'courses.add_course'</b>
 
-
 class CourseUpdateView(<b>PermissionRequiredMixin</b>, OwnerCourseEditMixin, UpdateView):
     <b>permission_required = 'courses.change_course'</b>
-
 
 class CourseDeleteView(<b>PermissionRequiredMixin</b>, OwnerCourseMixin, DeleteView):
     template_name = 'courses/manage/course/delete.html'
     success_url = reverse_lazy('manage_course_list')
     <b>permission_required = 'courses.delete_course'</b>
 </pre>
-<p>PermissionRequiredMixin会检查用户是否具备在permission_required参数里指定的权限。现在视图就只能供指定权限的用户使用了。</p>
-<p>视图编写完毕之后，为视图配置url，先在courses应用中建立urls.py：</p>
+<p><code>PermissionRequiredMixin</code>会检查用户是否具备在<code>permission_required</code>参数里指定的权限。现在视图就只能供指定权限的用户使用了。</p>
+<p>视图编写完毕之后，为视图配置路由，先在<code>courses</code>应用中新建<code>urls.py</code>文件，添加下列代码：</p>
 <pre>
 from django.urls import path
 from . import views
@@ -862,9 +819,8 @@ urlpatterns = [
     path('&lt;pk>/delete/', views.CourseDeleteView.as_view(), name='course_delete'),
 ]
 </pre>
-<p>再来配置项目的根路由：</p>
+<p>再来配置项目的根路由，将<code>courses</code>应用的路由作为二级路由：</p>
 <pre>
-from django.contrib import admin
 from django.urls import path, <b>include</b>
 from django.contrib.auth import views as auth_views
 
@@ -875,7 +831,7 @@ urlpatterns = [
     <b>path('course/', include('courses.urls')),</b>
 ]
 </pre>
-<p>然后需要建立模板，在courses应用的templates/ 目录下建立如下目录和文件：</p>
+<p>然后需要为视图创建模板，在<code>courses</code>应用的<code>templates/</code>目录下新建如下目录和文件：</p>
 <pre>
 courses/
     manage/
@@ -884,7 +840,7 @@ courses/
             form.html
             delete.html
 </pre>
-<p>编辑其中的list.html：</p>
+<p>编辑其中的<code>courses/manage/course/list.html</code>，添加下列代码：</p>
 <pre>
 {% extends "base.html" %}
 {% block title %}My courses{% endblock %}
@@ -909,10 +865,11 @@ courses/
     &lt;/div>
 {% endblock %}
 </pre>
-<p>这是供ManageCourseListView使用的视图。在这个视图里列出了所有的课程，然后生成对应的编辑和删除功能链接。</p>
-<p>启动站点，到 http://127.0.0.1:8000/accounts/login/?next=/course/mine/ 用一个在Instructors用户组内的用户登录，可以看到如下界面：</p>
-<img src="http://img.conyli.cc/django2/C10-05.jpg" alt="">
-<p>再来编辑form.html：</p>
+<p>这是供<code>ManageCourseListView</code>使用的视图。在这个视图里列出了所有的课程，然后生成对应的编辑和删除功能链接。</p>
+<p>启动站点，到<a href="http://127.0.0.1:8000/accounts/login/?next=/course/mine/" target="_blank">http://127.0.0.1:8000/accounts/login/?next=/course/mine/</a>，用一个在<code>Instructors</code>用户组内的用户登录，可以看到如下界面：</p>
+<p><img src="http://img.conyli.cc/django2/C10-05.jpg" alt=""></p>
+<p>这个页面会显示当前用户创建的所有课程。</p>
+<p>现在来创建新增和修改课程需要的模板，编辑<code>courses/manage/course/form.html</code>，添加下列代码：</p>
 <pre>
 {% extends "base.html" %}
 {% block title %}
@@ -940,12 +897,13 @@ courses/
     &lt;/div>
 {% endblock %}
 </pre>
-<p>这个页面由CourseCreateView和CourseUpdateView进行操作，先检查object变量是否存在，如果存在则显示针对该对象的修改功能。如果不存在就建立一个新的Course对象。</p>
-<p>到 http://127.0.0.1:8000/course/mine/ 点击 CREATE NEW COURSE 按钮，可以看到如下界面：</p>
-<img src="http://img.conyli.cc/django2/C10-06.jpg" alt="">
-<p>输入课程内容后点击保存，可以看到如下界面：</p>
-<img src="http://img.conyli.cc/django2/C10-07.jpg" alt="">
-<p>最后来编写delete.html：</p>
+<p>这个模板由<code>CourseCreateView</code>和<code>CourseUpdateView</code>进行操作。在模板内先检查<code>object</code>变量是否存在，如果存在则显示针对该对象的修改功能。如果不存在就建立一个新的<code>Course</code>对象。</p>
+<p>浏览器中打开<a href="http://127.0.0.1:8000/course/mine/" target="_blank">http://127.0.0.1:8000/course/mine/</a>，点击CREATE NEW COURSE按钮，可以看到如下界面：</p>
+<p><img src="http://img.conyli.cc/django2/C10-06.jpg" alt=""></p>
+<p>填写表单后后点击SAVE COURSE进行保存，课程会被保存，然后重定向到课程列表页，可以看到如下界面：</p>
+<p><img src="http://img.conyli.cc/django2/C10-07.jpg" alt=""></p>
+<p>点击其中的Edit链接，可以在看到这个表单页面，但这次是修改已经存在的<code>Course</code>对象。</p>
+<p>最后来编写<code>courses/manage/course/delete.html</code>，添加下列代码：</p>
 <pre>
 {% extends "base.html" %}
 {% block title %}Delete course{% endblock %}
@@ -955,30 +913,28 @@ courses/
         &lt;form action="" method="post">
             {% csrf_token %}
             &lt;p>Are you sure you want to delete "{{ object }}"?&lt;/p>
-            &lt;input type="submit" class<b style="color:red">=</b>"button" value="Confirm">
+            &lt;input type="submit" class<b>=</b>"button" value="Confirm">
         &lt;/form>
     &lt;/div>
 {% endblock %}
 </pre>
-<p style="color: red">注意原书的代码在submit按钮的class后边漏了一个"="号</p>
-<p>这个视图由DeleteView操作，负责确认删除课程。打开站点点击刚才的 Delete 链接，跳转到如下页面：</p>
-<img src="http://img.conyli.cc/django2/C10-08.jpg" alt="">
-<p>现在就建立了讲师组用户对课程进行增删改的功能。下一个大功能是为讲师组用户编写管理章节和内容的功能。</p>
+<p class="emp">注意原书的代码在<code>&lt;input&gt;</code>元素的的<code>class</code>属性后边漏了一个"="号</p>
+<p>这个模板由继承了<code>DeleteView</code>的<code>CourseDeleteView</code>视图操作，负责删除课程。</p>
+<p>打开浏览器，点击刚才页面中的Delete链接，跳转到如下确认页面：</p>
+<p><img src="http://img.conyli.cc/django2/C10-08.jpg" alt=""></p>
+<p>点击CONFIRM按钮，课程就会被删除，然后重定向至课程列表页。</p>
+<p>讲师组用户现在可以增删改课程了。下边要做的是通过CMS让讲师组用户为课程添加章节和内容。</p>
 
+<h2 id="c10-5"><span class="title">5</span>管理章节与内容</h2>
+<p>这一节里来建立一个管理课程中章节和内容的系统，将为同时管理课程中的多个章节及其中不同的内容建立表单。章节和内容都需要按照特定的顺序记录在我们的CMS中。</p>
 
-<h2><b>管理章节与内容</b></h2>
-<p>在上一节里建立了让讲师用户进行编辑课程的功能。这一章里来建立一个管理课程中章节和内容的关系，将为同时管理课程中的多个章节及其中不同的内容建立表单。章节和内容同样都需要按照特定的顺序记录在我们的CMS中。</p>
-
-
-<h3><b>在章节相关功能中使用表单集（Formsets）</b></h3>
-<p>
-    Django通过一个抽象层控制页面中的所有表单对象。一组表单对象被成为表单集。表单集由多个Form类或者ModelForm类的实例组成。表单集内的所有表单在提交的时候会一并提交，表单集可以控制显示的表单数量，对提交的最大表单数量做限制，也可以同时对其中的全部表单进行验证。</p>
-<p>表单集包含一个 is_valid() 方法用于一次验证所有表单。可以给表单集传参数让其每次显示多少个空白表单。表单集可以细分为普通form类构成表单集（通常的Formsets，官方文档<a
-        href="https://docs.djangoproject.com/en/2.1/topics/forms/formsets/" target="_blank">见此</a>）及有ModelForml类构成的表单集（model
-    formset，官方文档<a
-            href="https://docs.djangoproject.com/en/2.1/topics/forms/modelforms/#model-formsets" target="_blank">见此</a>）。
+<h3 id="c10-5-1"><span class="title">5.1</span>在课程模型中使用表单集（formsets）</h3>
+<p>Django通过一个抽象层控制页面中的所有表单对象。一组表单对象被称为表单集。表单集由多个<code>Form</code>类或者<code>ModelForm</code>类的实例组成。表单集内的所有表单在提交的时候会一并提交，表单集可以控制显示的表单数量，对提交的最大表单数量做限制，同时对其中的全部表单进行验证。</p>
+<p>表单集包含一个<code>is_valid()</code>方法用于一次验证所有表单。可以给表单集初始数据，也可以控制表单集显示的空白表单数量。普通的表单集官方文档可以看<a
+        href="https://docs.djangoproject.com/en/2.0/topics/forms/formsets/" target="_blank">https://docs.djangoproject.com/en/2.0/topics/forms/formsets/</a>，由模型表单构成的model formset可以看<a
+            href="https://docs.djangoproject.com/en/2.0/topics/forms/modelforms/#model-formsets" target="_blank">https://docs.djangoproject.com/en/2.0/topics/forms/modelforms/#model-formsets</a>。
 </p>
-<p>由于一个课程由多个章节组成，方便运用表单集进行管理。在courses应用中建立forms.py：</p>
+<p>由于一个课程由多个章节组成，方便运用表单集进行管理。在<code>courses</code>应用中建立<code>forms.py</code>文件，添加如下代码：</p>
 <pre>
 from django import forms
 from django.forms.models import inlineformset_factory
@@ -986,15 +942,14 @@ from .models import Course, Module
 
 ModuleFormSet = inlineformset_factory(Course, Module, fields=['title', 'description'], extra=2, can_delete=True)
 </pre>
-<p>我们使用内置的<code>inlineformset_factory()方法</code>构建了表单集<code>ModuleFormSet</code>。内联表单是在普通的表单集之上的一个抽象。这个函数允许我们动态的通过互相关联的两个数据类建立表单集。
-</p>
-<p>对这个表单集我们应用的如下字段：</p>
+<p>我们使用内置的<code>inlineformset_factory()方法</code>构建了表单集<code>ModuleFormSet</code>。内联表单工厂函数是在普通的表单集之上的一个抽象。这个函数允许我们动态的通过与<code>Course</code>模型关联的<code>Module</code>模型创建表单集。</p>
+<p>对这个表单集我们应用了如下字段：</p>
 <ul>
-    <li>fields：表示表单集中每个表单的字段</li>
-    <li>extra：设置每次显示表单集时候的表单数量</li>
-    <li>can_delete：该项如果设置True，Django会在每个表单内包含一个布尔字段（被渲染成为一个CHECKBOX类型的INPUT元素），供用户选中需要删除的表单</li>
+    <li><code>fields</code>：表示表单集中每个表单的字段</li>
+    <li><code>extra</code>：设置每次显示表单集时候的表单数量</li>
+    <li><code>can_delete</code>：该项如果设置<code>True</code>，Django会在每个表单内包含一个布尔字段（被渲染成为一个CHECKBOX类型的INPUT元素），供用户选中需要删除的表单</li>
 </ul>
-<p>编辑courses应用的views.py，增加下列代码：</p>
+<p>编辑<code>courses</code>应用的<code>views.py</code>文件，增加下列代码：</p>
 <pre>
 from django.shortcuts import redirect, get_object_or_404
 from django.views.generic.base import TemplateResponseMixin, View
@@ -1022,33 +977,31 @@ class CourseModuleUpdateView(TemplateResponseMixin, View):
             return redirect('manage_course_list')
         return self.render_to_response({'course': self.course, 'formset': formset})
 </pre>
-<p>编写了一个新的CBV视图 CourseModuleUpdateView 用于对一个课程的章节进行增删改。这个视图继承了以下的mixins和视图：</p>
-<ol>
-    <li>TemplateResponseMixin：这个mixin提供的功能是渲染模块并且返回HTTP响应，需要一个 template_name 属性用于指定模板位置，提供了一个 render_to_response()
-        给模板传入上下文并且渲染之
-    </li>
-    <li>View：基础的CBV视图，由Django内置提供。简单继承该类就可以得到一个基本的CBV。</li>
-</ol>
+<p><code>CourseModuleUpdateView</code>用于对一个课程的章节进行增删改。这个视图继承了以下的mixins和视图：</p>
+<ul>
+    <li><code>TemplateResponseMixin</code>：这个mixin提供的功能是渲染模块并且返回HTTP响应，需要一个<code>template_name</code>属性用于指定模板位置，提供了一个<code>render_to_response()</code>方法给模板传入上下文并且渲染模板</li>
+    <li><code>View</code>：基础的CBV视图，由Django内置提供。简单继承该类就可以得到一个基本的CBV。</li>
+</ul>
 <p>在这个视图中，实现了如下的方法：</p>
 <ol>
-    <li>get_formset()：这个方法是formset对象的过程，为了避免重复编写所以写了一个方法。功能是根据获得的Course对象和可选的data参数来构建一个formset对象。</li>
+    <li><code>get_formset()</code>：这个方法是创建formset对象的过程，为了避免重复编写所以写了一个方法。功能是根据获得的<code>Course</code>对象和可选的data参数来构建一个<code>ModuleFormSet</code>对象。</li>
     <li>
-        dispatch()：这个方法是View类的方法，是一个分发器，HTTP请求进来之后，最先执行的是dispatch()方法。该方法把小写的HTTP请求的种类分发给同名方法：例如GET请求会被发送到get()方法进行处理，POST请求会被发送到post()方法进行处理。在这个方法里。使用get_object_or_404()加一个特定的id，从Course类中获取对象。把这段代码包含在dispatch()方法中是因为无论GET还是POST请求，都会用Course对象。在请求一进来的时候，就把Course对象存入self.course然后再分发请求。
+        <code>dispatch()</code>：这个方法是<code>View</code>视图的方法，是一个分发器，HTTP请求进来之后，最先执行的是<code>dispatch()</code>方法。该方法把小写的HTTP请求的种类分发给同名方法：例如<code>GET</code>请求会被发送到<code>get()</code>方法进行处理，<code>POST</code>请求会被发送到<code>post()</code>方法进行处理。在这个方法里。使用<code>get_object_or_404()</code>加一个<code>id</code>参数，从<code>Course</code>类中获取对象。把这段代码包含在<code>dispatch()</code>方法中是因为无论<code>GET</code>还是<code>POST</code>请求，都会使用<code>Course</code>对象。在请求一进来的时候，就把<code>Course</code>对象存入<code>self.course</code>，供其他方法使用。
     </li>
-    <li>get()：处理GET请求。建立一个空的 ModuleFormSet 然后渲染模板，使用了TemplateResponseMixin提供render_to_response()方法</li>
-    <li>post()：处理POST请求，在这个方法中执行了如下动作：
+    <li><code>get()</code>：处理<code>GET</code>请求。创建一个<code>ModuleFormSet</code>然后使用当前的<code>Course</code>对象渲染模板，使用了<code>TemplateResponseMixin</code>提供的<code>render_to_response()</code>方法</li>
+    <li><code>post()</code>：处理<code>POST</code>请求，在这个方法中执行了如下动作：
         <ol>
-            <li>使用传入的POST数据建立ModuleFormSet</li>
-            <li>执行is_valid()验证所有表单</li>
-            <li>验证通过则使用save()方法保存，这时增删改都会写入数据库。然后重定向到manage_course_list URL。如果formset没通过，就返回当前表单（已经带有错误信息）。</li>
+            <li>使用请求附带的数据建立<code>ModuleFormSet</code>对象</li>
+            <li>执行<code>is_valid()</code>方法验证所有表单</li>
+            <li>验证通过则使用<code>save()</code>方法保存，这时增删改都会写入数据库。然后重定向到<code>manage_course_list</code> URL。如果未通过验证，就返回当前表单对象以显示错误信息。</li>
         </ol>
     </li>
 </ol>
-<p>编辑courses应用中的urls.py，为刚写的视图配置URL：</p>
+<p>编辑<code>courses</code>应用中的<code>urls.py</code>文件，为刚写的视图配置URL：</p>
 <pre>
 path('&lt;pk>/module/', views.CourseModuleUpdateView.as_view(), name='course_module_update'),
 </pre>
-<p>然后在courses应用中建立templates/courses/manage/module/formset.html 目录及文件，然后编辑 formset.html：</p>
+<p>在模板目录<code>courses/templates/</code>下创建一个新目录，叫做<code>module</code>，然后创建<code>templates/courses/manage/module/formset.html</code>文件，添加下列代码：</p>
 <pre>
 {% extends "base.html" %}
 {% block title %}
@@ -1067,22 +1020,20 @@ path('&lt;pk>/module/', views.CourseModuleUpdateView.as_view(), name='course_mod
     &lt;/div>
 {% endblock %}
 </pre>
-<p>在这个模板中，建立了一个表单元素 &lt;form> ，其中包含了formset对象，还包含了一个 <code>{{ formset.management_form }}</code>
-    对象。这个模板包含隐藏的字段用于控制显示起始，总计，最小和最大编号的表单。可以看到建立表单集比单纯使用一个表单要复杂很多。</p>
-<p>编辑courses/templates/course/list.html，为编辑该课程的module增加一行：</p>
+<p>在这个模板中，创建了一个表单元素<code>&lt;form></code>，其中包含了<code>formset</code>表单集，还包含了一个管理表单<code>{{ formset.management_form }}</code>。这个管理表单包含隐藏的字段用于控制显示起始，总计，最小和最大编号的表单。可以看到创建表单集很简单。</p>
+<p>编辑<code>courses/templates/course/list.html</code>，把<code>course_module_update</code>的链接加在编辑和删除链接之下：</p>
 <pre>
 &lt;a href="{% url "course_edit" course.id %}">Edit&lt;/a>
 &lt;a href="{% url "course_delete" course.id %}">Delete&lt;/a>
 <b>&lt;a href="{% url "course_module_update" course.id %}">Edit modules&lt;/a></b>
 </pre>
-<p>现在启动站点，到 http://127.0.0.1:8000/course/mine/ 建立一个课程然后点击 Edit modules，可以看到如下页面：</p>
-<img src="http://img.conyli.cc/django2/C10-09.jpg" alt="">
-<p>这个表单集合包含了该课程中的每个章节，然后还多出来2个空白的表单可供填写，这是因为我们设置了extra=2。输入两个新的章节内容，然后保存表单，再进编辑页面，可以看到又多出来了两个空白表单。</p>
+<p>现在模板中有了编辑课程中章节的链接，启动站点，到<a href="http://127.0.0.1:8000/course/mine/" target="_blank">http://127.0.0.1:8000/course/mine/</a>创建一个课程然后点击Edit modules链接，可以看到页面中的表单集如下：</p>
+<p><img src="http://img.conyli.cc/django2/C10-09.jpg" alt=""></p>
+<p>这个表单集合包含了该课程中的每个<code>Module</code>对象，然后还多出来2个空白的表单可供填写，这是因为我们为<code>ModuleFormSet</code>设置了<code>extra=2</code>。输入两个新的章节内容，然后保存表单，再进编辑页面，可以看到又多出来了两个空白表单。</p>
 
-<h3><b>向章节内增加内容</b></h3>
-<p>
-    现在的章节编辑部分仅有标题和说明，以及一个是否删除的字段。现在要为章节添加具体的内容。在之前我们定义了四种内容对应四个模型：文字，图片，文件和视频。可能会考虑建立四个不同的视图操作这四个不同的类，但这里我们采用更加通用的方式：建立一个视图来对这四个类进行增删改。</p>
-<p>编辑courses.应用中的views.py文件，添加如下代码：</p>
+<h3 id="c10-5-2"><span class="title">5.2</span>向课程中添加内容</h3>
+<p>现在要为章节添加具体的内容。在之前我们定义了四种内容对应四个模型：文字，图片，文件和视频。可能会考虑建立四个不同的视图操作这四个不同的类，但这里我们采用更加通用的方式：建立一个视图来对这四个类进行增删改。</p>
+<p>编辑<code>courses</code>应用中的<code>views.py</code>文件，添加如下代码：</p>
 <pre>
 from django.forms.models import modelform_factory
 from django.apps import apps
@@ -1111,19 +1062,19 @@ class ContentCreateUpdateView(TemplateResponseMixin, View):
             self.obj = get_object_or_404(self.model, id=id, owner=request.user)
         return super(ContentCreateUpdateView, self).dispatch(request, module_id, model_name, id)
 </pre>
-<p>这是ContentCreateUpdateView的第一部分。这个类用于建立和更新章节中的内容，这个类定义了如下方法：</p>
+<p>这是<code>ContentCreateUpdateView</code>视图的第一部分。这个类用于建立和更新章节中的内容，这个类定义了如下方法：</p>
 <ol>
-    <li>get_model()：检查给出的名字是否在指定的四个类名中，然后用Django的apps模块，从courses应用中取出对应的模块，如果没有找到，就返回None</li>
-    <li>get_form()：使用内置的modelform_factory()方法建立表单集，去掉了四个指定的字段，使用剩下的字段建立。这么做，我们可以不考虑具体是哪个模型，只去掉通用的字段保留剩下的字段。</li>
-    <li>dispatch()：这个方法接收下列的URL参数，然后为当前对象设置module和model属性：
+    <li><code>get_model()</code>：检查给出的名字是否在指定的四个类名中，然后用Django的<code>apps</code>模块，从<code>courses</code>应用中取出对应的模块，如果没有找到，就返回<code>None</code></li>
+    <li><code>get_form()</code>：使用内置的<code>modelform_factory()</code>方法建立表单集，去掉了四个指定的字段，使用剩下的字段建立。这么做，我们可以不考虑具体是哪个模型，只去掉通用的字段保留剩下的字段。</li>
+    <li><code>dispatch()</code>：这个方法接收下列的URL参数，然后为当前对象设置<code>module</code>和<code>model</code>属性：
         <ul>
-            <li>module_id：章节的id</li>
-            <li>model_name：内容模型的名称</li>
-            <li>id：要更新的内容的id，默认值为None，后续视图处理时当成新建内容。</li>
+            <li><code>module_id</code>：章节的id</li>
+            <li><code>model_name</code>：内容模型的名称</li>
+            <li><code>id</code>：要更新的内容的id，默认值为<code>None</code>表示新建。</li>
         </ul>
     </li>
 </ol>
-<p>然后来编写该视图的get()和post()方法：</p>
+<p>然后来编写该视图的<code>get()</code>和<code>post()</code>方法：</p>
 <pre>
 def get(self, request, module_id, model_name, id=None):
     form = self.get_form(self.model, instance=self.obj)
@@ -1144,12 +1095,12 @@ def post(self, request, module_id, model_name, id=None):
 </pre>
 <p>这两个方法解释如下：</p>
 <ul>
-    <li>get()：处理GET请求。通过get_form()方法拿到需要修改的四种内容之一生成的表单。由于没有id，前置的dispatch方法里不设置self.obj，所以instance=None，表示新建</li>
+    <li><code>get()</code>：处理<code>GET</code>请求。通过<code>get_form()</code>方法获取需要修改的四种内容之一生成的表单。如果没有<code>id</code>，前置的<code>dispatch</code>方法里不设置<code>self.obj</code>，所以<code>instance=None</code>，表示新建</li>
     <li>
-        post()：处理POST请求。通过传入的所有URL参数，取得表单集对象，然后进行验证。如果验证通过，给当前对象设置上user属性，然后保存。如果没有传入id，说明是新建内容，需要在Content中追加一条记录关联到module对象和新建的内容对象。
+        <code>post()</code>：处理<code>POST</code>请求。通过传入的所有数据创建表单集对象，然后进行验证。如果验证通过，给当前对象设置上<code>user</code>属性，然后保存。如果没有传入<code>id</code>，说明是新建内容，需要在<code>Content</code>中追加一条记录关联到<code>module</code>对象和新建的内容对象。
     </li>
 </ul>
-<p>编辑courses应用的urls.py，为新视图配置URL：</p>
+<p>编辑<code>courses</code>应用的<code>urls.py</code>文件，为新视图配置URL：</p>
 <pre>
     path('module/&lt;int:module_id>/content/&lt;model_name>/create/', views.ContentCreateUpdateView.as_view(),
          name='module_content_create'),
@@ -1158,11 +1109,11 @@ def post(self, request, module_id, model_name, id=None):
 </pre>
 <p>这两条路由解释如下：</p>
 <ul>
-    <li>module_content_create：用于建立新内容的URL，带有 module_id 和 model_name 两个参数，第一个是用来取得对应的module，第二个用来取得对应的内容数据模型。</li>
-    <li>module_content_update：用于修改原有内容的URL，除了带有 module_id 和 model_name 两个参数之外，还带有id用于确定具体修改哪一个内容对象。</li>
+    <li><code>module_content_create</code>：用于建立新内容的URL，带有<code>module_id</code>和<code>model_name</code>两个参数，第一个是用来取得对应的<code>module</code>对象，第二个用来取得对应的内容数据模型。</li>
+    <li><code>module_content_update</code>：用于修改原有内容的URL，除了带有<code>module_id</code>和<code>model_name</code>两个参数之外，还带有<code>id</code>用于确定具体修改哪一个内容对象。</li>
     <li></li>
 </ul>
-<p>在courses/manage/目录下建立一个新目录叫content，再建立courses/manage/content/form.html：</p>
+<p>在<code>courses/manage/</code>目录下创建一个新目录叫<code>content</code>，再创建<code>courses/manage/content/form.html</code>，添加下列代码：</p>
 <pre>
 {% extends "base.html" %}
 {% block title %}
@@ -1190,19 +1141,19 @@ def post(self, request, module_id, model_name, id=None):
     &lt;/div>
 {% endblock %}
 </pre>
-<p>这是视图ContentCreateUpdateView控制的模板。在这个模板里，使用了一个object变量，如果object变量不为None，说明在修改一个已经存在的内容。如果object变量为None，说明在新建一个内容。</p>
-<p>&lt;form&gt;标签中的属性 enctype="multipart/form-data" 是因为可能会有图片和文件上传。</p>
-<p>启动站点，到 http://127.0.0.1:8000/course/mine/ 点击任何一个已经存在的课程的Edit modules，之后新建一个module。</p>
-<p>然后到python shell中来进行一些测试，首先取到最后一个建立的module对象：</p>
+<p>这是视图<code>ContentCreateUpdateView</code>控制的模板。在这个模板里，使用了一个<code>object</code>变量，如果<code>object</code>变量不为<code>None</code>，说明在修改一个已经存在的内容，否则就是新建一个内容。</p>
+<p><code>&lt;form&gt;</code>标签中设置了属性<code>enctype="multipart/form-data"</code>，因为<code>File</code>和<code>Image</code>模型中有文件字段。</p>
+<p>启动站点，到<a href="http://127.0.0.1:8000/course/mine/" target="_blank">http://127.0.0.1:8000/course/mine/</a>，点击任何一个已经存在的课程的Edit modules链接，之后新建一个module。</p>
+<p>然后打开带有当前Django环境的Python命令行，来进行一些测试，首先取到最后一个建立的module对象：</p>
 <pre>
 >>> from courses.models import Module
 >>> Module.objects.latest('id').id
 6
 </pre>
-<p>取到了这个id之后， 打开 http://127.0.0.1:8000/course/module/6/content/image/create/ ，把6替换成你实际取到的结果，可以看到下边的页面：</p>
-<img src="http://img.conyli.cc/django2/C10-10.jpg" alt="">
-<p>不要提交这个表单，如果提交会报错，因为我们还没有定义module_content_list URL。</p>
-<p>现在还需要一个视图用来删除内容。编辑courses应用的views.py：</p>
+<p>取到了这个id之后，打开<a href="http://127.0.0.1:8000/course/module/6/content/image/create/" target="_blank">http://127.0.0.1:8000/course/module/6/content/image/create/</a> ，把6替换成你实际取到的结果，可以看到创建<code>Image</code>对象的页面：</p>
+<p><img src="http://img.conyli.cc/django2/C10-10.jpg" alt=""></p>
+<p>现在还不要提交表单，如果提交会报错，因为我们还没有定义<code>module_content_list</code> URL。</p>
+<p>现在还需要一个视图用来删除内容。编辑<code>courses</code>应用的<code>views.py</code>文件：</p>
 <pre>
 class ContentDeleteView(View):
     def post(self, request, id):
@@ -1212,15 +1163,16 @@ class ContentDeleteView(View):
         content.delete()
         return redirect('module_content_list', module.id)
 </pre>
-<p>这个ContentDeleteView视图获取ID参数，通过content表拿到关联的对象，燃烧删除该对象，再把content中的该行也删除，之后重定向到module_content_list URL，现在就在courses应用的urls.py中设置该URL:</p>
+<p>这个<code>ContentDeleteView</code>视图通过ID参数获取<code>Content</code>对象，然后删除相关的<code>Text</code>、<code>Video</code>、<code>Image</code>、或<code>File</code>对象，再把<code>Content</code>对象删除，之后重定向到<code>module_content_list</code> URL。</p>
+<p>在就在<code>courses</code>应用的<code>urls.py</code>文件中设置该URL:</p>
 <pre>
     path('content/&lt;int:id>/delete/', views.ContentDeleteView.as_view(), name='module_content_delete'),
 </pre>
 <p>现在讲师用户就可以增删改内容了。</p>
 
-<h3><b>管理章节与内容</b></h3>
-<p>在上一节里编写好了增删改的视图，现在需要一个视图将一个课程的全部Module和其中的Content按照顺序展示出来：</p>
-<p>编辑courses应用的views.py，增加如下代码：</p>
+<h3 id="c10-5-3"><span class="title">5.3</span>管理章节与内容</h3>
+<p>在上一节里编写好了增删改的视图，现在需要一个视图将一个课程的全部章节和其中的内容展示出来的视图。</p>
+<p>编辑<code>courses</code>应用的<code>views.py</code>文件，添加下列代码：</p>
 <pre>
 class ModuleContentListView(TemplateResponseMixin, View):
     template_name = 'courses/manage/module/content_list.html'
@@ -1231,12 +1183,12 @@ class ModuleContentListView(TemplateResponseMixin, View):
                                    course__owner=request.user)
         return self.render_to_response({'module': module})
 </pre>
-<p>这个视图通过一个指定的Module对象的id和当前用户，来获取Module对象，然后为该对象渲染一个模板。</p>
-<p>在courses应用的urls.py内加入该视图的路由：</p>
+<p>这个<code>ModuleContentListView</code>视图通过一个指定的<code>Module</code>对象的ID和当前用户，来获取Module对象，然后使用该对象渲染模板。</p>
+<p>在<code>courses</code>应用的<code>urls.py</code>内加入该视图的路由：</p>
 <pre>
 path('module/&lt;int:module_id>/', views.ModuleContentListView.as_view(), name='module_content_list'),
 </pre>
-<p>在templates/courses/manage/module/目录中新建content_list.html：</p>
+<p>在<code>templates/courses/manage/module/</code>目录中新建<code>content_list.html</code>，添加下列代码：</p>
 <pre>
 {% extends "base.html" %}
 {% block title %}
@@ -1274,7 +1226,7 @@ path('module/&lt;int:module_id>/', views.ModuleContentListView.as_view(), name='
                     &lt;div data-id="{{ content.id }}">
                         {% with item=content.item %}
                             &lt;p>{{ item }}&lt;/p>
-                            <b>&lt;a href="#">Edit&lt;/a></b>
+                            &lt;a href="#">Edit&lt;/a>
                             &lt;form action="{% url "module_content_delete" content.id %}"
                                   method="post">
                                 &lt;input type="submit" value="Delete">
@@ -1301,15 +1253,15 @@ path('module/&lt;int:module_id>/', views.ModuleContentListView.as_view(), name='
     {% endwith %}
 {% endblock %}
 </pre>
-<p>这是用来展示该课程中全部Module和内容的模板。首先迭代全部的module对象，显示在侧边栏中，然后针对每个Module，通过content.item迭代其中的相关的所有内容进行展示，然后配上链接。</p>
-<p>注意加粗行，该行用于显示编辑该内容的链接，我们想知道每个item对象究竟是text, video, image或者file的哪一种，因为我们需要模型的名称传给用来修改模型的视图。除了这个，我们可以在模板中按照类别单独把每个内容展示出来。对于一个数据对象，可以通过_meta_属性获取该数据所属的模型类，但Django不允许在视图中使用以下划线开头的模板变量或者属性，以防访问到私有属性或方法。可以通过编写一个自定义的模板filter来解决：</p>
-<p>在courses应用中建立如下目录和文件：</p>
+<p>这是用来展示该课程中全部章节和内容的模板。迭代全部的章节显示在侧边栏中，然后针对每个章节的内容，通过<code>content.item</code>迭代其中的相关的所有内容进行展示，然后配上对应的链接。</p>
+<p>我们想知道每个<code>item</code>对象究竟是<code>text</code>, <code>video</code>, <code>image</code>或者<code>file</code>的哪一种，因为我们需要模型的名称来创建修改数据的URL。此外还需要在模板中按照类别单独把每个内容展示出来。对于一个数据对象，可以通过_meta_属性获取该数据所属的模型类，但Django不允许在视图中使用以下划线开头的模板变量或者属性，以防访问到私有属性或方法。可以通过编写一个自定义的模板过滤器来解决。</p>
+<p>在<code>courses</code>应用中建立如下目录和文件：</p>
 <pre>
 templatetags/
     __init__.py
     course.py
 </pre>
-<p>在其中的course.py中编写：</p>
+<p>在其中的<code>course.py</code>中编写：</p>
 <pre>
 from django import template
 
@@ -1322,50 +1274,49 @@ def model_name(obj):
     except AttributeError:
         return None
 </pre>
-<p>编写了一个叫做 model_name 的模板filter，在模板里可以通过 object|model_name 来获得object所属的模型名称。</p>
-<p>编辑刚才的 templates/courses/manage/module/content_list.html，在{% extend %}的下一行添加：</p>
+<p>这是<code>model_name</code>模板过滤器，在模板里可以通过<code>object|model_name</code>来获得一个数据对象所属的模型名称。</p>
+<p>编辑刚才的<code>templates/courses/manage/module/content_list.html</code>，在<code>{% extend %}</code>的下一行添加：</p>
 <pre>
 {% load course %}
 </pre>
-<p>然后找到：</p>
+<p>然后找到下边两行：</p>
 <pre>
 &lt;p>{{ item }}&lt;/p>
 &lt;a href="#">Edit&lt;/a>
 </pre>
-<p>修改成：</p>
+<p>替换成：</p>
 <pre>
-&lt;p>{{ item }} ({{ item|model_name }})&lt;/p>
-&lt;a href="{% url "module_content_update" module.id item|model_name item.id %}">Edit&lt;/a>
+&lt;p>{{ item }} (<b>{{ item|model_name }}</b>)&lt;/p>
+&lt;a href="<b>{% url "module_content_update" module.id item|model_name item.id %}</b>">Edit&lt;/a>
 </pre>
-<p>使用了自定义模板filter之后，我们在模板中显示item对象时，就可以通过对象所属模型的名称来生成编辑链接了。编辑courses/manage/course/list.html，在几个链接的地方增加一个列表页的链接：</p>
+<p>使用了自定义模板过滤器之后，我们在模板中显示内容对象时，就可以通过对象所属模型的名称来生成URL链接了。编辑<code>courses/manage/course/list.html</code>，添加一个列表页的链接：</p>
 <pre>
 &lt;a href="{% url "course_module_update" course.id %}">Edit modules&lt;/a>
 <b>{% if course.modules.count > 0 %}</b>
     <b>&lt;a href="{% url "module_content_list" course.modules.first.id %}">Manage contents&lt;/a></b>
 <b>{% endif %}</b>
 </pre>
-<p>这个新连接跳转到新的列表页，即显示第一个module的内容。</p>
-<p>打开 http://127.0.0.1:8000/course/mine/ 可以看到页面中多出来了Manage contents，点击之后如下图所示：</p>
-<img src="http://img.conyli.cc/django2/C10-11.jpg" alt="">
-<p>这个页面还带了链接到添加四种类型的内容界面。实际添加一些内容然后看一下页面效果，具体内容会显示在右侧：</p>
-<img src="http://img.conyli.cc/django2/C10-12.jpg" alt="">
-<p>这样内容管理系统就做好了。</p>
+<p>这个新连接跳转到显示第一个章节的内容的页面。</p>
+<p>打开<a href="http://127.0.0.1:8000/course/mine/" target="_blank">http://127.0.0.1:8000/course/mine/</a>，可以看到页面中多出来了Manage contents链接，点击该链接后如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C10-11.jpg" alt=""></p>
+<p>在左侧边栏点击一个章节时，该章节的内容就显示在右侧。这个页面还带了链接到添加四种类型内容的页面。实际添加一些内容然后看一下页面效果，内容也会展示出来：</p>
+<p><img src="http://img.conyli.cc/django2/C10-12.jpg" alt=""></p>
 
-<h3><b>重新排列章节和内容的顺序</b></h3>
-<p>我们需要给用户提供一个简单的可以重新排序的方法。通过JavaScrip的拖动插件来实现用户通过拖动就可以重新排列章节和内容的顺序。在用户结束拖动的时候，我们使用AJAX发送请求来记录当前的新顺序。</p>
+<h3 id="c10-5-4"><span class="title">5.4</span>重新排列章节和内容的顺序</h3>
+<p>我们需要给用户提供一个简单的可以重新排序的方法。通过JavaScrip的拖动插件，让用户通过拖动就可以重新排列章节和内容的顺序。在用户结束拖动的时候，我们使用AJAX来记录当前的新顺序。</p>
 
-<h4><b>使用django-braces模块中的mixins</b></h4>
-<p>django-braces是一个第三方模块，包含了一系列通用的Mixin，为CBV提供额外的功能。可以查看其<a href="https://django-braces.readthedocs.io/en/latest/" target="_blank">官方文档</a>来获得完整的mixin列表。</p>
-<p>我们要使用django-braces中下列mixin：</p>
+<h4 id="c10-5-4-1"><span class="title">5.4.1</span>使用django-braces模块中的mixins</h4>
+<p><code>django-braces</code>是一个第三方模块，包含了一系列通用的Mixin，为CBV提供额外的功能。可以查看其官方文档：<a href="https://django-braces.readthedocs.io/en/latest/" target="_blank">https://django-braces.readthedocs.io/en/latest/</a>来获得完整的mixin列表。</p>
+<p>我们要使用<code>django-braces</code>中下列mixin：</p>
 <ul>
-    <li>CsrfExemptMixin：在POST中不检查CSRF，为了让AJAX请求更简单一些，就不使用验证CSRF了。（译者，不推荐该方法）</li>
-    <li>JsonRequestResponseMixin：以JSON字符串形式解析请求中的数据，并且序列化响应数据为JSON格式，带有application/json头部信息</li>
+    <li><code>CsrfExemptMixin</code>：在<code>POST</code>请求中不检查CSRF，无需生成<code>csrf_token</code></li>
+    <li><code>JsonRequestResponseMixin</code>：以JSON字符串形式解析请求中的数据，并且序列化响应数据为JSON格式，带有<code>application/json</code>头部信息</li>
 </ul>
-<p>安装django-braces：</p>
+<p>通过<code>pip</code>安装<code>django-braces</code>：</p>
 <pre>
 pip install django-braces==1.13.0
 </pre>
-<p>这个模块也没更新过。我们需要一个视图，能够接受JSON格式的新的模块顺序。编辑courses应用的views.py增加下列代码：</p>
+<p>我们需要一个视图，能够接受JSON格式的新的模块顺序。编辑<code>courses</code>应用的<code>views.py</code>文件，添加下列代码：</p>
 <pre>
 from braces.views import CsrfExemptMixin, JsonRequestResponseMixin
 
@@ -1376,8 +1327,8 @@ class ModuleOrderView(CsrfExemptMixin, JsonRequestResponseMixin, View):
             Module.objects.filter(id=id, course__owner=request.user).update(order=order)
         return self.render_json_response({'saved': 'OK'})
 </pre>
-<p>这个视图的逻辑就是拿到JSON数据后，对于其中的每一条记录，更新module的order字段。</p>
-<p>基于类似的逻辑，来编写章节内容的重新排列视图，继续追加代码：</p>
+<p>这个<code>ModuleOrderView</code>视图的逻辑是拿到JSON数据后，对于其中的每一条记录，更新<code>module</code>对象的<code>order</code>字段。</p>
+<p>基于类似的逻辑，来编写章节内容的重新排列视图，继续在<code>views.py</code>中追加代码：</p>
 <pre>
 class ContentOrderView(CsrfExemptMixin, JsonRequestResponseMixin, View):
     def post(self, request):
@@ -1385,17 +1336,17 @@ class ContentOrderView(CsrfExemptMixin, JsonRequestResponseMixin, View):
             Content.objects.filter(id=id, module__course__owner=request.user).update(order=order)
         return self.render_json_response({'saved': 'OK'})
 </pre>
-<p>然后编辑courses应用的urls.py，为这两个视图配置URL：</p>
+<p>然后编辑<code>courses</code>应用的<code>urls.py</code>，为这两个视图配置URL：</p>
 <pre>
     path('module/order/', views.ModuleOrderView.as_view(), name='module_order'),
     path('content/order/', views.ContentOrderView.as_view(), name='content_order'),
 </pre>
-<p>最后，需要把拖动功能集成到模板中。使用jQuery UI 库来完成这个功能。jQuery UI基于jQuery，提个了一系列的界面互动操作，效果和插件。会使用其中的sortable 元素。首先，需要把jQuery加载到母版中。打开base.html，在加载jQuery的script标签之后加入jQuery UI。</p>
+<p>最后，需要在模板中实现拖动功能。使用jQuery UI库来完成这个功能。jQuery UI基于jQuery，提个了一系列的界面互动操作，效果和插件。我们使用其中的<code>sortable</code>元素。首先，需要把jQuery加载到母版中。打开<code>base.html</code>，在加载jQuery的script标签之后加入jQuery UI。</p>
 <pre>
 &lt;script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js">&lt;/script>
 <b>&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.css">&lt;/script></b>
 </pre>
-<p>依然使用了国内的CDN。由于jQueryUI依赖jQuery，所以要在其后载入。之后编辑courses/manage/module/content_list.html，在底部添加如下代码：</p>
+<p>这里使用了国内的CDN。由于jQueryUI依赖于jQuery，所以要在其后载入。之后编辑<code>courses/manage/module/content_list.html</code>，在底部添加如下代码：</p>
 <pre>
 {% block domready %}
 $('#modules').sortable({
@@ -1432,21 +1383,21 @@ $('#module-contents').sortable({
 });
 {% endblock %}
 </pre>
-<p>原书的代码没有使用let进行变量声明，此处按照ES5的要求补上了。</p>
-<p>这段代码加载在 {% domready %} 块中，会在页面DOM加载完成后立刻执行。在代码中为所有的侧边栏中的module列表定义了一个sortable方法，为内容也定义了一个同样功能的方法。这个方法执行如下逻辑：</p>
+<p class="emp">译者注：这里对原书的代码增加了let声明。</p>
+<p>这段代码加载在<code>{% domready %}</code>块中，会在页面DOM加载完成后立刻执行。在代码中为所有的侧边栏中的章节列表定义了一个<code>sortable</code>方法，为内容也定义了一个同样功能的方法。这段代码做了下列工作：</p>
 <ol>
-    <li>通过jQuery的ID选择器定位到存放module（或content)的列表元素。</li>
-    <li>为两个使用了jQueryUI中的sortable方法，定义了一个stop函数，用于用户停止拖动后触发事件</li>
-    <li>建立了一个新的空字典（JS里叫做对象），其中的键是module的ID（LI元素的data-id属性的值），值是重新排列后的值。</li>
-    <li>遍历拖动后的子元素，取得此时每个元素的data-id和此时在列表中的索引，然后组成一个JSON对象。同时修改页面中显示的顺序文本为index+1</li>
-    <li>通过AJAX发送JSON数据到后端进行处理，记录此时的顺序。</li>
+    <li>使用<code>#modules选择器，</code>为<code>modules</code>的HTML元素定义了<code>sortable</code>元素</li>
+    <li>定义了一个<code>stop</code>事件处理函数，用户停止拖动后触发该事件</li>
+    <li>建立了一个空字典<code>modules_order</code>（JS里叫做对象），其中的键是<code>module</code>的ID（LI元素的data-id属性的值），值是重新排列后的顺序。</li>
+    <li>遍历拖动后的<code>#module</code>的子元素，取得此时每个元素的<code>data-id</code>和此时在列表中的索引，用此时的id作为键，其顺序作为值，更新<code>modules_order</code>字典。</li>
+    <li>通过AJAX发送<code>POST</code>请求到<code>content_order</code> URL进行处理，请求中带有<code>modules_order</code> JSON字符串，交给<code>ModuleOrderView</code>进行处理。</li>
 </ol>
-<p>启动站点，重新加载编辑内容页面，试着拖动一下，然后退出页面再进来，看一下顺序是不是已经更新为用户拖动后的顺序。页面如下所示：</p>
-<img src="http://img.conyli.cc/django2/C10-13.jpg" alt="">
-<p>这样就实现了拖动功能</p>
+<p>用于排序内容部分的<code>sortable</code>元素与上述这个相似。启动站点，重新加载编辑内容的页面，现在可以通过拖动重新排列章节和内容的顺序，如下图所示：</p>
+<p><img src="http://img.conyli.cc/django2/C10-13.jpg" alt=""></p>
+<p>现在我们就实现了拖动排序功能。</p>
 
 <h1><b>总结</b></h1>
-<p>这一章学习了如何建立一个CMS。使用了基于类的视图，类的mixin，数据模型类的多继承和自定义字段等方式，同时涉及的高级的Python编程技巧和Django深度应用。还使用了表单集来控制一次性填写多个表单的方式。还学习了基本的用户权限管理。</p>
-<p>CMS系统是很多网站的核心系统，第一章的博客，也可以通过采用本章学习到的内容，将其改造成为一个多用户的博客系统。在下一章，将学习为学生用户建立注册和选课系统的功能。这中间还将学习如何应用Django的缓存系统。</p>
+<p>这一章学习了如何建立一个CMS。使用了模型继承和创建自定义字段，同时使用了基于类的视图和mixins。还使用了表单集和实现了一个管理不同的内容的系统。</p>
+<p>在下一章，将学习创建一个学生注册系统，以及在页面内渲染各种课程内容，以及学习Django缓存框架的使用。</p>
 </body>
 </html>
