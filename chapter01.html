@@ -604,7 +604,7 @@ class Post(models.Model):
         <b>return reverse('blog:post_detail', args=[self.publish.year, self.publish.month, self.publish.day, self.slug])</b>
 </pre>
 <p>之后在模板中，就可以使用<code>get_absolute_url()</code>创建超链接到具体数据对象。</p>
-<p class="emp">译者注：原书这里写得很简略，实际上反向解析URL是创建结构化站点非常重要的内容，本站有Django 1.11版本的<a href="http://www.conyli.cc/archives/1186" target="_blank">Django进阶-路由系统</a>可供了解原理，Django 2.0此部分变化较大，需研读官方文档。</p>
+<p class="emp">译者注：原书这里写得很简略，实际上反向解析URL是创建结构化站点非常重要的内容，可以参考Django 1.11版本的<a href="http://www.conyli.cc/archives/1186" target="_blank">Django进阶-路由系统</a>了解原理，Django 2.0此部分变化较大，需研读官方文档。</p>
 
 <h2 id="c1-7"><span class="title">7</span>为视图创建模板</h2>
 <p>已经为<code>blog</code>应用配置好了URL pattern，现在需要将内容通过模板展示出来。</p>

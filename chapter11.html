@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/normalize.min.css">
+    <link rel="stylesheet" href="css/base.css">
+    <title>第十一章 渲染与缓存课程内容</title>
+
+</head>
+<body>
+<h1><b>第十一章 渲染和缓存课程内容</b></h1>
+<p>在上一章中，使用了模型继承和通用关系建立弹性的课程、章节和内容的关联数据模型，并且建立了一个CMS系统，在其中使用了CBV，表单集和AJAX管理课程内容。在这一章将要做的事情是：</p>
+<ul>
+    <li>创建公开对外展示课程的视图</li>
+    <li>创建学生注册系统</li>
+    <li>学生选课功能</li>
+    <li>渲染不同的课程内容</li>
+    <li>采用缓存框架缓存课程内容</li>
+</ul>
+<p>我们就从建立一个课程目录，供学生们浏览和选课来开始本章。</p>
+
+<h2 id="c11-1"><span class="title">1</span>展示课程</h2>
+<p>为了展示课程，我们需要实现如下功能：</p>
+<ol>
+    <li>列出所有可用的课程，可以通过课程主题来进行筛选</li>
+    <li>显示某个课程的具体内容</li>
+</ol>
+<p>由于数据模型已经齐备，编辑<code>courses</code>应用的<code>views.py</code>文件，增加以下代码：</p>
+<pre>
+from django.db.models import Count
+from .models import Subject
+
+class CourseListView(TemplateResponseMixin, View):
+    model = Course
+    template_name = 'courses/course/list.html'
+
+    def get(self, request, subject=None):
+        subjects = Subject.objects.annotate(total_courses=Count('courses'))
+        courses = Course.objects.annotate(total_modules=Count('modules'))
+        if subject:
+            subject = get_object_or_404(Subject, slug=subject)
+            courses = courses.filter(subject=subject)
+        return self.render_to_response({'subjects': subjects, 'subject': subject, 'courses': courses})
+</pre>
+<p>这个<code>CourseListView</code>继承了<code>TemplateResponseMixin</code>和<code>View</code>视图，执行了如下任务：</p>
+<ol>
+    <li>取所有的主题，使用了<code>annotate()</code>分组和<code>Count()</code>聚合方法生成一个其中包含课程的数量字段。</li>
+    <li>获得所有课程，同样进行了分组，增加了一个按照章节分组计数的字段。</li>
+    <li>如果传入了某个具体的主题<code>slug</code>字段，就取得该<code>slug</code>对应的具体主题，并且将课程设置为该主题对应的课程，而不是全部课程。</li>
+    <li>使用个<code>TemplateResponseMixin</code>类提供的<code>render_to_response()</code>方法将上边几个结果返回给模板。</li>
+</ol>
+<p>再创建一个显示具体课程的视图，在<code>views.py</code>里增加如下内容：</p>
+<pre>
+from django.views.generic.detail import DetailView
+
+class CourseDetailView(DetailView):
+    model = Course
+    template_name = 'courses/course/detail.html'
+</pre>
+<p>这个视图继承了Django内置的<code>DetailView</code>视图，为其指定模型<code>model</code>和模板<code>template_name</code>属性，该CBV会在模板上渲染其中该数据类的详情。<code>DetailView</code>需要一个<code>slug</code>或者主键<code>pk</code>来从指定的<code>Course</code>模型中获取具体信息，然后在<code>template_name</code>属性指定的模板中进行渲染。</p>
+
+<p>编辑<code>educa</code>项目的根路由<code>urls.py</code>文件，增加以下代码：</p>
+<pre>
+<b>from courses.views import CourseListView</b>
+urlpatterns = [
+    # ...
+    <b>path('', CourseListView.as_view(), name='course_list'),</b>
+]
+</pre>
+<p>我们想让访问该站点的人默认就来到列表页，因此将<code>course_list</code>设置为匹配网站的根目录，将这行放在所有URL的最下边，其他课程相关的URL都带有<code>/course/</code>前缀。</p>
+<p>然后编辑<code>courses</code>应用的<code>urls.py</code>文件，增加下边两条URL：</p>
+<pre>
+    path('subject/&lt;slug:subject>', views.CourseListView.as_view(), name='course_list_subject'),
+    path('&lt;slug:slug>', views.CourseDetailView.as_view(), name='course_detail'),
+</pre>
+<p>我们添加了如下两条路由：</p>
+<ul>
+    <li><code>course_list_subject</code>：展示所有的或某个主题下的课程</li>
+    <li><code>course_detail</code>：展示某个课程的详情</li>
+</ul>
+<p>来为这两个视图创建模板，在<code>templates/courses/</code>目录下创建：</p>
+<pre>
+course/
+    list.html
+    detail.html
+</pre>
+<p>编辑<code>courses/course/list.html</code>模板，添加下列代码：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}
+    {% if subject %}
+        {{ subject.title }} courses
+    {% else %}
+        All courses
+    {% endif %}
+{% endblock %}
+{% block content %}
+    &lt;h1>
+        {% if subject %}
+            {{ subject.title }} courses
+        {% else %}
+            All courses
+        {% endif %}
+    &lt;/h1>
+    &lt;div class="contents">
+        &lt;h3>Subjects&lt;/h3>
+        &lt;ul id="modules">
+            &lt;li {% if not subject %}class="selected"{% endif %}>
+                &lt;a href="{% url "course_list" %}">All&lt;/a>
+            &lt;/li>
+            {% for s in subjects %}
+                &lt;li {% if subject == s %}class="selected"{% endif %}>
+                    &lt;a href="{% url "course_list_subject" s.slug %}">
+                        {{ s.title }}
+                        &lt;br>&lt;span>{{ s.total_courses }} courses&lt;/span>
+                    &lt;/a>
+                &lt;/li>
+            {% endfor %}
+        &lt;/ul>
+    &lt;/div>
+    &lt;div class="module">
+        {% for course in courses %}
+            {% with subject=course.subject %}
+                &lt;h3>&lt;a href="{% url "course_detail" course.slug %}">
+                    {{ course.title }}&lt;/a>&lt;/h3>
+                &lt;p>
+                    &lt;a href="{% url "course_list_subject" subject.slug %}">
+                        {{ subject }}&lt;/a>.
+                    {{ course.total_modules }} modules.
+                    Instructor: {{ course.owner.get_full_name }}
+                &lt;/p>
+            {% endwith %}
+        {% endfor %}
+    &lt;/div>
+{% endblock %}
+</pre>
+<p>这个模板用来列出所有的课程。模板中创建了一个列表，展示所有的<code>Subject</code>对象和反向解析的链接<code>course_list_subject</code>，使用判断来切换CSS类<code>selected</code>用于显示当前被选中的主题。然后迭代所有的<code>Course</code>对象，展示其中的总章节数目以及讲师的名字。</p>
+<p>启动站点，打开<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>，可以看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C11-01.jpg" alt=""></p>
+<p>左侧边栏包含所有的主题以及主题中的课程数量，右侧在默认情况下，显示所有的主题其中的所有的课程。如果选择任何主题，则只显示该主题对应的课程。</p>
+<p>编辑<code>courses/course/detail.html</code>，添加如下代码：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}
+    {{ object.title }}
+{% endblock %}
+{% block content %}
+    {% with subject=course.subject %}
+        &lt;h1>
+            {{ object.title }}
+        &lt;/h1>
+        &lt;div class="module">
+            &lt;h2>Overview&lt;/h2>
+            &lt;p>
+                &lt;a href="{% url "course_list_subject" subject.slug %}">
+                    {{ subject.title }}&lt;/a>.
+                {{ course.modules.count }} modules.
+                Instructor: {{ course.owner.get_full_name }}
+            &lt;/p>
+            {{ object.overview|linebreaks }}
+        &lt;/div>
+    {% endwith %}
+{% endblock %}
+</pre>
+<p>这个模板中显示了一个课程的整体情况和其中的具体内容。在浏览器中打开<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>，点击右侧任意一个课程，可以看到如下页面：</p>
+<p><img src="http://img.conyli.cc/django2/C11-02.jpg" alt=""></p>
+<p>我们已经建立好了公共的（不需要特别权限）的展示课程的页面，下一步，需要允许用户以学生身份注册并且选课。</p>
+
+<h2 id="c11-2"><span class="title">2</span>增加学生注册功能</h2>
+<h2><b></b></h2>
+<p>建立一个新的应用来管理学生注册功能：</p>
+<pre>
+python manage.py startapp students
+</pre>
+<p>编辑<code>settings.py</code>激活新应用：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    <b>'students.apps.StudentsConfig',</b>
+]
+</pre>
+
+<h3 id="c11-2-1"><span class="title">2.1</span>创建注册视图</h3>
+<p>编辑<code>students</code>目录内的<code>views.py</code>文件，增加如下代码：</p>
+<pre>
+from django.urls import reverse_lazy
+from django.views.generic.edit import CreateView
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth import authenticate, login
+
+class StudentRegistrationView(CreateView):
+    template_name = 'students/student/registration.html'
+    form_class = UserCreationForm
+    success_url = reverse_lazy('student_course_list')
+
+    def form_valid(self, form):
+        result = super(StudentRegistrationView, self).form_valid(form)
+        cd = form.cleaned_data
+        user = authenticate(username=cd['username'], password=cd['password1'])
+        login(self.request, user)
+        return result
+</pre>
+<p>这是允许学生注册的视图，继承了内置的<code>CreateView</code>视图，该视图提供了创建模型对象的一般方法。这个视图需要如下属性：</p>
+<ol>
+    <li><code>template_name</code>：需要渲染的模板位置</li>
+    <li><code>form_class</code>：必须是一个<code>ModelForm</code>对象，这里指定为Django内置的建立新用户的<code>UserCreationForm</code>表单。</li>
+    <li><code>success_url</code>：成功后跳转的URL，通过反向解析<code>student_course_list</code>获取，看名字就知道是给学生列出课程列表的URL，会在稍后配置该URL。</li>
+</ol>
+<p><code>form_valid()</code>方法表单数据成功验证的时候执行，该方法必须返回一个HTTP响应。重写该方法以使用户在成功注册之后就登录。</p>
+<p>在<code>students</code>应用中创建<code>urls.py</code>文件，并在其中设置该视图的URL：</p>
+<pre>
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('register/', views.StudentRegistrationView.as_view(), name='student_registration'),
+]
+</pre>
+<p>然后编辑<code>educa</code>项目的根<code>urls.py</code>，为<code>students</code>应用配置二级路由：</p>
+<pre>
+urlpatterns = [
+    # ...
+    <b>path('students/', include('students.urls')),</b>
+]
+</pre>
+<p>之后在<code>students</code>应用中创建如下目录和模板文件：</p>
+<pre>
+templates/
+    students/
+        student/
+            registration.html
+</pre>
+<p>编辑<code>students/student/registration.html</code>模板，添加下列代码：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}
+    Sign up
+{% endblock %}
+{% block content %}
+    &lt;h1>
+        Sign up
+    &lt;/h1>
+    &lt;div class="module">
+        &lt;p>Enter your details to create an account:&lt;/p>
+        &lt;form action="" method="post">
+            {{ form.as_p }}
+            {% csrf_token %}
+            &lt;p>&lt;input type="submit" value="Create my account">&lt;/p>
+        &lt;/form>
+    &lt;/div>
+{% endblock %}
+</pre>
+<p>启动站点，到<a href="http://127.0.0.1:8000/students/register/" target="_blank">http://127.0.0.1:8000/students/register/</a>，应该可以看到如下的注册表单：</p>
+<p><img src="http://img.conyli.cc/django2/C11-03.jpg" alt=""></p>
+<p>注意此时<code>StudentRegistrationView</code>视图的<code>success_url</code>属性中的<code>student_course_list</code> URL还没有配置，所以还不能提交表单，否则会报错。会在下一节中配置该URL。</p>
+
+<h3 id="c11-2-2"><span class="title">2.2</span>选课功能</h3>
+<p>在用户注册成功之后，应该能够让其选课以便加入到某门课的学习中去。很显然，一个学生可以选择多门课程，一个课程也有多个学生，需要在<code>Course</code>模型和<code>User</code>模型之间添加一个多对多关系。</p>
+<p>编辑<code>courses</code>应用的<code>models.py</code>文件，为<code>Course</code>模型添加一个字段：</p>
+<pre>
+class Course(models.Model):
+    # ......
+    students = models.ManyToManyField(User, related_name='courses_joined', blank=True)
+</pre>
+<p>之后立刻执行数据迁移过程，不再赘述</p>
+<p>现在我们可以通过多对多关系来设置学生与课程之间的关系了。之后需要编写一个视图用于实现选课功能。</p>
+<p>在<code>students</code>应用内创建<code>forms.py</code>：</p>
+<pre>
+from django import forms
+from courses.models import Course
+
+class CourseEnrollForm(forms.Form):
+    course = forms.ModelChoiceField(queryset=Course.objects.all(), widget=forms.HiddenInput)
+</pre>
+<p>这个表单是学生选课时候提交的表单。<code>course</code>字段使用了<code>ModelChoiceField</code>，供学生选择所有的课程，使用了<code>HiddenInput</code>插件不给学生展示该表单。这个表单将在<code>CourseDetailView</code>中使用，在页面上显示一个选课按钮让学生进行选课。</p>
+<p>编辑<code>students</code>应用的<code>views.py</code>文件，增加如下代码：</p>
+<pre>
+from django.views.generic.edit import FormView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from .forms import CourseEnrollForm
+
+class StudentEnrollCourseView(LoginRequiredMixin, FormView):
+    course = None
+    form_class = CourseEnrollForm
+
+    def form_valid(self, form):
+        self.course = form.cleaned_data['course']
+        self.course.students.add(self.request.user)
+        return super(StudentEnrollCourseView, self).form_valid(form)
+
+    def get_success_url(self):
+        return reverse_lazy('student_course_detail', args=[self.course.id])
+</pre>
+<p>这是用于处理学生选课的<code>StudentEnrollCourseView</code>视图。该视图继承了内置<code>LoginRequiredMixin</code>类，一定要用户登录才能使用该功能。还继承了内置的<code>FormView</code>，因为我们要处理表单提交。设置<code>form_class</code>属性为<code>CourseEnrollForm</code>类，设置了一个<code>course</code>属性用于保存学生选的课程对象。当表单验证通过的时候，取得当前的用户，设置多对多关系，然后调用父类的方法保存数据。</p>
+<p><code>get_success_url()</code>方法返回了成功之后跳转的URL，这个方法和<code>success_url</code>属性的功能一样。该URL会在下一节中设置。</p>
+<p>编辑<code>students</code>应用中的<code>urls.py</code>文件，为该视图配置URL：</p>
+<pre>
+    path('enroll-course/', views.StudentEnrollCourseView.as_view(), name='student_enroll_course'),
+</pre>
+<p>然后在课程详情页面增加一个选课按钮，编辑<code>courses</code>应用中的<code>views.py</code>文件，找到<code>CourseDetailView</code>视图，修改成如下所示：</p>
+<pre>
+<b>from students.forms import CourseEnrollForm</b>
+
+class CourseDetailView(DetailView):
+    model = Course
+    template_name = 'courses/course/detail.html'
+
+    <b>def get_context_data(self, **kwargs):</b>
+        <b>context = super(CourseDetailView, self).get_context_data(**kwargs)</b>
+        <b>context['enroll_form'] = CourseEnrollForm(initial={'course':self.object})</b>
+        <b>return context</b>
+</pre>
+<p>这里重写了<code>get_context_data()</code>方法，把这个表单添加到模板变量中，并且将表单中隐藏的字段内容初始化成了当前的课程对象，所以可以直接通过按钮提交表单，无需填写隐藏字段。</p>
+<p>在<code>courses/course/detail.html</code>文件中找到如下一行：</p>
+<pre>
+{{ object.overview|linebreaks }}
+</pre>
+<p>将其替换成如下代码：</p>
+<pre>
+{{ object.overview|linebreaks }}
+{% if request.user.is_authenticated %}
+    &lt;form action="{% url "student_enroll_course" %}" method="post">
+        {{ enroll_form }}
+        {% csrf_token %}
+        &lt;input type="submit" class="button" value="Enroll now">
+    &lt;/form>
+{% else %}
+    &lt;a href="{% url "student_registration" %}" class="button">
+        Register to enroll
+&lt;/a>
+{% endif %}
+</pre>
+<p>这样就给页面添加上了按钮，如果用户已登录，就展示该按钮，包含一个指向<code>student_enroll_course</code>的隐藏表单，如果未登录，展示一个登录链接供用户登录。</p>
+<p>启动站点，在浏览器中打开<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>，然后点击一个具体的课程，如果已经登录，可以看到该按钮，如下所示：</p>
+<p><img src="http://img.conyli.cc/django2/C11-04.jpg" alt=""></p>
+<p>如果未登录，则看到的是一个REGISTER TO ENROLL的按钮。</p>
+
+<h2 id="c11-3"><span class="title">3</span>访问课程内容</h2>
+<p>在学生选好课之后，还必须创建一个视图给学生展示课程中的章节和内容，以便让他们访问课程内容来进行具体学习。</p>
+<p>编辑<code>students</code>应用的<code>views.py</code>文件，添加下列代码：</p>
+<pre>
+from django.views.generic.list import ListView
+from courses.models import Course
+
+class StudentCourseListView(LoginRequiredMixin, ListView):
+    model = Course
+    template_name = 'students/course/list.html'
+
+    def get_queryset(self):
+        qs = super(StudentCourseListView,self).get_queryset()
+        return qs.filter(students__in=[self.request.user])
+</pre>
+<p>这个视图用来给学生展示所有的课程。该视图继承了需要登录的<code>LoginRequiredMixin</code>。还继承了内置的<code>ListView</code>用于展示一系列的<code>Course</code>对象。重写了<code>get_queryset()</code>方法，通过<code>ManyToManyField</code>过滤出当前学生的已选课程。</p>
+<p>继续在<code>views.py</code>文件里添加显示详情的类：</p>
+<pre>
+from django.views.generic.detail import DetailView
+
+class StudentCourseDetailView(DetailView):
+    model = Course
+    template_name = 'students/course/detail.html'
+
+    def get_queryset(self):
+        qs = super(StudentCourseDetailView, self).get_queryset()
+        return qs.filter(students__in=[self.request.user])
+
+    def get_context_data(self, **kwargs):
+        context = super(StudentCourseDetailView, self).get_context_data(**kwargs)
+        course = self.get_object()
+
+        if 'module_id' in self.kwargs:
+            context['module'] = course.modules.get(id=self.kwargs['module_id'])
+        else:
+            context['module'] = course.modules.all()[0]
+        return context
+</pre>
+<p>这个视图用于向学生展示他们选的课程和章节。依然重写了get_queryset()方法用于返回与当前学生已选课程。重写了<code>get_context_data()</code>方法，如果给了一个<code>module_id</code>，就将模板变量<code>module</code>设置为这个<code>module_id</code>对应的课程，如果没给出，默认为该课程的第一个章节。这样学生就能浏览整个课程的章节。</p>
+<p>然后在<code>students</code>应用中的<code>urls.py</code>中为该视图配置URL：</p>
+<pre>
+    path('course/',views.StudentCourseListView.as_view(),name='student_course_list'),
+    path('course/&lt;pk>/',views.StudentCourseDetailView.as_view(),name='student_course_detail'),
+    path('course/&lt;pk>/&lt;module_id>/',views.StudentCourseDetailView.as_view(),name='student_course_detail_module'),
+</pre>
+<p>在<code>students</code>应用中的<code>templates/students/</code>目录下创建如下文件和目录结构：</p>
+<pre>
+course/
+    detail.html
+    list.html
+</pre>
+<p>编辑<code>students/course/list.html</code>：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}My courses{% endblock %}
+{% block content %}
+    &lt;h1>My courses&lt;/h1>
+    &lt;div class="module">
+        {% for course in object_list %}
+            &lt;div class="course-info">
+                &lt;h3>{{ course.title }}&lt;/h3>
+                &lt;p>&lt;a href="{% url "student_course_detail" course.id %}">
+                    Access contents&lt;/a>&lt;/p>
+            &lt;/div>
+        {% empty %}
+            &lt;p>
+                You are not enrolled in any courses yet.
+                &lt;a href="{% url "course_list" %}">Browse courses&lt;/a>
+                to enroll in a course.
+            &lt;/p>
+        {% endfor %}
+    &lt;/div>
+{% endblock %}
+</pre>
+<p>这个模板用于展示用户所有选的课程。注意在上一小节里，学生注册成功之后，会被重定向至<code>student_course_list</code> URL，但是如果在其他页面登录，会被导向内置的验证模块的相关URL，所以修改<code>settings.py</code>：</p>
+<pre>
+from django.urls import reverse_lazy
+LOGIN_REDIRECT_URL = reverse_lazy('student_course_list')
+</pre>
+<p>设置成这样之后，所有内置<code>auth</code>模块完成登录操作之后都跳转到该指定地址。现在所有的学生在注册成功之后都会跳转到<code>student_course_list</code> URL，即显示该学生已选课程的页面。</p>
+<p>再编辑<code>students/course/detail.html</code>，添加下列代码：</p>
+<pre>
+{% extends "base.html" %}
+{% block title %}
+    {{ object.title }}
+{% endblock %}
+{% block content %}
+    &lt;h1>
+        {{ module.title }}
+    &lt;/h1>
+    &lt;div class="contents">
+        &lt;h3>Modules&lt;/h3>
+        &lt;ul id="modules">
+            {% for m in object.modules.all %}
+                &lt;li data-id="{{ m.id }}" {% if m == module %}class="selected"
+                    {% endif %}>
+                    &lt;a href="{% url "student_course_detail_module" object.id m.id %}">
+                        &lt;span>Module &lt;span class="order">{{ m.order|add:1 }}&lt;/span>&lt;/span>
+                        &lt;br>
+                        {{ m.title }}
+                    &lt;/a>
+                &lt;/li>
+            {% empty %}
+                &lt;li>No modules yet.&lt;/li>
+            {% endfor %}
+        &lt;/ul>
+    &lt;/div>
+    &lt;div class="module">
+        {% for content in module.contents.all %}
+            {% with item=content.item %}
+                &lt;h2>{{ item.title }}&lt;/h2>
+                {{ item.render }}
+            {% endwith %}
+        {% endfor %}
+    &lt;/div>
+{% endblock %}
+</pre>
+<p>这是用于让学生具体学习已选课程内容的页面。首先我们创建了一个列表包含所有章节，并且高亮当前章节，然后迭代所有当前章节中的内容，使用了一个{{ item.render }}来展示具体的内容。</p>
+<p>此时render()方法还没有编写，在下一节中就来为每个内容对象编写这个方法来展示不同种类的内容。</p>
+
+<h3 id="c11-3-1"><span class="title">3.1</span>渲染各种课程内容</h3>
+<p>我们想为不同的内容编写一个统一的渲染方式。编辑<code>courses</code>应用的<code>models.py</code>文件，来为这四个类共同继承的基类<code>ItemBase</code>模型编写一个<code>render()</code>方法：</p>
+<pre>
+<b>from django.template.loader import render_to_string</b>
+<b>from django.utils.safestring import mark_safe</b>
+
+class ItemBase(models.Model):
+    # ......
+    <b>def render(self):</b>
+        <b>return render_to_string('courses/content/{}.html'.format(self._meta.model_name), {'item': self})</b>
+</pre>
+<p>这个方法利用的内置的<code>render_to_string()</code>方法，传入一个模板名称和上下文，然后模板渲染成为一个HTML字符串。每种类型的内容采用不同名称的模板。使用<code>self._meta.model_name</code>获取当前的模型名字。通过这个<code>render()</code>方法，就得到了渲染内容的通用接口。</p>
+<p>在<code>courses</code>应用的<code>templates/courses/</code>下边建立如下目录和文件结构：</p>
+<pre>
+content/
+    text.html
+    file.html
+    image.html
+    video.html
+</pre>
+<p>编辑<code>courses/content/text.html</code>，添加如下代码：</p>
+<pre>
+{{ item.content|linebreaks|safe }}
+</pre>
+<p>编辑<code>courses/content/file.html</code>，添加如下代码：</p>
+<pre>
+&lt;p>&lt;a href="{{ item.file.url }}" class="button">Download file&lt;/a>&lt;/p>
+</pre>
+<p>编辑<code>courses/content/image.html</code>，添加如下代码：</p>
+<pre>
+&lt;p>&lt;img src="{{ item.file.url }}">&lt;/p>
+</pre>
+<p>由于<code>ImageField</code>和<code>FileField</code>都是文件字段，为了管理这两个字段，必须在<code>settings.py</code>中配置媒体文件的路径：</p>
+<pre>
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
+</pre>
+<p>回忆一下，这里<code>MEDIA_URL</code>是指上传媒体文件的路径，<code>MEDIA_ROOT</code>是指的查找媒体文件的路径。</p>
+<p>编辑项目的根<code>urls.py</code>文件，在开头添加下列导入代码：</p>
+<pre>
+from django.conf import settings
+from django.conf.urls.static import static
+</pre>
+<p>然后在末尾追加：</p>
+<pre>
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL,document_root=settings.MEDIA_ROOT)
+</pre>
+<p>现在我们的站点就能够接受文件上传和提供文件存储了。在开发的过程中，Django会管理媒体文件。但在正式生产环境中，就不能如此配置了。我们将在第十三章学习生产环境的配置。</p>
+<p>关于<code>video.html</code>，有点额外的事情要做。将使用<code>django-embed-video</code>模块来集成视频内容。<code>django-embed-video</code>是一个第三方模块，可以将来自YouTube或者Vimeo等来源的视频内容集成到模板中，只需为其提供视频的URL即可。</p>
+<p>安装该模块：</p>
+<pre>
+pip install django-embed-video==1.1.2
+</pre>
+<p>然后在<code>settings.py</code>里激活该应用：</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    <b>'embed_video',</b>
+]
+</pre>
+<p>可以在<a href="https://django-embed-video.readthedocs.io/en/latest/" target="_blank">https://django-embed-video.readthedocs.io/en/latest/</a>找到这个模块的文档。</p>
+<p>现在来编辑<code>video.html</code>：</p>
+<pre>
+{% load embed_video_tags %}
+{% video item.url "small" %}
+</pre>
+<p>现在启动站点，到<a href="http://127.0.0.1:8000/course/mine/" target="_blank">http://127.0.0.1:8000/course/mine/</a>，以<code>Instructors</code>组内用户的身份登录，为一个课程添加各种课程内容，视频地址可以拷贝任意的YouTube链接比如 <a
+        href="https://www.youtube.com/watch?v=bgV39DlmZ2U" target="_blank">https://www.youtube.com/watch?v=bgV39DlmZ2U</a>。</p>
+<p>在添加完内容之后，到<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>点击刚创建的课程，再点击Enroll Now，之后被重定向到课程列表，应该可以看到类似下面的页面：</p>
+<p><img src="http://img.conyli.cc/django2/C11-05.jpg" alt=""></p>
+<p>这样就完成了展示内容的通用方法。</p>
+<p class="emp">译者注：这里还有一些不完善的地方，比如选了某个课之后回到列表页面再次进入已经选过的课程，会看到Enroll Now还在，其实应该显示Start to Learn之类的词语。这只要在模板中检测一下当前的课程是否包含在用户已经选择的课程中就可以了。</p>
+<p class="emp">此外在测试代码的时候还发现，如果一个课程内没有章节，则作者在<code>StudentCourseDetailView</code>中的最后一句：</p>
+<pre style="color:red">
+    context['module'] = course.modules.all()[0]
+</pre>
+<p class="emp">此处硬编码了返回第一个查询结果，就会报错，修改方法是做个判断，如果长度=0，就返回空就可以了，这样页面不会渲染出内容。</p>
+
+<h2 id="c11-4"><span class="title">4</span>使用缓存框架</h2>
+<p>HTTP请求对我们的Web应用来说，意味着查询数据和处理业务逻辑和渲染模板等工作，这比返回一个静态的页面开销要大很多。</p>
+<p>当站点的流量越来越大的时候，大量访问给后端带领的压力是巨大的。这个时候就是缓存系统大派用场的时刻。把一个HTTP请求导致的数据查询，业务逻辑处理结果，甚至渲染后的内容缓存起来，就可以避免在后续类似的请求中反复执行开销大的操作，会有效地提高网站的响应时间。</p>
+<p>Django包含一个健壮的缓存系统，可以缓存不同粒度的数据。可以缓存一个查询，一个视图的返回结果，部分模板的渲染内容，甚至整个站点。在缓存系统中存储的数据有时效性，可以设置其过期的时间。</p>
+<p>当应用接到一个HTTP请求的时候，通常按照如下的顺序使用缓存系统：</p>
+<ol>
+    <li>在缓存系统中寻找HTTP请求需要的数据</li>
+    <li>如果找到了，返回缓存的数据</li>
+    <li>如果没有找到，按照如下顺序执行：<ol>
+        <li>进行数据查询或者处理，得到数据</li>
+        <li>将数据保存在缓存内</li>
+        <li>返回数据</li>
+    </ol></li>
+</ol>
+<p>关于详细的缓存机制，可以官方文档：<a href="https://docs.djangoproject.com/en/2.0/topics/cache/" target="_blank">https://docs.djangoproject.com/en/2.0/topics/cache/</a>。</p>
+
+<h3 id="c11-4-1"><span class="title">4.1</span>可用的缓存后端</h3>
+<p>就像数据库一样，Django的缓存机制可以使用多种缓存服务后端来完成，主要有这些：</p>
+<ol>
+    <li><code>backends.memcached.MemcachedCache</code>或<code>backends.memcached.PyLibMCCache</code>：是基于Memcached服务的后端。具体使用哪种后端取决于采用哪种Python支持的Memcached模块。</li>
+    <li><code>backends.db.DatabaseCache</code>：使用数据库作为缓存（还记得Redis吗）</li>
+    <li><code>backends.filebased.FileBasedCache</code>：使用文件作为缓存，序列化每个缓存数据为一个单独的文件</li>
+    <li><code>backends.locmem.LocMemCache</code>：本地内存缓存，这是默认值。</li>
+    <li><code>backends.dummy.DummyCache</code>：伪缓存机制，仅用于开发。提供了缓存界面但实际上不缓存任何内容。每个进程的缓存互相独立而且线程安全。</li>
+</ol>
+<p class="hint">对于优化性能而言，最好选取基于内存缓存的缓存机制比如Memcached后端。</p>
+
+<h3 id="c11-4-2"><span class="title">4.2</span>安装Memcached服务</h3>
+<p>我们将使用Memcached缓存。Memcached在内存中运行，占用一定大小的内存作为缓冲区。当被分配的内存用光的时候，Memcached就会以新数据替代较老的数据。</p>
+<p>在<a href="https://memcached.org/downloads" target="_blank">https://memcached.org/downloads</a>下载Memcached，如果是Linux系统，可以使用下列命令编译安装：</p>
+<pre>
+./configure && make && make test && sudo make install
+</pre>
+<p>如果使用MacOS X而且安装了Homebrew，可以直接通过<code>brew install memcached</code>安装，也可以在<a
+        href="https://brew.sh/" target="_blank">https://brew.sh/</a>下载。安装了Memcached之后，可以通过一个命令启动服务：</p>
+<pre>
+memcached -l 127.0.0.1:11211
+</pre>
+<p>此时Memcached就会在默认的<code>11211</code>端口运行。还可以通过<code>-l</code>参数指定其他的主机和端口号。可以在<a href="https://memcached.org" target="_blank">https://memcached.org</a>查看文档。</p>
+<p>还需要安装Python的Memcached模块：</p>
+<pre>
+pip install python-memcached==1.59
+</pre>
+
+<h3 id="c11-4-3"><span class="title">4.3</span>缓存设置</h3>
+<p>Django提供了下列缓存设置：</p>
+<ul>
+    <li><code>CACHES</code>：一个字典，包含当前项目所有可用的缓存</li>
+    <li><code>CACHE_MIDDLEWARE_ALIAS</code>：缓存的别名</li>
+    <li><code>CACHE_MIDDLEWARE_KEY_PREFIX</code>：缓存键名的前缀，如果不同站点都用同一个Memcached服务，设置这个KEY可以避免发生键冲突</li>
+    <li><code>CACHE_MIDDLEWARE_SECONDS</code>：缓存页面的时间</li>
+</ul>
+<p>通过<code>CACHES</code>可以设置项目的缓存系统。这个设置以字典的形式，可以配置多个缓存后端的设置。每个<code>CACHES</code>中的缓存后端有如下设置：</p>
+<ul>
+    <li><code>BACKEND</code>：缓存后端</li>
+    <li><code>KEY_FUNCTION</code>：生成键的函数，是一个字符串，包含一个可调用函数的位置，这个函数接受前缀，版本和键名为参数，返回一个最终的缓存键</li>
+    <li><code>KEY_PREFIX</code>：缓存键名的前缀</li>
+    <li><code>LOCATION</code>：缓存后端的位置，根据不同的后端配置，可能是一个目录，一个主机+端口或者一个内存缓存的名称</li>
+    <li><code>OPTIONS</code>：其他的向缓存后端传递的配置参数</li>
+    <li><code>TIMEOUT</code>：过期设置，单位是秒。默认是300秒=5分钟，如果设置为None，则缓存键不会过期。</li>
+    <li><code>VERSION</code>：缓存键的版本号，用于缓存版本信息</li>
+</ul>
+
+<h3 id="c11-4-4"><span class="title">4.4</span>为项目配置Memcached缓存</h3>
+<p>编辑<code>settings.py</code>，将上述的缓存设置加入到文件中：</p>
+<pre>
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
+        'LOCATION': '127.0.0.1:11211',
+}
+}
+</pre>
+<p>这里指定了后端为<code>Memcached</code>，然后指定了主机IP和端口号。如果有很多Memcached配置在不同主机上，可以给<code>LOCATION</code>传一个列表。</p>
+
+<h4 id="c11-4-4-1"><span class="title">4.4.1</span>监控Memcached服务</h4>
+<p>为了监控Memcached的服务，可以使用第三方模块<code>django-memcache-status</code>，该模块可以在管理后台中显示Memcached的统计情况。安装该模块：</p>
+<pre>
+pip install django-memcache-status==1.3
+</pre>
+<p>编辑<code>setting.py</code>，激活该应用:</p>
+<pre>
+INSTALLED_APPS = [
+    # ...
+    <b>'memcache_status',</b>
+]
+</pre>
+<p>确保Memcached服务在运行，然后进入站点的管理后台，可以看到如下的内容：</p>
+<p><img src="http://img.conyli.cc/django2/C11-06.jpg" alt=""></p>
+<p>绿色的条代表空闲的缓存容量，红色代表已经使用的内容。如果点击标题，可以展开一个详情页看具体内容。已经为项目配置好了Memcached服务，现在来缓存具体内容。</p>
+
+<h3 id="c11-4-5"><span class="title">4.5</span>缓存级别</h3>
+<p>Django为不同粒度的数据提供了如下的缓存级别：</p>
+<ol>
+    <li><b>Low-level cache API</b>：粒度最细，缓存精确的查询或者计算结果</li>
+    <li><b>Per-view cache</b>：对单独的视图进行缓存</li>
+    <li><b>Template cache</b>：缓存模板片段</li>
+    <li><b>Per-site cache</b>：站点缓存，最高级别缓存。</li>
+</ol>
+<p class="hint">在建立缓存系统之前，必须仔细考虑缓存策略。建议对不基于具体用户身份的，系统开销比较大的数据库查询和密集计算进行缓存</p>
+
+<h3 id="c11-4-6"><span class="title">4.6</span>使用Low-level cache API</h3>
+<p>Low-level缓存API可以存储任意粒度的对象，该功能位于<code>django.core.cache</code>，可以导入进来，：</p>
+<pre>
+from django.core.cache import cache
+</pre>
+<p>这个缓存默认使用会使用配置中的<code>default</code>名称对应的缓存后端，类似于数据库，等于通过<code>caches['default]获取缓存后端。</code>。</p>
+<p>可以通过如下命令得到一个使用某个具体配置名称的缓存配置：</p>
+<pre>
+from django.core.cache import caches
+my_cache = caches['alias']
+</pre>
+<p>在导入当前Django环境的Python命令行中里进行一些实验：</p>
+<pre>
+>>> from django.core.cache import cache
+>>> cache.set('musician', 'Django Reinhardt', 20)
+</pre>
+<p>通过使用了<code>set(key,value,timeout)</code>方法，向默认的缓存后端存入了一个键名叫<code>'musician'</code>，值是<code>'Django Reinhardt'</code>，20秒过期。如果不给出具体时间，则Django使用<code>settings.py</code>中的默认设置。然后再输入：</p>
+<pre>
+>>> cache.get('musician')
+'Django Reinhardt'
+</pre>
+<p>可以获取对应的值。等待20秒再执行上述命令：</p>
+<pre>
+>>> cache.get('musician')
+
+</pre>
+<p>说明该键已经过期，<code>get()</code>方法返回<code>None</code>。</p>
+<p class="hint">不要在缓存中存储值为<code>None</code>的键，否则无法区分缓存命中与否。</p>
+<p>再实验如下代码：</p>
+<pre>
+>>> from courses.models import Subject
+>>> subjects = Subject.objects.all()
+>>> cache.set('all_subjects', subjects)
+</pre>
+<p>这里先执行了一个QuerySet查询，然后将查询的结果缓存到<code>all_subjects</code>键中。来试试从缓存中取数：</p>
+<pre>
+>>> cache.get('all_subjects')
+&lt;QuerySet [&lt;Subject: Mathematics>, &lt;Subject: Music>, &lt;Subject: Physics>, &lt;Subject: Programming>]>
+</pre>
+<p>现在我们知道如何使用缓存了。下一步就是给常用的视图增加缓存机制。打开<code>courses</code>应用的<code>views.py</code>文件，首先导入缓存：</p>
+<pre>
+from django.core.cache import cache
+</pre>
+<p>在<code>CourseListView</code>的<code>get()</code>方法里，找到下面这一行：</p>
+<pre>
+subjects = Subject.objects.annotate(total_courses=Count('courses'))
+</pre>
+<p>将其修改成：</p>
+<pre>
+<b>subjects = cache.get('all_subjects')</b>
+<b>if not subjects:</b>
+    subjects = Subject.objects.annotate(total_courses=Count('courses'))
+    <b>cache.set('all_subjects', subjects)</b>
+</pre>
+<p>在这段代码里，我们先尝试去缓存中获取<code>all_subjects</code>这个键，如果结果为<code>None</code>，说明缓存中没有，执行正常数据查询，然后将结果存入到缓存中。</p>
+<p>启动站点，访问<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>，只要访问这个路径，刚才配置的缓存就会启动，由于第一次执行，之前没有缓存内容，所以视图就会将查询结果放入缓存。此时进入管理后台查看Memcached的统计，可以看到如下内容：</p>
+<p><img src="http://img.conyli.cc/django2/C11-07.jpg" alt=""></p>
+<p>在Memcache的统计数据里找到Curr Item这一项，如果严格按照本文来进行，应该为1，除非之前存储了其他内容。这表示当前缓存中有一个键值对。Get Hits表示有多少次Get操作成功命中缓存数据，Get Miss则表示未命中的次数。最上边的Miss Ration使用这两个值计算得到。</p>
+<p>现在打开浏览器，反复刷新<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>，然后再去看Memcahed的统计页面，看看统计数据的变化。</p>
+
+<h4 id="c11-4-6-1"><span class="title">4.6.1</span>缓存动态数据</h4>
+<p>但有的时候，想缓存动态生成的数据。这就必须建立动态的键，用于唯一确定对具体的缓存数据。看以下例子：</p>
+<p>编辑<code>courses</code>应用的<code>views.py</code>文件，修改<code>CourseListView</code>视图如下所示：</p>
+<pre>
+def get(self, request, subject=None):
+    subjects = cache.get('all_subjects')
+    if not subjects:
+        subjects = Subject.objects.annotate(total_courses=Count('courses'))
+        cache.set('all_subjects', subjects)
+    <b>all_courses = Course.objects.annotate(total_modules=Count('modules'))</b>
+    if subject:
+        subject = get_object_or_404(Subject, slug=subject)
+        <b>key = 'subject_{}_courses'.format(subject.id)</b>
+        <b>courses = cache.get(key)</b>
+        <b>if not courses:</b>
+            <b>courses = all_courses.filter(subject=subject)</b>
+            <b>cache.set(key, courses)</b>
+    <b>else:</b>
+        <b>courses = cache.get('all_courses')</b>
+        <b>if not courses:</b>
+            <b>courses = all_courses</b>
+            <b>cache.set('all_courses', courses)</b>
+    return self.render_to_response({'subjects': subjects,
+                                    'subject': subject,
+                                    'courses': courses})
+</pre>
+<p>在这个视图里，我们还保存了所有的课程和按主题过滤的课程。<code>all_courses</code>键对应的是所有课程的查询结果集，动态生成的键名<code>'subject_{}_courses'.format(subject.id)'</code>对应着具体类别的查询结果集。</p>
+<p>要注意的是，不能用从缓存中取出来的查询结果再去建立其他查询结果，也就是说下边的代码是不行的：</p>
+<pre>
+courses = cache.get('all_courses')
+courses.filter(subject=subject)
+</pre>
+<p>缓存只能用于存储最终可供页面直接使用的查询结果，不能在中间步骤缓存。所以这就是为什么要在视图开始的地方建立基础查询<code>all_courses = Course.objects.annotate(total_modules=Count('modules'))</code>，然后再用<code>courses = all_courses.filter(subject=subject)</code>生成查询结果的原因。</p>
+
+<h3 id="c11-4-7"><span class="title">4.7</span>缓存模板片段</h3>
+<p>缓存模板片段是比较高级别的缓存，需要在模板中加载缓存标签：<code>{% load cache %}</code>，然后使用<code>{% cache %}</code>来标记需要缓存的片段。实际使用像这样：</p>
+<pre>
+{% cache 300 fragment_name %}
+...
+{% endcache %}
+</pre>
+<p>如上边例子所示，<code>{% cache %}</code>标签有两个可选的参数，第一个是过期秒数，第二个是为该片段起的名称。如果需要缓存动态生成的模板片段，可以再增加额外的参数用于生成唯一KEY。</p>
+<p>编辑<code>/students/course/detail.html</code>，为模板在<code>{% extends %}</code>标签后加上：</p>
+<pre>{% load cache %}</pre>
+<p>然后找到下列代码：</p>
+<pre>
+{% for content in module.contents.all %}
+    {% with item=content.item %}
+        &lt;h2>{{ item.title }}&lt;/h2>
+        {{ item.render }}
+    {% endwith %}
+{% endfor %}
+</pre>
+<p>替换成下列代码：</p>
+<pre>
+<b>{% cache 600 module_contents module %}</b>
+    {% for content in module.contents.all %}
+        {% with item=content.item %}
+            &lt;h2>{{ item.title }}&lt;/h2>
+            {{ item.render }}
+        {% endwith %}
+    {% endfor %}
+<b>{% endcache %}</b>
+</pre>
+<p>这里使用了600秒的过期时间，指定了该片段的别名为<code>module_contents</code>，然后用<code>module</code>变量动态创建键，这样就建立了独特的键以避免重复。</p>
+<p class="hint">如果启用了国际化设置<code>USE_I18N=True</code>，缓存中间件会考虑语言的影响。如果你在一个页面中使用了<code>{% cache %}</code>标签，下次想从缓存中拿到正确的数据，必须将特定语言的代码和缓存标签一起使用，才能得到正确的结果：例如<code>{% cache 600 name request.LANGUAGE_CODE %}.</code>。</p>
+
+<h3 id="c11-4-8"><span class="title">4.8</span>缓存视图</h3>
+<p>可以通过使用<code>django.views.decorators.cache</code>中的<code>cache_page</code>装饰器来缓存视图的输出结果，需要一个参数<code>timeout</code>，是过期秒数。</p>
+<p>在视图中使用该装饰器，编辑<code>students</code>应用的<code>urls.py</code>文件，先导入该装饰器：</p>
+<pre>
+from django.views.decorators.cache import cache_page
+</pre>
+然后把<code>cache_page</code>用于<code>student_course_detail</code>和<code>student_course_detail_module</code>两个URL上，如下：
+<pre>
+path('course/&lt;pk>/', <b>cache_page(60 * 15)(</b>views.StudentCourseDetailView.as_view()<b>)</b>, name='student_course_detail'),
+path('course/&lt;pk>/&lt;module_id>/', <b>cache_page(60 * 15)(</b>views.StudentCourseDetailView.as_view()<b>)</b>,
+     name='student_course_detail_module'),
+</pre>
+<p>这样配置之后，<code>StudentCourseDetailView</code>的结果就会被缓存15分钟。</p>
+<p class="hint">注意，缓存使用URL来构建缓存键，对同一个视图函数，来自不同URL路由的结果，会被分别缓存。</p>
+
+<h4 id="c11-4-8-1"><span class="title">4.8.1</span>缓存动态数据</h4>
+<p>缓存站点是级别最高的缓存，允许缓存整个站点。</p>
+<p class="hint">要启用站点缓存，需要编辑<code>settings.py</code>，把<code>UpdateCacheMiddleware</code>和<code>FetchFromCacheMiddleware</code>中间件加入<code>MIDDLEWARE</code>设置中：</p>
+<pre>
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    <b>'django.middleware.cache.UpdateCacheMiddleware',</b>
+    'django.middleware.common.CommonMiddleware',
+    <b>'django.middleware.cache.FetchFromCacheMiddleware',</b>
+    # ...
+]
+</pre>
+<p>中间件的顺序至关重要，中间件在HTTP请求进来的时候是按照从上到下的顺序执行，返回响应的时候按照从下到上的顺序执行。<code>UpdateCacheMiddleware</code>必须放在<code>CommonMiddleware</code>的上边，因为<code>UpdateCacheMiddleware</code>只在响应的时候才执行。<code>FetchFromCacheMiddleware</code>被放在<code>CommonMiddleware</code>之后，因为<code>FetchFromCacheMiddleware</code>需要<code>CommonMiddleware</code>处理过的请求数据。</p>
+<p>然后还需要把下列设置加入到<code>settings.py</code>中：</p>
+<pre>
+CACHE_MIDDLEWARE_ALIAS = 'default'
+CACHE_MIDDLEWARE_SECONDS = 60 * 15 # 15 minutes
+CACHE_MIDDLEWARE_KEY_PREFIX = 'educa'
+</pre>
+<p>在这些设置里，设置了使用<code>default</code>名称的缓存后端，15分钟过期时间，以及设置前缀避免重复。现在站点对所有的<code>GET</code>请求，都缓存和优先返回缓存的结果。</p>
+<p>这样我们就设置好了整个站点的缓存，然而站点缓存对于我们这个站来说是不适合的，因为CMS系统里更改了数据之后，必须立刻返回更新后的数据。所以最佳的方法是缓存向学生返回课程内容的视图或者模板。</p>
+<p>我们已经学习过了Django内的各种方法用于缓存数据。应该明智的设置缓存策略，优先缓存开销高的查询和计算。</p>
+
+<h1><b>总结</b></h1>
+<p>在这一章，我们创建了公开展示所有课程的页面，通过多对多关系建立了学生注册和选课系统，并且为站点安装了Memcached服务并缓存了各个级别的内容。</p>
+<p>下一章我们将为项目构建一个RESTful API。</p>
+</body>
+</html>
