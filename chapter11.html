@@ -769,7 +769,7 @@ courses.filter(subject=subject)
 <pre>
 from django.views.decorators.cache import cache_page
 </pre>
-然后把<code>cache_page</code>用于<code>student_course_detail</code>和<code>student_course_detail_module</code>两个URL上，如下：
+<p>然后把<code>cache_page</code>用于<code>student_course_detail</code>和<code>student_course_detail_module</code>两个URL上，如下：</p>
 <pre>
 path('course/&lt;pk>/', <b>cache_page(60 * 15)(</b>views.StudentCourseDetailView.as_view()<b>)</b>, name='student_course_detail'),
 path('course/&lt;pk>/&lt;module_id>/', <b>cache_page(60 * 15)(</b>views.StudentCourseDetailView.as_view()<b>)</b>,
