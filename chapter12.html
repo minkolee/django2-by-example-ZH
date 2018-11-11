@@ -30,7 +30,7 @@
 </ul>
 <p>我们可以从0开始写视图来建立该API，也可以通过第三方应用简单的为项目建立API，在这方面最出名的第三方应用就是Django REST framework。</p>
 
-<h3 id="c11-1-1"><span class="title">1.1</span>安装Django REST framework</h3>
+<h3 id="c12-1-1"><span class="title">1.1</span>安装Django REST framework</h3>
 <p>Django REST framework可以让你简单地创建符合REST风格的API，其官方网站是<a href="https://www.django-rest-framework.org/" target="_blank">https://www.django-rest-framework.org/</a>。</p>
 <p>打开系统命令行输入如下命令：</p>
 <pre>
@@ -97,7 +97,7 @@ python manage.py shell
 </pre>
 <p>在这个例子里，先获取了一个<code>Subject</code>实例，然后创建了一个序列化器的实例<code>SubjectSerializer</code>并访问序列化之后的数据，可以看到模型的数据被序列化成了Python原生的字典类型数据。</p>
 
-<h3 id="c11-1-3"><span class="title">1.3</span>理解解析器（parser）与渲染器（renderer）</h3>
+<h3 id="c12-1-3"><span class="title">1.3</span>理解解析器（parser）与渲染器（renderer）</h3>
 <p>序列化的结果在通过HTTP响应返回之前，必须被渲染成为一个特殊的格式。同样，在从HTTP请求中获取数据的时候，也必须解析数据然后反序列化。REST框架包含了渲染器和解析器用于处理这些过程。</p>
 <p>先来看看如何解析数据，在Python命令行模式中输入下列命令：</p>
 <pre>
@@ -118,7 +118,7 @@ b'{"id":4,"title":"Programming","slug":"programming"}'
 <p>使用<code>JSONRenderer</code>可以将Python数据对象渲染成JSON字符串。REST框架提供了两个不同的渲染器：<code>JSONRenderer</code>和<code>BrowsableAPIRenderer</code>。后者提供了一个浏览API返回数据的web界面。可以在<code>settings.py</code>的<code>REST_FRAMEWORK</code>设置中的<code>DEFAULT_RENDERER_CLASSES</code>选项中设置默认的渲染器。</p>
 <p>关于渲染器和解析器的更多说明可以看<a href="https://www.django-rest-framework.org/api-guide/renderers/" target="_blank">https://www.django-rest-framework.org/api-guide/renderers/</a>和<a href="https://www.django-rest-framework.org/api-guide/parsers/" target="_blank">https://www.django-rest-framework.org/api-guide/parsers/</a>。</p>
 
-<h3 id="c11-1-4"><span class="title">1.4</span>创建列表和详情视图</h3>
+<h3 id="c12-1-4"><span class="title">1.4</span>创建列表和详情视图</h3>
 <p>REST框架包含一系列内置的通用视图和mixins用于建立API视图，提供了增删改查数据模型对象的功能。关于所有的通用视图和mixin可以看<a href="https://www.django-rest-framework.org/api-guide/generic-views/" target="_blank">https://www.django-rest-framework.org/api-guide/generic-views/</a>。</p>
 <p>现在来建立一个获取<code>Subject</code>对象的视图，在<code>courses/api/</code>目录内新建<code>views.py</code>文件，在其中增加下列代码：</p>
 <pre>
@@ -177,7 +177,7 @@ curl http://127.0.0.1:8000/api/subjects/
 <p>这个界面就是由之前提到的<code>BrowsableAPIRenderer</code>渲染器提供的。页面内显示了结果的头部信息及API的返回信息。还可以通过在URL中包含具体的ID来获取一个<code>Subject</code>对象，访问<a
         href="http://127.0.0.1:8000/api/subjects/1/" target="_blank">http://127.0.0.1:8000/api/subjects/1/</a>，可以发现页面只展示了一个单独的JSON格式的对象数据。</p>
 
-<h3 id="c11-1-5"><span class="title">1.5</span>创建嵌套的序列化器</h3>
+<h3 id="c12-1-5"><span class="title">1.5</span>创建嵌套的序列化器</h3>
 <p>我们再为<code>Course</code>模型创建一个序列化器，打开<code>courses/api/serializers.py</code>继续编辑：</p>
 <pre>
 from ..models import Course
@@ -237,7 +237,7 @@ class CourseSerializer(serializers.ModelSerializer):
 </pre>
 <p>这样就完成了嵌套序列化的工作，关于序列化器的更多信息可以看<a href="https://www.django-rest-framework.org/api-guide/serializers/" target="_blank">https://www.django-rest-framework.org/api-guide/serializers/</a>。</p>
 
-<h3 id="c11-1-6"><span class="title">1.6</span>创建自定义API视图</h3>
+<h3 id="c12-1-6"><span class="title">1.6</span>创建自定义API视图</h3>
 <p>REST框架提供了一个<code>APIView</code>视图，基于Django内置的<code>View</code>视图基础上增加了RESTful API的功能，但与<code>View</code>不同的是，<code>APIView</code>采用了REST框架自定义的处理<code>Request</code>和<code>Response</code>对象的方法，并且在返回HTTP响应的时候处理<code>APIException</code>错误，而且还包含内建的认证系统来管理对视图的访问。</p>
 <p>下边通过<code>APIView</code>来创建一个视图供用户选课，编辑<code>courses</code>应用的<code>api/views.py</code>文件，增加如下代码：</p>
 <pre>
@@ -265,7 +265,7 @@ path('courses/&lt;pk>/enroll/', views.CourseEnrollView.as_view(), name='course_e
 </pre>
 <p>现在理论上我们就可以发送一个POST请求来选课，而无需在页面中点击按钮。然而这么做需要区分用户身份，避免未认证的用户也来发送POST请求。下一节来看看API认证与权限管理是如何工作的。</p>
 
-<h3 id="c11-1-7"><span class="title">1.7</span>处理身份认证</h3>
+<h3 id="c12-1-7"><span class="title">1.7</span>处理身份认证</h3>
 <p>REST框架提供了一个认证类，用于鉴别提交HTTP请求的用户身份。如果认证通过，REST框架会在<code>request.user</code>中设置认证后的<code>User</code>对象，如果没有用户通过认证，则<code>request</code>被设置一个Django内置的<code>AnonymousUser</code>对象。</p>
 <p>REST框架提供如下的认证后端：</p>
 <ul>
@@ -289,7 +289,7 @@ class CourseEnrollView(APIView):
 </pre>
 <p>现在视图就可以通过HTTP请求头的<code>Authorization</code>头部信息进行用户身份认证了。</p>
 
-<h3 id="c11-1-8"><span class="title">1.8</span>为视图增加权限控制</h3>
+<h3 id="c12-1-8"><span class="title">1.8</span>为视图增加权限控制</h3>
 <p>REST框架提供了一个权限系统用于控制对视图的访问。REST框架内建的部分权限有：</p>
 <ul>
     <li><code>AllowAny</code>：完全开放权限，不管用户认证与否，都不做任何限制</li>
@@ -337,7 +337,7 @@ HTTP/1.1 200 OK
 </pre>
 <p>现在可以到管理后台查看数据库是否已经更新了该用户选课的数据。</p>
 
-<h3 id="c11-1-9"><span class="title">1.9</span>创建视图集和路由</h3>
+<h3 id="c12-1-9"><span class="title">1.9</span>创建视图集和路由</h3>
 <p>视图集<code>Viewsets</code>允许对API定义一系列的交互动作，并允许REST框架使用一个<code>Router</code>对象动态的建立URL。通过使用视图集，可以避免重复编写视图逻辑。REST框架中的视图集涵盖的经典的增删改查动作，包括<code>list()</code>, <code>create()</code>,
     <code>retrieve()</code>, <code>update()</code>, <code>partial_update()</code>, 和 <code>destroy()</code>。</p>
 <p>为<code>Course</code>模型创建一个视图集，编辑<code>api/views.py</code>文件，增加如下代码：</p>
@@ -370,7 +370,7 @@ urlpatterns = [
 <p>这个时候可以访问<a href="http://127.0.0.1:8000/api/courses/" target="_blank">http://127.0.0.1:8000/api/courses/</a>，就可以得到JSON格式的课程列表。这个路径中的<code>/courses/</code>就是注册路由的时候使用的前缀<code>courses</code>。</p>
 <p>视图集的详细使用可以看 <a href="https://www.django-rest-framework.org/api-guide/viewsets/" target="_blank">https://www.django-rest-framework.org/api-guide/viewsets/</a>，路由的使用方法可以参考<a href="https://www.django-rest-framework.org/api-guide/routers/" target="_blank">https://www.django-rest-framework.org/api-guide/routers/</a>。</p>
 
-<h3 id="c11-1-10"><span class="title">1.10</span>为视图集添加额外功能</h3>
+<h3 id="c12-1-10"><span class="title">1.10</span>为视图集添加额外功能</h3>
 <p>可以为视图集添加额外功能。让我们来把<code>CourseEnrollView</code>变成一个自定义的视图集。编辑<code>api/views.py</code>文件，修改<code>CourseViewSet</code>为下面这样：</p>
 <pre>
 <b>from rest_framework.decorators import detail_route</b>
@@ -399,7 +399,7 @@ path('courses/&lt;pk>/enroll/', views.CourseEnrollView.as_view(), name='course_e
 <p>然后编辑<code>api/views.py</code>，删除<code>CourseEnrollView</code>，因为这个类的功能现在成为视图集的一部分。</p>
 <p>现在选课功能的URL由<code>router</code>自动生成，实际的URL与刚才相同，因为使用了我们自定义的函数名称<code>enroll</code>。</p>
 
-<h3 id="c11-1-11"><span class="title">1.11</span>自定义权限</h3>
+<h3 id="c12-1-11"><span class="title">1.11</span>自定义权限</h3>
 <p>我们希望只有选了某课程的学生用户才可以访问该课程的全部内容。最好的方式就是自定义一个权限，REST框架<span style="color: red">（原书为Django，应该为REST）</span>提供了一个<code>BasePermission</code>类允许重写下列方法：</p>
 <ul>
     <li><code>has_permission()</code>：视图级别的权限检查</li>
@@ -415,7 +415,7 @@ class IsEnrolled(BasePermission):
 </pre>
 <p>这个<code>IsEnrolled</code>权限继承了<code>BasePermission</code>类然后重写了<code>has_object_permission</code>方法。由于这个方法是基于对象的，所以<code>obj</code>就是当前的课程。检查当前用户是否在已经选该课的所有用户里。之后就可以使用该权限类了。</p>
 
-<h3 id="c11-1-12"><span class="title">1.12</span>序列化课程内容</h3>
+<h3 id="c12-1-12"><span class="title">1.12</span>序列化课程内容</h3>
 <p>现在已经把主题，课程和章节都序列化了。还必须序列化内容。<code>Content</code>模型有一个通用外键关系，可以用于检索所有内容模型。而且我们还为所有内容模型添加了<code>render()</code>方法。可以使用这些关系和方法，来实现序列化。</p>
 <p>编辑<code>api/serializers.py</code>文件，添加下列代码：</p>
 <pre>
