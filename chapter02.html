@@ -325,7 +325,7 @@ def post_detail(request, year, month, day, post):
     <b>else:</b>
         <b>comment_form = CommentForm()</b>
     return render(request, 'blog/post/detail.html',
-                  {'post': post, <b>'comments': comments, 'new_comment': new_comment, comment_form: comment_form</b>})
+                  {'post': post, <b>'comments': comments, 'new_comment': new_comment, 'comment_form': comment_form</b>})
 </pre>
 <p>现在post_detail视图可以显示文章及其评论，在视图中增加了一个获得当前文章对应的全部评论的QuerySet，如下：</p>
 <pre>
