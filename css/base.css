@@ -147,7 +147,7 @@ img {
     }
 
     body > ul, body > ol {
-        width: 90%;
+        width: 80%;
     }
 
     a {
@@ -155,7 +155,7 @@ img {
     }
 
     pre {
-        width: 90%;
+        width: 85%;
     }
 }
 

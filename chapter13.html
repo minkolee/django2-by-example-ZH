@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/normalize.min.css">
+    <link rel="stylesheet" href="css/base.css">
+    <title>第十三章 上线</title>
+
+</head>
+<body>
+<h1><b>第十三章 上线</b></h1>
+<p>在上一章，为其他程序与我们的Web应用交互创建了RESTful API。本章将学习如何创建生产环境让我们的网站正式上线，主要内容有：</p>
+<ul>
+    <li>配置生产环境</li>
+    <li>创建自定义中间件</li>
+    <li>实现自定义管理命令</li>
+</ul>
+
+<h2 id="c13-1"><span class="title">1</span>创建生产环境</h2>
+<p>现在该将Django项目正式部署到生产环境中了。我们将按照下列步骤将站点部署到生产环境中：</p>
+<ol>
+    <li>为生产环境配置项目设置</li>
+    <li>使用PostgreSQL数据库</li>
+    <li>使用uWSGI和NGINX建立web服务器</li>
+    <li>管理静态资源</li>
+    <li>使用SSL加强站点安全管理</li>
+</ol>
+
+<h3 id="c13-1-1"><span class="title">1.1</span>管理用于多个环境的配置</h3>
+<p>在实际的项目中，很可能要面对不同的环境。一般至少有一个本地开发环境和一个生产环境，也可能有其他环境比如测试环境，预上线环境等。对于不同的环境，有些设置是通用的，有些则因环境而异。让我们将项目设置为可以适合不同环境，又可以保证项目结构不会被改变。</p>
+<p>在<code>educa/educa/</code>目录下建立<code>settings</code>目录（包），与<code>settings.py</code>同级，将<code>settings.py</code>文件重命名为<code>base.py</code>然后移动到<code>settings</code>目录中来，再创建其他文件，<code>setting/</code>目录如下所示：</p>
+<pre>
+settings/
+    __init__.py
+    base.py
+    local.py
+    pro.py
+</pre>
+<p>这些文件用途如下：</p>
+<ul>
+    <li><code>base.py</code>：基本的设置文件，包含通用的设置，是原来的settings.py</li>
+    <li><code>local.py</code>：本地环境的自定义设置</li>
+    <li><code>pro.py</code>：生产环境的自定义设置</li>
+</ul>
+<p>编辑<code>settings/base.py</code>，找到下列这行：</p>
+<pre>
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+</pre>
+<p>将其替换成下边这行：</p>
+<pre>
+BASE_DIR =
+os.path.dirname(os.path.dirname(os.path.abspath(<b>os.path.join</b>(__file__, <b>os.pardir)</b>)))
+</pre>
+<p>由于我们将<code>settings.py</code>文件又往下级目录放了一级，必须让<code>BASE_DIR</code>指向正确的路径，所以使用了<code>os.pardir</code>指向父目录，来让最后的路径依然是原来的项目根目录。</p>
+<p>编辑<code>settings/local.py</code>，添加下列代码：</p>
+<pre>
+from .base import *
+
+DEBUG = True
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+    }
+}
+
+</pre>
+<p>这是代表我们本地环境的配置文件。在其中导入了所有<code>base.py</code>中的设置内容，然后写了<code>DEBUG</code>和<code>DATABASES</code>两个设置，这两个设置会覆盖原来<code>base.py</code>中的设置，成为本文件中的设置。由于<code>DEBUG</code>设置和<code>DATABASES</code>设置在每个配置文件中都会修改，也可以将这两个设置从<code>base.py</code>中删除。</p>
+<p>再来编辑<code>settings/pro.py</code>，如下所示：</p>
+<pre>
+from .base import *
+
+DEBUG = False
+ADMINS = (
+    ('Antonio M', 'email@mydomain.com'),
+)
+ALLOWED_HOSTS = ['*']
+DATABASES = {
+    'default': {
+    }
+}
+</pre>
+<p>这是生产环境的配置文件，来详细看一下其中的内容：</p>
+<ul>
+    <li><code>DEBUG</code>：设置<code>DEBUG</code>为<code>False</code>是生产环境的强制要求。如果不关闭，会将错误跟踪和敏感配置信息泄露给所有人。</li>
+    <li><code>ADMINS</code>：当<code>DEBUG</code>设置为<code>False</code>的时候，如果一个视图抛出异常，所有信息会以邮件形式发送到<code>ADMINS</code>配置中列出的所有人。需要将其中的信息改成自己的名字和邮箱（还需要配置SMTP服务器）。</li>
+    <li><code>ALLOWED_HOSTS</code>：Django只会向这个设置中的地址或者主机名称提供Web服务。这是一个安全手段。我们使用了通配符*表示可以用于所有主机名称或者IP地址。在稍后的配置中会更详细的作出限制。</li>
+    <li><code>DATABASES</code>：生产环境的数据库设置，现在留空，后边会进行该设置。由于生产环境的数据库和非生产环境的数据库一般是隔离的，甚至生产环境数据库只有处于生产环境才能访问。所以该项需要单独配置。</li>
+</ul>
+<p class="hint">在需要面对多种环境时，建立一个基础配置文件并为每种环境编写单独的配置文件。用于具体环境的配置文件继承基础配置并重写与环境相关的配置即可。</p>
+<p>由于我们现在没有把配置文件放在原来<code>settings.py</code>所在的位置，所以无法运行<code>manage.py</code>，必须为其指定<code>settings</code>模块的所在路径，即使用<code>--settings</code>参数或者设置环境变量<code>DJANGO_SETTINGS_MODULE</code>。</p>
+<p>打开系统命令行窗口输入：</p>
+<pre>
+export DJANGO_SETTINGS_MODULE=educa.settings.pro
+</pre>
+<p>这条命令会为当前的会话窗口设置<code>DJANGO_SETTINGS_MODULE</code>环境变量。如果不想每次运行shell都执行一遍，可以把这条命令加入到shell配置文件如<code>.bashrc</code>或者<code>.bash_profile</code>中。</p>
+<p>如果不想对系统进行任何设置，那么在启动站点的时候必须加上<code>--settings</code>参数，如下：</p>
+<pre>
+python manage.py migrate --settings=educa.settings.pro
+</pre>
+<p>现在我们就为多环境做好了基础设置。</p>
+
+<h3 id="c13-1-2"><span class="title">1.2</span>使用PostgreSQL数据库</h3>
+<p>在整本书中，我们大部分都使用了Python自带的SQLite数据库，只要在博客全文检索的时候推荐使用了PostgreSQL数据库。SQLite轻量而且易于使用，但对于生产环境而言太过简陋，必须需要一个更强力的数据库比如PostgreSQL和MySQL或者Oracle。PostgreSQL的安装在第三章中已经介绍过，不再赘述。</p>
+<p>让我们为我们的应用创建一个PostgreSQL用户，打开系统命令行输入如下命令：</p>
+<pre>
+su postgres
+createuser -dP educa
+</pre>
+<p>系统会提示输入用户密码和权限。输入密码并且给予用户权限，然后使用下列命令建立一个新的数据库：</p>
+<pre>
+createdb -E utf8 -U educa educa
+</pre>
+<p>这样就建立好了一个新的数据库并且将其分配给educa用户，之后编辑<code>settings/pro.py</code>，修改数据库的设置如下：</p>
+<pre>
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'educa',
+        'USER': 'educa',
+        'PASSWORD': '********',
+    }
+}
+</pre>
+<p>将密码部分替换成为educa用户设置的密码。由于新数据库是空的，运行：</p>
+<pre>
+python manage.py migrate
+</pre>
+<p>然后创建一个超级用户：</p>
+<pre>
+python manage.py createsuperuser
+</pre>
+<p class="emp">译者注，安装PostgreSQL远没有这么简单，尤其是通过第三方程序远程管理PostgreSQL，需要修改PostgreSQL的配置文件，将认证方式修改为md5或者trust，然后启用允许访问的IP，建议查看官方文档和各种安装教程进行配置。</p>
+
+<h3 id="c13-1-3"><span class="title">1.3</span>部署前检查</h3>
+<p>Django提供了一个<code>check</code>命令，可以在任何时候检查项目。通常检查过程包括检查所有注册的应用，输出所有错误和警告信息。如果包含<code>--deploy</code>参数，还会额外执行针对生产环境的检查。</p>
+<p>打开系统终端然后输入如下命令进行检查：</p>
+<pre>
+python manage.py check --deploy
+</pre>
+<p class="emp">译者注：作者这里遗漏了配置文件的路径，应该写成<code>python manage.py check --deploy --settings=educa.settings.***</code>，其中***为base，local或pro</p>
+<p>如果站点编写正确的话，会看到没有错误输出，但是会有一些警告信息。这说明站点通过了检查，但这些警告信息应该得到处理，以让站点更加安全。本书不会深入这里的内容，但是要记得在正式部署之前一定要进行部署前检查。</p>
+
+<h3 id="c13-1-4"><span class="title">1.4</span>通过WSGI程序提供Django服务</h3>
+<p>Django的主要部署平台就是WSGI，WSGI是<a href="https://zh.wikipedia.org/wiki/Web%E6%9C%8D%E5%8A%A1%E5%99%A8%E7%BD%91%E5%85%B3%E6%8E%A5%E5%8F%A3" target="_blank">Web Server Gateway Interface</a>的简称，是基于Python的程序提供Web服务的标准格式。由于Django也是Python程序，也需要通过WSGI对外提供服务。</p>
+<p>当通过<code>startproject</code>命令新建一个项目的时候，Django会在项目目录内新建一个<code>wsgi.py</code>。这个文件包含了一个WSGI可调用函数，为我们的Django应用提供了一个接口。无论是我们之前采用本机8000端口的开发服务器，还是正式生产环境，都需要通过这个接口。关于WSGI的详细知识可以看<a href="https://wsgi.readthedocs.io/en/latest/" target="_blank">https://wsgi.readthedocs.io/en/latest/</a>及Python的<a href="https://www.python.org/dev/peps/pep-0333/" target="_blank">PEP333</a>。</p>
+
+<h3 id="c13-1-5"><span class="title">1.5</span>安装WSGI</h3>
+<p>直到本节之前，我们的所有开发都是在django在本地环境运行的开发服务器上进行的。在生产环境中，需要一个真正的web服务器才能部署django服务。</p>
+<p>uWSGI是一个非常快的Python应用程序WSGI服务器，使用WSGI标准与Python应用进行通信。uWSGI把HTTP请求翻译成Django程序能够处理的格式。</p>
+<p>安装uSWGI：</p>
+<pre>
+pip install uwsgi==2.0.17
+</pre>
+<p>在pip安装之后，会built uWSGI（编译安装），需要一个C编译器，比如GCC或者clang，在linux环境下可以输入命令：<code>apt-get install build-essential</code>。</p>
+<p>如果是MacOS X，可以通过Homebrew安装，执行命令：<code>brew install uwsgi</code>。如果在windows下安装，需要Cygwin <a href="https://www.cygwin.com" target="_blank">https://www.cygwin.com</a></p>。推荐在基于UNIX的操作系统上安装uWSGI。
+<p>UNIX环境下如果看到Successfully built uwsgi就说明成功安装了uWSGI。关于uWSGI的文档可以在<a href="https://uwsgi-docs.readthedocs.io/en/latest/" target="_blank">https://uwsgi-docs.readthedocs.io/en/latest/</a>找到。</p>
+
+<h3 id="c13-1-6"><span class="title">1.6</span>配置uWSGI</h3>
+<p>可以通过命令行配置uWSGI，打开系统命令行模式，进入<code>educa</code>项目的根目录，然后输入：</p>
+<pre>
+sudo uwsgi --module=educa.wsgi:application --env=DJANGO_SETTINGS_MODULE=educa.settings.pro --master --pidfile=/tmp/project-master.pid --http=127.0.0.1:8000 --uid=1000 --virtualenv=/home/env/educa/
+</pre>
+<p>必须需要<code>su</code>权限才可以。通过这条命令，为本机上的uWSGI设置了如下的内容：</p>
+<ol>
+    <li>使用<code>educa.wsgi:application</code>作为调用接口</li>
+    <li>载入生产环境的设置文件</li>
+    <li>使用<code>virtualenv</code>设置的虚拟环境，注意将<code>/home/env/educa/</code>替换为实际的虚拟环境所在路径。如果未使用虚拟环境，该配置可以不填。</li>
+</ol>
+<p>如果不是在项目目录内执行的上述命令，需要额外加一个参数指定具体的项目目录<code>--chdir=/path/to/educa/</code>，将其中的<code>/path/to/educa/</code>替换成educa的项目路径。</p>
+<p>通过浏览器访问<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>（无需启动django服务），可以看到站点内容显示了出来，但没有任何CSS样式，也无法显示图片，这是因为还没有配置uWSGI来提供静态文件服务。</p>
+<p>uWSGI允许使用一个<code>.ini</code>配置文件进行自定义配置，比使用命令行要方便很多。在<code>educa</code>项目根目录下建立：</p>
+<pre>
+config/
+    uwsgi.ini
+</pre>
+<p>编辑<code>uwsgi.ini</code>，添加如下代码：</p>
+<pre>
+[uwsgi]
+# variables
+projectname = educa
+base = <b>/home/projects/educa</b>
+
+# configuration
+master = true
+virtualenv = /home/env/%(projectname)
+pythonpath = %(base)
+chdir = %(base)
+env = DJANGO_SETTINGS_MODULE=%(projectname).settings.pro
+module = educa.wsgi:application
+socket = /tmp/%(projectname).sock
+</pre>
+<p>在这个<code>.ini</code>文件里我们定义了两个变量：</p>
+<ul>
+    <li><code>projectname</code>：Django项目的名称，是<code>educa</code></li>
+    <li><code>base</code>：<code>educa</code>项目的绝对路径，将其替换成实际项目路径</li>
+</ul>
+<p>上边定义的这两个变量是自定义变量，还可以定义任意其他变量，只要不和内置的名称冲突。接下来是具体设置的解释：</p>
+<ul>
+    <li><code>master</code>：表示启用主进程</li>
+    <li><code>virtualenv</code>：虚拟环境地址，将其替换成实际的路径所在（不包含<code>bin/activate</code>)</li>
+    <li><code>pythonpath</code>：加入到Python PATH中的地址，一般就是项目的根目录</li>
+    <li><code>chdir</code>：项目的实际地址，uWSGI会在加载应用之前将工作目录变更到这个路径</li>
+    <li><code>env</code>：环境变量，设置为<code>DJANGO_SETTINGS_MODULE</code>，具体路径指向生产环境的配置文件</li>
+    <li><code>module</code>：要使用的WSGI模块，指向项目中的<code>wsgi.py</code>中的调用函数。<code>application</code>是该函数在项目中默认的命名。</li>
+    <li><code>socket</code>：绑定该服务的套接字。（是一个文件套接字，用于与NGINX通信）</li>
+</ul>
+<p>其中的<code>socket</code>套接字是用于和第三方路由软件进行通信，比如NGINX。命令行模式中我们使用的<code>--http 127.0.0.1:8000</code>指的是让uWSGI自己接受HTTP请求并自己负责路由这些请求。我们需要把uWSGI作为socket启动（在<code>.ini</code>文件设置中并没有设置<code>--http</code>参数），因为我们要使用NGINX作为我们的web服务器，NGINX通过刚才设置的文件套接字与uWSGI进行通信。</p>
+<p>关于uWSGI的详细设置可以看 <a href="https://uwsgi-docs.readthedocs.io/en/latest/Options.html" target="_blank">https://uwsgi-docs.readthedocs.io/en/latest/Options.html</a>。</p>
+<p>现在可以通过使用配置文件来启动uWSGI（先关闭原来运行的uWSGI服务）：</p>
+<pre>
+uwsgi --ini config/uwsgi.ini
+</pre>
+<p>这样运行之后，可以发现暂时无法通过浏览器访问<a href="http://127.0.0.1:8000/" target="_blank">http://127.0.0.1:8000/</a>，因为此时uWSGI监听文件套接字而不是HTTP端口，我们还需要继续完善生产环境配置。</p>
+
+<h3 id="c13-1-7"><span class="title">1.7</span>配置uWSGI</h3>
+<p>当启动一个Web服务的时候，很显然必须提供动态的内容服务，但也需要静态的文件服务，比如CSS，JavaScript文件，图像等。如果用uWSGI来管理静态文件，会为HTTP请求增加不必要的开销，所以最好在uWSGI之前加一个Web服务，比如NGINX。</p>
+<p>NGINX是一个高并发，低内存占用的Web服务端，也具有反向代理功能，即接受一个HTTP请求，然后把这个请求路由给不同的后端。通常来说，你需要一个web服务端如NGINX，用于快速高效的提供静态文件，然后把动态的请求转发给uWSGI。通过使用NGINX，还可以设置其反向代理功能从而更好的提供web服务。</p>
+<p>安装NGINX可以使用下列命令：</p>
+<pre>sudo apt-get install nginx</pre>
+<p>如果使用MacOS X，可以通过<code>brew install nginx</code>来安装。Windows下的NGINX可以通过<a href="https://nginx.org/en/download.html" target="_blank">https://nginx.org/en/download.html</a>下载。</p>
+<p class="emp">译者注：安装NGINX后不会立刻启动，译者使用的Centos 7.5 1804还需要启动NGINX服务和开机启动：</p>
+<pre>
+systemctl start nginx.service
+systemctl enable nginx.service
+</pre>
+<p class="emp">正常情况下在启动NGINX之后，直接访问本机IP地址，可以看到NGINX欢迎页面，表示基础配置成功运行，之后可以先停用NGINX服务，以配置生产环境。</p>
+
+<h3 id="c13-1-8"><span class="title">1.8</span>生产环境</h3>
+<p>下面的图表示了我们最终配置的生产环境的结构：</p>
+<p><img src="http://img.conyli.cc/django2/C13-01.jpg" alt=""></p>
+<p>当一个浏览器发起一个HTTP请求的时候，发生如下事情：</p>
+<ol>
+    <li>NGINX接收HTTP请求</li>
+    <li>如果请求静态文件，NGINX直接提供服务。如果请求动态页面，NGINX通过SOCKET与uWSGI通信，将请求转交给uWSGI处理</li>
+    <li>uWSGI将请求转交给Django后端进行处理，返回的响应被传递给NGINX，NGINX再发回给浏览器。</li>
+</ol>
+
+<h3 id="c13-1-9"><span class="title">1.9</span>配置NGINX</h3>
+<p>在<code>config/</code>目录下创建<code>nginx.conf</code>文件，在其中添加如下代码：</p>
+<pre>
+# the upstream component nginx needs to connect to
+upstream educa {
+    server unix:///tmp/educa.sock;
+}
+server {
+    listen 80;
+    server_name www.educaproject.com educaproject.com;
+    location / {
+        include /etc/nginx/uwsgi_params;
+        uwsgi_pass educa;
+    }
+}
+</pre>
+<p>这是NGINX的基础配置。我们建立了一个upstream名叫<code>educa</code>，指定了uWSGI使用的socket名称 ，然后使用<code>server</code>指令，其中的设置有：</p>
+<ul>
+    <li><code>listen 80</code>表示让NGINX监听<code>80</code>端口</li>
+    <li>设置主机名为<code>www.educaproject.com</code>和<code>educaproject.com</code>，NGINX会为这两个主机地址提供服务</li>
+    <li>配置<code>location</code>参数，将所有在<code>'/'</code>路径下的URL转发给上边的upstream <code>educa</code>，也就是uWSGI的socket进行处理。还把NGINX自带的关于和uwsgi协同工作的参数设置也包含进去。</li>
+</ul>
+<p>NGINX还有很多复杂的设置，文档可以参考<a href="https://nginx.org/en/docs/" target="_blank">https://nginx.org/en/docs/</a>。</p>
+<p>NGINX主要的设置文件位于<code>/etc/nginx/nginx.conf</code>，该文件包含<code>/etc/nginx/sites-enabled/</code>下的所有配置文件。为了让NGINX使用我们刚才编写的配置文件，打开系统命令行窗口建立一个软连接：</p>
+<pre>
+sudo ln -s /home/projects/educa/config/nginx.conf /etc/nginx/sites-enabled/educa.conf
+</pre>
+<p>将其中的<code>/home/projects/educa/</code>替换成实际的绝对路径。注意，这里如果没有<code>/sites-enabled/</code>目录，要先手工建立。</p>
+<p>如果还没有运行uWSGI，打开系统命令行窗口，在<code>educa</code>项目根目录先运行uWSGI：</p>
+<pre>
+uwsgi --ini config/uwsgi.ini
+</pre>
+<p>当前窗口会被uWSGI占用，再开一个命令行窗口，然后执行：</p>
+<pre>
+service nginx start
+</pre>
+<p>由于我们使用了自定义的域名，还必须修改<code>/etc/hosts</code>，添加如下两行：</p>
+<pre>
+127.0.0.1 educaproject.com
+127.0.0.1 www.educaproject.com
+</pre>
+<p>这样我们就把这两个域名都路由到本地回环地址上，由于我们是从本机访问本机，所以要更改HOSTS，实际生产环境不必做本步修改，因为生产环境会有固定的IP，域名和对应的DNS解析。</p>
+<p>打开浏览器，输入<a href="http://educaproject.com/" target="_blank">http://educaproject.com/</a>，应该可以看到站点了，但是所有的静态文件依然没有被加载，没关系，即将完成生产环境的配置。</p>
+<p class="emp">如果系统是Centos 7，这里显示502错误，查看<code>/var/log/nginx/error.log</code>，如果其中的错误是<code>[crit] 4036#4036: *1 connect() to unix:///tmp/educa.sock failed (13: Permission denied)</code>，就先执行<code>/usr/sbin/sestatus</code>查看SELINUX的状态，如果为开启，就编辑SELINUX的设置，将其关闭，如下：</p>
+<pre>
+vi /etc/selinux/config
+
+#SELINUX=enforcing
+SELINUX=disabled
+</pre>
+<p class="emp">之后<code>reboot</code>重启系统才行。之后应该就可以正常显示站点了。</p>
+<p>之后为了安全起见，到<code>settings/pro.py</code>中，修改<code>ALLOWED_HOSTS</code>设置为NGINX配置文件中的两个域名：</p>
+<pre>
+ALLOWED_HOSTS = ['educaproject.com', 'www.educaproject.com']
+</pre>
+<p>现在Django就只为这两个主机名提供服务了。关于<code>ALLOWED_HOSTS</code>的更多信息可以看<a href="https://docs.djangoproject.com/en/2.0/ref/settings/#allowed-hosts" target="_blank">https://docs.djangoproject.com/en/2.0/ref/settings/#allowed-hosts</a>。</p>
+
+<h3 id="c13-1-10"><span class="title">1.10</span>让NGINX提供静态文件和媒体资源服务</h3>
+<p>NGINX提供静态文件的速度很快。刚才我们把所有的地址转发，都交给了uWSGI，现在要将所有的静态文件通过NGINX提供服务，对于我们站点来说，就是把所有的CSS JS文件和用户上传的媒体文件都交给NGINX来代理。</p>
+<p>编辑<code>settings/base.py</code>，增加下边一行：</p>
+<pre>
+STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
+</pre>
+<p>这行表示存放站点静态文件的地址，还记得之前学习过使用<code>python manage.py collectstatic</code>吗？现在就需要将所有的静态文件收集过来放在此目录中，在命令行中输入：</p>
+<pre>
+python manage.py collectstatic --settings=educa.settings.pro
+</pre>
+<p class="emp">注意，原书的命令缺少了 <code>--settings=educa.settings.pro</code> </p>
+<p>可以看到下列输出：</p>
+<pre>
+160 static files copied to '/educa/static'.
+</pre>
+<p>静态文件目录设置好了，现在需要将这个目录设置到NGINX中，编辑<code>config/nginx.conf</code>，在<code>server</code>指令后的大括号中增加下列内容：</p>
+<pre>
+location /static/ {
+    alias /home/projects/educa/static/;
+}
+location /media/ {
+    alias /home/projects/educa/media/;
+}
+</pre>
+<p>将其中的<code>/home/projects/educa/static/</code>和<code>/home/projects/educa/media/</code>替换成你项目的实际<code>static</code>和<code>media</code>目录的绝对路径。这两个参数解释如下：</p>
+<ul>
+    <li><code>/static/</code>：这个路径是Django中设置的<code>STATIC_URL</code>，表示当NGINX看到<code>/static/</code>的路径请求的时候，就到这个设置对应的路径中寻找所需文件。</li>
+    <li><code>/media/</code>：这个路径是Django中设置的<code>MEDIA_URL</code>路径，表示当NGINX看到<code>/media/</code>的路径请求的时候，就到这个设置对应的路径中寻找所需文件。</li>
+</ul>
+<p>重新启动NGINX服务，以便让配置文件生效：</p>
+<pre>
+service nginx reload
+</pre>
+<p>在浏览器中打开<a href="http://educaproject.com/" target="_blank">http://educaproject.com/</a>，现在可以看到整个站点包含静态资源都正确的显示了。对于站点的静态文件请求，NGINX将绕开uWSGI，把文件直接返回给浏览器。</p>
+<p>现在生产环境就初步配置完毕。整个站点现在可以说运行在生产环境之下了。</p>
+
+<h3 id="c13-1-11"><span class="title">1.11</span>使用SSL安全连接</h3>
+<p>在配置完初步的生产环境之后，下一个话题是站点的安全性。<a href="https://zh.wikipedia.org/wiki/%E5%82%B3%E8%BC%B8%E5%B1%A4%E5%AE%89%E5%85%A8%E6%80%A7%E5%8D%94%E5%AE%9A" target="_blank">Secure Sockets Layer</a>现在逐渐成为提供Web安全连接服务的规范。强烈建议对于正式的网站使用HTTPS协议，现在就在NGINX中配置SSL认证来让站点变得更加安全。</p>
+
+<h4 id="c13-1-11-1"><span class="title">1.11.1</span>创建一个SSL认证</h4>
+<p>在<code>educa</code>项目根目录下建立一个<code>ssl</code>目录，然后通过<code>openssl</code>生成我们的SSL证书：</p>
+<pre>
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ssl/educa.key -out ssl/educa.crt
+</pre>
+<p>用这条命令生成一个365天有效的2048位的SSL证书，然后系统会提示输入一些信息：</p>
+<pre>
+Country Name (2 letter code) [AU]:
+State or Province Name (full name) [Some-State]:
+Locality Name (eg, city) []:
+Organization Name (eg, company) [Internet Widgits Pty Ltd]:
+Organizational Unit Name (eg, section) []:
+Common Name (e.g. server FQDN or YOUR name) []: educaproject.com
+Email Address []: email@domain.com
+</pre>
+<p>这其中最关键的是<code>Common Name</code>，必须将主机域名名称输入：这里使用<code>educaproject.com</code></p>
+<p>之后会在<code>ssl/</code>目录下生成两个文件，<code>educa.key</code>是私钥，<code>educa.crt</code>是实际的SSL证书。</p>
+
+<h4 id="c13-1-11-2"><span class="title">1.11.2</span>配置NGINX使用SSL</h4>
+<p>编辑<code>config/nginx.conf</code>，在<code>server</code>设置中加入下列内容：</p>
+<pre>
+server {
+listen 80;
+<b>listen 443 ssl;</b>
+<b>ssl_certificate /home/projects/educa/ssl/educa.crt;</b>
+<b>ssl_certificate_key /home/projects/educa/ssl/educa.key;</b>
+server_name www.educaproject.com educaproject.com;
+# ...
+}
+</pre>
+<p>将其中的路径都修改为SSL证书所在的实际绝对路径。</p>
+<p>这么设置之后，NGINX将同时监听<code>80</code>端口（HTTP协议）和<code>443</code>端口（HTTPS协议），然后指定了SSL的验证信息<code>ssl_certificate</code>与对应的密钥<code>ssl_certificate_key</code>。</p>
+<p>现在重新启动NGINX服务，访问 <a href="https://educaproject.com/" target="_blank">http<span style="color: red">s</span>://educaproject.com/</a> ，会看到类似如下提示：</p>
+<p><img src="http://img.conyli.cc/django2/C13-02.jpg" alt=""></p>
+<p>这个提示因浏览器而异。意思是警告当前站点并没有使用一个值得信任的验证方式，浏览器无法确定该站点安全与否。这是因为我们使用的SSL证书是由我们自行签发的，而不是从一个受信任的机构（Certification Authority）获得的证书。当我们有了实际的公开域名之后，就可以向一个受信任的证书颁发机构申请一个SSL证书，这样浏览器就能识别该站点的HTTPS认证。</p>
+<p>如果想为实际的站点申请证书，可以使用Linux基金会Linux Foundation的<em>Let's Encrypt</em>项目。这是一个致力于免费获得和更新SSL证书的计划，该计划的站点在 <a href="https://letsencrypt.org/" target="_blank">https://letsencrypt.org/</a>。</p>
+<p>点击 "Add Exception" 按钮可以让浏览器知道可以信任该站点，这时浏览器的显示可能如下：</p>
+<p><img src="http://img.conyli.cc/django2/C13-03.jpg" alt=""></p>
+<p>点击小锁按钮，就可以看到SSL的详细信息。</p>
+<p class="emp">译者注：这里也因浏览器而异，有的浏览器依旧会提示证书不可信或者存在问题，毕竟这个证书是我们自行签发的。</p>
+
+<h4 id="c13-1-11-3"><span class="title">1.11.3</span>配置Django使用SSL</h4>
+<p>Django也有针对SSL的配置，编辑<code>settings/pro.py</code>，增加下边的代码：</p>
+<pre>
+SECURE_SSL_REDIRECT = True
+CSRF_COOKIE_SECURE = True
+</pre>
+<p>这两个设置的含义如下：</p>
+<ul>
+    <li><code>SECURE_SSL_REDIRECT</code>：是否所有的HTTP请求都必须被重定向到HTTPS</li>
+    <li><code>CSRF_COOKIE_SECURE</code>：是否建立加密cookie防止CSRF攻击</li>
+</ul>
+<p>现在我们就配置好了一个高效的提供Web服务的生产环境。</p>
+
+<h2 id="c13-2"><span class="title">2</span>自定义中间件</h2>
+<p>在之前我们已经了解了中间件<code>MIDDLEWARE</code>的设置，该设置包含项目中所有使用到的中间件。关于中间件，可以认为其是一个底层的插件系统，为在请求/响应的过程中提供<a href="https://zh.wikipedia.org/zh-hans/%E9%92%A9%E5%AD%90%E7%BC%96%E7%A8%8B" target="_blank">钩子</a>。每一个中间件都负责一个特定的行为，会在HTTP请求和响应的过程中得到执行。</p>
+<p class="hint">注意不要添加开销非常大的中间件，因为中间件会在项目的所有请求和响应的过程中被执行。</p>
+<p>当一个HTTP请求进来的时候，中间件会按照其在<code>MIDDLEWARE</code>设置中从上到下的顺序执行，当HTTP响应被生成且发送的过程中，中间件会按照设置中从下到上的顺序执行。</p>
+<p>一个符合标准的函数可以作为一个中间件被注册在<code>settings.py</code>中。类似下边的函数就可以作为一个中间件：</p>
+<pre>
+def my_middleware(get_response):
+    def middleware(request):
+        # 对于每个HTTP请求，在视图和之后的中间件执行之前执行的代码
+        response = get_response(request)
+        # 对于每个HTTP请求和响应，在视图执行之后执行的代码
+        return response
+    return middleware
+</pre>
+<p>一个中间件工厂函数接受一个<code>get_response</code>可调用对象，然后返回一个中间件函数。一个中间件接受一个请求然后返回一个响应，类似于视图。这里的<code>get_response</code>可以是下一个中间件，如果自己就是中间件列表中的最后一个，也可以是一个视图名称。</p>
+<p>如果任何一个中间件在尚未调用<code>get_response</code>这个可调用对象之前就返回了一个响应，这个时候就会短路整个中间件链条的处理：其后的中间件不再被执行，这个响应开始从同级的中间件向上返回。</p>
+<p>所以<code>MIDDLEWARE</code>设置中的中间件顺序非常重要，因为中间件依赖于上下中间件的数据进行工作。</p>
+<p class="hint">在向<code>MIDDLEWARE</code>中添加一个中间件时必须注意将其放置在正确的位置，反复强调，中间件在HTTP请求进来的时候从上到下执行，HTTP响应发出的时候从下到上执行。</p>
+<p class="emp">原书在这里只是比较简单的说了一下执行顺序，详细的中间件执行顺序请参考<a href="http://www.conyli.cc/archives/1349" target="_blank">Django进阶-中间件</a>以及<a href="https://docs.djangoproject.com/en/2.0/topics/http/middleware/" target="_blank">https://docs.djangoproject.com/en/2.0/topics/http/middleware/</a>。</p>
+
+<h3 id="c13-2-1"><span class="title">2.1</span>创建二级域名中间件</h3>
+<p>我们来创建一个自定义中间件，用于通过一个自定义的二级域名来访问课程资源。例如：某个显示课程的URL：<code>https://educaproject.com/course/django/</code>，可以通过一个二级域名<code>django.educaproject.com</code>来访问。这样用户就可以使用二级域名作为快捷方式快速访问课程，也比较容易记忆该路径。所有发往这个二级域名的请求，都会被重定向到实际的<code>educaproject.com/course/django/</code>这个URL。</p>
+<p>与视图，模型，表单等组件一样，中间件也可以写在项目的任何位置。推荐在应用目录内建立<code>middleware.py</code>文件来编写中间件。</p>
+<p>在<code>courses</code>应用目录内创建<code>middleware.py</code>文件，并编写如下代码：</p>
+<pre>
+from django.urls import reverse
+from django.shortcuts import get_object_or_404, redirect
+from .models import Course
+
+def subdomain_course_middleware(get_response):
+    """
+    为课程提供二级域名
+    """
+
+    def middleware(request):
+        host_parts = request.get_host().split('.')
+        if len(host_parts) > 2 and host_parts[0] != 'www':
+            # 通过指定的二级域名查询课程对象
+            course = get_object_or_404(Course, slug=host_parts[0])
+            course_url = reverse('course_detail', args=[course.slug])
+            # 将二级域名请求重定向至实际的URL
+            url = '{}://{}{}'.format(request.scheme, '.'.join(host_parts[1:]), course_url)
+            return redirect(url)
+        response = get_response(request)
+        return response
+    return middleware
+</pre>
+<p>当一个HTTP请求进来的时候，这个中间件执行如下任务：</p>
+<ol>
+    <li>取得这个HTTP请求中的域名，然后将其分割成几部分；例如<code>mycourse.educaproject.com</code>会被分割得到一个列表<code>['mycourse', 'educaproject', 'com']</code></li>
+    <li>检查这个域名是否包含二级域名，判断分割后的域名是否包含多于2个元素。如果包含，就取出第一个元素也就是二级域名，如果这个域名不是www，那就通过根据<code>slug</code>查询并取得该课程对象。</li>
+    <li>如果找不到对应的课程，就返回404错误；如果找到了，就重定向到课程对象对应的规范化URL。</li>
+</ol>
+<p>编辑<code>settings/base.py</code>，把自定义中间件添加到<code>MIDDLEWARE</code>设置中：</p>
+<pre>
+MIDDLEWARE = [
+    # ......
+    'courses.middleware.subdomain_course_middleware',
+]
+</pre>
+<p>还需要看一下<code>ALLOWED_HOSTS</code>中的域名设置，这里我们将其设置为可以是任何<code>eduproject.com</code>的二级域名：</p>
+<pre>
+ALLOWED_HOSTS = ['.educaproject.com']
+</pre>
+<p><code>ALLOWED_HOSTS</code>中以一个<code>.</code>开始的域名，例如<code>.educaproject.com</code>，会匹配<code>educaproject.com</code>及所有的<code>educaproject.com</code>的二级域名，比如<code>course.educaproject.com</code>和<code>django.educaproject.com</code>。</p>
+
+<h3 id="c13-2-3"><span class="title">2.3</span>配置NGINX的二级域名</h3>
+<p>编辑<code>config/nginx.conf</code>，将以下这行：</p>
+<pre>
+server_name www.educaproject.com educaproject.com;
+</pre>
+<p>修改成：</p>
+<pre>
+server_name *.educaproject.com educaproject.com;
+</pre>
+<p>通过增加通配符设置，让NGINX也可以代理所有的二级域名，为了测试中间件，还必须在<code>etc/hosts</code>中配置相关内容，比如如果要测试二级域名<code>django.educaproject.com</code>，需要增加一行：</p>
+<pre>
+127.0.0.1 django.educaproject.com
+</pre>
+<p>然后启动站点到<a href="https://slug.educaproject.com/" target="_blank">https://django.educaproject.com/</a>，可以发现中间件现在将其重定向到
+    <a href="https://educaproject.com/course/django/" target="_blank">https://educaproject.com/course/django/</a></p>
+
+<h2 id="c13-3"><span class="title">3</span>实现自定义的管理命令</h2>
+<p>Django允许应用向<code>manage.py</code>管理工具中注册自定义的管理命令。所谓管理命令就是通过<code>manage.py</code>使用的指令，例如，我们曾经使用在第9章使用过<code>makemessages</code>和<code>compilemessages</code>命令。</p>
+<p>一个管理命令由一个Python模块组成，这个模块里包含一个<code>Command</code>类，这个<code>Command</code>类继承<code>django.core.management.base.BaseCommand</code>或者<code>BaseCommand</code>的子类。我们可以创建一个简单的包含参数和选项的自定义命令。</p>
+<p>对于每个在<code>INSTALLED_APPS</code>内注册的应用，Django会在应用目录下边的<code>management/commands/</code>目录下搜索管理命令，搜索到的每个命令模块，都会被注册成为一个同名的命令。</p>
+<p>更多自定义管理命令的信息可以查看<a href="https://docs.djangoproject.com/en/2.0/howto/custom-management-commands/" target="_blank">https://docs.djangoproject.com/en/2.0/howto/custom-management-commands/</a>。</p>
+<p>我们准备来创建一个提醒学生至少选一个课程的命令。这个命令会向所有已经注册超过一定时间，但还没有选任何一门课程的学生发送一封邮件。</p>
+<p>在<code>student</code>应用下建立如下的目录和文件结构：</p>
+<pre>
+management/
+    __init__.py
+    commands/
+        __init__.py
+        enroll_reminder.py
+</pre>
+<p>编辑<code>enroll_reminder.py</code>，添加下列代码：</p>
+<pre>
+import datetime
+from django.conf import settings
+from django.core.management.base import BaseCommand
+from django.core.mail import send_mass_mail
+from django.contrib.auth.models import User
+from django.db.models import Count
+
+class Command(BaseCommand):
+    help = 'Sends an e-mail reminder to users registered more than N days that are not enrolled into any courses yet'
+
+def add_arguments(self, parser):
+    parser.add_argument('--days', dest='days', type=int)
+
+def handle(self, *args, **options):
+    emails = []
+    subject = 'Enroll in a course'
+    date_joined = datetime.date.today() - datetime.timedelta(days=options['days'])
+    users = User.objects.annotate(course_count=Count('courses_joined')).filter(course_count=0,
+                                                                               date_joined__lte=date_joined)
+    for user in users:
+        message = "Dear {},\n\n We noticed that you didn't enroll in any courses yet. What are you waiting for?".format(
+            user.first_name)
+        emails.append((subject, message, settings.DEFAULT_FROM_EMAIL, [user.email]))
+    send_mass_mail(emails)
+    self.stdout.write('Sent {} reminders'.format(len(emails)))
+</pre>
+<p>这是<code>enroll_reminder</code>命令，解释如下：</p>
+<ul>
+    <li><code>Command</code>类继承<code>BaseCommand</code>类</li>
+    <li><code>Command</code>类包含一个<code>help</code>属性，为命令提供帮助信息，运行<code>python manage.py help enroll_reminder</code>就可以看到这段信息。</li>
+    <li><code>add_arguments()</code>用来设置可用的参数，这里设置了<code>--days</code>参数，指定其类型为整型。运行命令时这个参数用于指定天数，方便筛选出要向其发送邮件的学生。</li>
+    <li><code>handle()</code>方法定义命令的实际业务逻辑。这里从命令行中获取解析后的<code>days</code>属性，然后查询注册时间超过该天数的用户，再通过分组计算这些用户的选课数量，从中选出未选课的用户。然后使用一个<code>emails</code>列表记录所有需要发送的邮件，最后通过<code>send_mass_mail()</code>方法发送邮件，这样可以使用一个SMTP链接发送大量邮件，而不用每发一次邮件就新开一个SMTP链接。</li>
+</ul>
+<p>编写好上述代码后，打开系统命令行来运行命令：</p>
+<pre>
+python manage.py enroll_reminder --days=20
+</pre>
+<p>如果还没有配置SMTP服务器，可以参考第二章中的内容。如果确实没有SMTP服务器，可以在<code>settings.py</code>中加上：</p>
+<pre>
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+</pre>
+<p>以让Django将邮件内容显示在控制台而不实际发送邮件。</p>
+<p>还可以通过系统让这个命令每天早上8点运行，如果使用了基于UNIX的操作系统，可以打开系统命令行模式，输入<code>crontab -e</code>来编辑<code>crontab</code>，在其中增加下边这行：</p>
+<pre>
+0 8 * * * python /path/to/educa/manage.py enroll_reminder --days=20 --settings=educa.settings.pro
+</pre>
+<p>将其中的<code>/path/to/educa/manage.py</code>替换成实际的<code>manage.py</code>所在的绝对路径。如果不熟悉<b>cron</b>的使用，可以参考<a href="http://www.unixgeeks.org/security/newbie/unix/cron-1.html" target="_blank">http://www.unixgeeks.org/security/newbie/unix/cron-1.html</a>。</p>
+<p>如果使用的是Windows，可以使用系统的计划任务功能，具体可以参考<a href="https://docs.microsoft.com/zh-cn/windows/desktop/TaskSchd/task-scheduler-start-page" target="_blank">https://docs.microsoft.com/zh-cn/windows/desktop/TaskSchd/task-scheduler-start-page</a>。</p>
+<p>还有一个方法是使用Celery定期执行任务。我们在第7章使用过Celery，可以使用Celery beat scheduler来建立定期执行的异步任务，具体可以参考<a href="https://celery.readthedocs.io/en/latest/userguide/periodic-tasks.html" target="_blank">https://celery.readthedocs.io/en/latest/userguide/periodic-tasks.html</a>。</p>
+<p>对于想通过<b>cron</b>或者<b>Windows</b>的计划任务执行的单独脚本，都可以通过自定义管理命令的方式来进行。</p>
+<p>Django还提供了一个使用Python执行管理命令的方法，可以通过Python代码来运行管理命令，例如：</p>
+<pre>
+from django.core import management
+management.call_command('enroll_reminder', days=20)
+</pre>
+<p>程序在执行到这里的时候，就会去运行这个命令。现在我们就可以为自己的应用定制管理命令并且计划运行了。</p>
+
+<h1><b>总结</b></h1>
+<p>这一章里使用uWSGI和NGINX配置完成了生产环境，还实现了自定义中间件和管理命令。</p>
+<p>到这里本书已经结束。祝贺你，本书通过创建实际的项目和将其他软件与Django集成的方式，指引你学习使用Django建立Web应用所需的技能。无论一个简单的项目原型还是大型的Web应用，你现在都具备使用Django创建它们的能力。</p>
+<p>祝你未来的Django之旅愉快！</p>
+
+<h1><b>其他感兴趣的书</b></h1>
+<p>如果你发现本书很有用，你可能还会对下列书籍感兴趣。</p>
+<p><img src="http://img.conyli.cc/django2/C13-04.jpg" alt=""></p>
+<p><a href="https://www.packtpub.com/application-development/python-programming-blueprints" target="_blank">Python Programming Blueprints</a></p>
+<p><img src="http://img.conyli.cc/django2/C13-07.jpg" alt=""></p>
+<p><a href="https://www.packtpub.com/web-development/django-restful-web-services" target="_blank">Django RESTful Web Services</a></p>
+</body>
+</html>
