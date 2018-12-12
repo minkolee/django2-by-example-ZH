@@ -283,6 +283,7 @@ class LastestPostFeed(Feed):
     def item_description(self, item):
         return truncatewords(item.body, 30)
 </pre>
+<p class="emp">译者注：<code>item_description(self, item)</code>这个函数并没有对<code>post.body</code>进行处理，所以会返回未经处理的markdown代码，在不支持markdown的Feed阅读器里会出现问题，读者可以修改该函数，调用markdown库输出转换后的字符串。</p>
 <p>这段代码首先继承了内置的<code>Feed</code>类，<code>title</code>，<code>link</code>和<code>description</code>属性分别对应XML文件的<code>&lt;title></code>、<code>&lt;link></code>和<code>&lt;description></code>标签。</p>
 <p>items()方法用于获得订阅信息要使用的数据对象，这里只取了最新发布的5篇文章。<code>item_title()</code>和<code>item_description()</code>方法接收每一个数据对象并且分别返回标题和正文前30个字符。</p>
 <p>现在为配置订阅路径，编辑<code>blog/urls.py</code>，导入<code>LatestPostsFeed</code>然后配置一条新路由：</p>
@@ -466,7 +467,7 @@ path('search/', views.post_search, name='post_search'),
 
 
 <h3 id="c3-4-5"><span class="title">4.5</span>词干提取与搜索排名</h3>
-<p>Django提供了一个<code>SearchQuery</code>类将一个查询词语转换成一个查询对象，默认会通过词干提取算法（stemming algorithms）转换成查询对象，用于更好的进行匹配。在查询时候还可能会依据相关性进行排名。，PostgreSQL提供了一个排名功能，按照被搜索内容在一条数据里出现的次数和频率进行排名。</p>
+<p>Django提供了一个<code>SearchQuery</code>类将一个查询词语转换成一个查询对象，默认会通过词干提取算法（stemming algorithms）转换成查询对象，用于更好的进行匹配。在查询时候还可能会依据相关性进行排名。PostgreSQL提供了一个排名功能，按照被搜索内容在一条数据里出现的次数和频率进行排名。</p>
 <p>编辑<code>blog</code>应用的<code>views.py</code>文件:</p>
 <pre>
 from django.contrib.postgres.search import SearchVector, <b>SearchQuery, SearchRank</b>
