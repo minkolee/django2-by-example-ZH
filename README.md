@@ -1,9 +1,19 @@
 # django2-by-example-ZH
 Django 2 by example个人翻译和整理
 
-目前进度，全书校对完成（2018年11月13日）。
+2019-1-29
+PDF制作完成，可以下载PDF文件了。
 
-EPUB电子书制作完成，可以方便的手机端上观看。
+
+目前进度：
+1 全书校对完成（2018年11月13日）。
+2 根据热心网友的补充逐步修改，2018年12月12日后基本无修改。
+3 感谢网友提供 https://pdfcrowd.com/?tdsourcetag=s_pctim_aiomsg 这个站用于转换PDF,更新了PDF文件可供下载
+
+
+
+
+EPUB电子书继续提供下载，方便手机观看。
 也可以到[这里](http://conyli.cc/django2-by-example-zh.epub)下载EPUB电子书
 
 原书学习心得及博客整理请见[我的博客](http://www.conyli.cc/django-2-by-example).
