@@ -464,7 +464,7 @@ Contact.objects.get_or_create(user_from=request.user, user_to=user)
 def dashboard(request):
     <b># 默认展示所有行为，不包含当前用户</b>
     <b>actions = Action.objects.exclude(user=request.user)</b>
-    <b>following_ids = request.user.following.value_list('id', flat=True)</b>
+    <b>following_ids = request.user.following.values_list('id', flat=True)</b>
 
     <b>if following_ids:</b>
         # 如果当前用户有关注的用户，仅展示被关注用户的行为
