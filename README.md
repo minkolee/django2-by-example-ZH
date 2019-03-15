@@ -3,7 +3,8 @@ Django 2 by example个人翻译和整理
 
 2019-3-13
 修改zhuo521@126.com来信指出的第六章 2.5 展示用户行为流中的
-value_list错误，应该为values_list
+value_list错误，应该为values_list。
+
 已经更新epub电子书和静态页面，PDF未更新
 
 
