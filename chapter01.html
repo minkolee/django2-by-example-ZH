@@ -232,7 +232,7 @@ class Post(models.Model):
     slug = models.SlugField(max_length=250, unique_for_date='publish')
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='blog_posts')
     body = models.TextField()
-    publish = models.DateTimeField(default=timezone.now())
+    publish = models.DateTimeField(default=timezone.now)
     created = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
@@ -738,7 +738,7 @@ def post_list(request):
 <pre>
 {% block content %}
     # ......
-    <b>{% include 'pagination.html' with page = posts %}</b>
+    <b>{% include 'pagination.html' with page=posts %}</b>
 {% endblock %}
 </pre>
 <p>由于视图传递给列表页的<code>Page</code>对象的名称叫做<code>posts</code>，所以通过<code>with</code>重新指定了变量名称以让分页模板也能正确接收到该对象。</p>
