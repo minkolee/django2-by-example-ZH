@@ -1344,7 +1344,7 @@ class ContentOrderView(CsrfExemptMixin, JsonRequestResponseMixin, View):
 <p>最后，需要在模板中实现拖动功能。使用jQuery UI库来完成这个功能。jQuery UI基于jQuery，提个了一系列的界面互动操作，效果和插件。我们使用其中的<code>sortable</code>元素。首先，需要把jQuery加载到母版中。打开<code>base.html</code>，在加载jQuery的script标签之后加入jQuery UI。</p>
 <pre>
 &lt;script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js">&lt;/script>
-<b>&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.css">&lt;/script></b>
+<b>&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js">&lt;/script></b>
 </pre>
 <p>这里使用了国内的CDN。由于jQueryUI依赖于jQuery，所以要在其后载入。之后编辑<code>courses/manage/module/content_list.html</code>，在底部添加如下代码：</p>
 <pre>
