@@ -429,9 +429,9 @@ class Cart:
             <b>self.cart[product_id]['quantity'] += quantity</b>
         <b>self.save()</b>
 
-        <b>def save(self):</b>
-        <b># 设置session.modified的值为True，中间件在看到这个属性的时候，就会保存session</b>
-            <b>self.session.modified = True</b>
+    <b>def save(self):</b>
+    <b># 设置session.modified的值为True，中间件在看到这个属性的时候，就会保存session</b>
+        <b>self.session.modified = True</b>
 </pre>
 <p><code>add()</code>方法接受以下参数：</p>
 <ul>
