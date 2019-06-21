@@ -416,22 +416,22 @@ class Cart:
 class Cart:
     # ......
     <b>def add(self, product, quantity=1, update_quantity=False):</b>
-    <b>"""</b>
-    <b>向购物车中增加商品或者更新购物车中的数量</b>
-    <b>"""</b>
+        <b>"""</b>
+        <b>向购物车中增加商品或者更新购物车中的数量</b>
+        <b>"""</b>
 
-    <b>product_id = str(product.id)</b>
-    <b>if product_id not in self.cart:</b>
-        <b>self.cart[product_id] = {'quantity': 0, 'price': str(product.price)}</b>
-    <b>if update_quantity:</b>
-        <b>self.cart[product_id]['quantity'] = quantity</b>
-    <b>else:</b>
-        <b>self.cart[product_id]['quantity'] += quantity</b>
-    <b>self.save()</b>
+        <b>product_id = str(product.id)</b>
+        <b>if product_id not in self.cart:</b>
+            <b>self.cart[product_id] = {'quantity': 0, 'price': str(product.price)}</b>
+        <b>if update_quantity:</b>
+            <b>self.cart[product_id]['quantity'] = quantity</b>
+        <b>else:</b>
+            <b>self.cart[product_id]['quantity'] += quantity</b>
+        <b>self.save()</b>
 
-    <b>def save(self):</b>
-    <b># 设置session.modified的值为True，中间件在看到这个属性的时候，就会保存session</b>
-        <b>self.session.modified = True</b>
+        <b>def save(self):</b>
+        <b># 设置session.modified的值为True，中间件在看到这个属性的时候，就会保存session</b>
+            <b>self.session.modified = True</b>
 </pre>
 <p><code>add()</code>方法接受以下参数：</p>
 <ul>
@@ -763,7 +763,7 @@ Your cart is empty.
     <b>{% with total_items=cart|length %}</b>
         <b>{% if cart|length > 0 %}</b>
             <b>Your cart:</b>
-            <b>&lt;a href="{% url 'cart:cart_detail' %}">{{ total_items }} items{{ total_items|pluralize }},</b>
+            <b>&lt;a href="{% url 'cart:cart_detail' %}">{{ total_items }} item{{ total_items|pluralize }},</b>
             <b>${{ cart.get_total_price }}</b>
             <b>&lt;/a></b>
         <b>{% else %}</b>

@@ -365,13 +365,13 @@ templates/
     <li>用户选中的内容组成的QuerySet</li>
 </ul>
 <p>在选中一个action选项然后点击旁边的Go按钮的时候，该函数就会被执行。</p>
-<p>我们就准备在下拉action清单里增加一项导出CSV数据的功能，为此先来修改<code>orders</code>应用中的<code>admin.py</code>韦健，将下列代码加在<code>OrderAdmin</code>类定义之前：</p>
+<p>我们就准备在下拉action清单里增加一项导出CSV数据的功能，为此先来修改<code>orders</code>应用中的<code>admin.py</code>文件，将下列代码加在<code>OrderAdmin</code>类定义之前：</p>
 <pre>
 import csv
 import datetime
 from django.http import HttpResponse
 
-def exprot_to_csv(modeladmin, request, queryset):
+def export_to_csv(modeladmin, request, queryset):
     opts = modeladmin.model._meta
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename={}.csv'.format(opts.verbose_name)
@@ -390,7 +390,7 @@ def exprot_to_csv(modeladmin, request, queryset):
         writer.writerow(data_row)
     return response
 
-exprot_to_csv.short_description = 'Export to CSV'
+export_to_csv.short_description = 'Export to CSV'
 </pre>
 <p>在这个函数里我们做了如下事情：</p>
 <ol>
@@ -657,13 +657,13 @@ python manage.py collectstatic
 <pre>
 urlpatterns = [
     # ...
-    <b>path('admin/order/&lt;int:order_id&lt;/pdf/',views.admin_order_pdf,name='admin_order_pdf'),</b>
+    <b>path('admin/order/&lt;int:order_id>/pdf/', views.admin_order_pdf, name='admin_order_pdf'),</b>
 ]
 </pre>
 <p>像导出CSV一样，我们要在管理后台的展示页面中增加一个链接到这个视图的URL。打开<code>orders</code>应用的<code>admin.py</code>文件，在<code>OrderAdmin</code>类之前增加：</p>
 <pre>
 def order_pdf(obj):
-    return mark_safe('&lt;a href="{}">View&lt;/a>'.format(reverse('orders:admin_order_pdf', args=[obj.id])))
+    return mark_safe('&lt;a href="{}">PDF&lt;/a>'.format(reverse('orders:admin_order_pdf', args=[obj.id])))
 order_pdf.short_description = 'Invoice'
 </pre>
 <p>如果指定了<code>short_description</code>属性，Django就会用该属性的值作为列名。</p>
