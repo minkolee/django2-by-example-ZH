@@ -907,7 +907,7 @@ urlpatterns = [
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
     'account.authentication.EmailAuthBackend',
-    <b>'social_core.backends.facebook.FacebookAppOAuth2',</b>
+    <b>'social_core.backends.google.GoogleOAuth2',</b>
 ]
 </pre>
 <p class="emp">译者注：由于Google API的界面在原书成书后已经改变，以下在Google网站的操作步骤和截图来自于译者实际操作过程。</p>
@@ -938,7 +938,7 @@ AUTHENTICATION_BACKENDS = [
         <p><img src="http://img.conyli.cc/django2/C04-g05.jpg" alt=""></p>
     </li>
     <li>
-        此时会跳转到步骤5的问题页面，选择<code>网页应用</code>，之后会被要求填写辅助信息，在<code>名称</code>中填写<code>Bookmarks</code>，<code>已获授权的重定向 URI</code>中填写<code>http://mysite.com:8000/socialauth/complete/google-oauth2/</code>，如下图所示：
+        此时会跳转到步骤5的问题页面，选择<code>网页应用</code>，之后会被要求填写辅助信息，在<code>名称</code>中填写<code>Bookmarks</code>，<code>已获授权的重定向 URI</code>中填写<code>http://mysite.com:8000/social-auth/complete/google-oauth2/</code>，如下图所示：
         <p><img src="http://img.conyli.cc/django2/C04-g06.jpg" alt=""></p>
 
     </li>
