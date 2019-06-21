@@ -231,8 +231,8 @@ from . import views
 
 urlpatterns = [
     # path('login/', views.user_login, name='login'),
-    <b>path('login',auth_views.LoginView.as_view(),name='login'),</b>
-    <b>path('logout',auth_views.LogoutView.as_view(),name='logout'),</b>
+    <b>path('login/',auth_views.LoginView.as_view(),name='login'),</b>
+    <b>path('logout/',auth_views.LogoutView.as_view(),name='logout'),</b>
 ]
 </pre>
 <p>现在我们把登录和登出的URL导向了内置视图，然后需要为内置视图建立模板</p>
@@ -364,7 +364,7 @@ LOGOUT_URL = 'logout'
 <h3 id="c4-2-4"><span class="title">2.4</span>修改密码视图</h3>
 <p>在用户登录之后需要允许用户修改密码，我们在项目中集成Django的内置修改密码相关的视图。编辑<code>account</code>应用的<code>urls.py</code>文件，添加如下两行URL：</p>
 <pre>
-path('password_change', auth_views.PasswordChangeView.as_view(), name='password_change'),
+path('password_change/', auth_views.PasswordChangeView.as_view(), name='password_change'),
 path('password_change/done/', auth_views.PasswordChangeDoneView.as_view(), name='password_change_done'),
 </pre>
 <p><code>asswordChangeView</code>视图会控制渲染修改密码的页面和表单，<code>PasswordChangeDoneView</code>视图在成功修改密码之后显示成功消息。</p>
@@ -412,7 +412,7 @@ Password changed
 <pre>
 path('password_reset/', auth_views.PasswordResetView.as_view(), name='password_reset'),
 path('password_reset/done/', auth_views.PasswordResetDoneView.as_view(), name='password_reset_done'),
-path('reset/&lt;uidb64>/&lt;token>', auth_views.PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+path('reset/&lt;uidb64>/&lt;token>/', auth_views.PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
 path('reset/done/', auth_views.PasswordResetCompleteView.as_view(), name='password_reset_complete'),
 </pre>
 <p>然后在<code>account</code>应用的<code>templates/registration/</code>目录下创建<code>password_reset_form.html</code>：</p>
