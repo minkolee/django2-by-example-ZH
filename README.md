@@ -1,6 +1,10 @@
 # django2-by-example-ZH
 Django 2 by example个人翻译和整理
 
+2019-07-07
+更新EPUB电子书至目前最新版本，PDF未更新
+
+
 2019-6-27
 修改部分错误，查看项目的issues列表。
 其中timezone.now()的错误很多人遇到,必须要带括号,才能保证查询的时候匹配一个datetime对象而不是一个函数对象.
