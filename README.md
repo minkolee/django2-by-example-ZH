@@ -1,7 +1,8 @@
 # django2-by-example-ZH
 Django 2 by example个人翻译和整理
 
-
+2019-7-19
+更新EPUB版本至最新, 考虑到PDF已经老旧, 先删除
 
 2019-07-07
 更新EPUB电子书至目前最新版本，PDF未更新.
