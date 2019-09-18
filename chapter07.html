@@ -1033,7 +1033,7 @@ app.autodiscover_tasks()
     <li>调用<code>config_from_object()</code>方法，从我们项目的设置文件中读取环境设置。<code>namespace</code>属性指定了在我们的settings.py文件中，所有和Celery相关的配置都以<code>CELERY</code>开头，例如<code>CELERY_BROKER_URL</code>。</li>
     <li>调用<code>autodiscover_tasks()</code>，让Celery自动发现所有的异步任务。Celery会在每个<code>INSTALLED_APPS</code>中列出的应用中寻找<code>task.py</code>文件，在里边寻找定义好的异步任务然后执行。</li>
 </ol>
-<p>还需要在项目的<code>__init__.py</code>文件中导入<code>celery</code>模块，以让项目启动时Celery就运行，编辑<code>myshop/__inti__.py</code>：</p>
+<p>还需要在项目的<code>__init__.py</code>文件中导入<code>celery</code>模块，以让项目启动时Celery就运行，编辑<code>myshop/__init__.py</code>：</p>
 <pre>
 # import celery
 from .celery import app as celery_app
