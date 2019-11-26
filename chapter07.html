@@ -493,7 +493,7 @@ class Cart:
 class Cart:
     # ......
     <b>def get_total_price(self):</b>
-        <b>return sum(Decimal(item['price'])*item['quantity'] for item in self.cart.values())</b>
+        <b>return sum(Decimal(item['price']) * item['quantity'] for item in self.cart.values())</b>
 </pre>
 <p>最后，再编写一个清空购物车的方法：</p>
 <pre>
