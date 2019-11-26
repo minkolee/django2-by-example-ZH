@@ -151,7 +151,7 @@ def product_list(request, category_slug=None):
 <p>还需要一个展示单个商品详情的视图，继续编辑<code>views.py</code>文件：</p>
 <pre>
 def product_detail(request, id, slug):
-    product = get_object_or_404(Product, id=id, slug=slug, availbable=True)
+    product = get_object_or_404(Product, id=id, slug=slug, available=True)
     return render(request, 'shop/product/detail.html', {'product': product})
 </pre>
 <p><code>product_detail</code>视图需要<code>id</code>和<code>slug</code>两个参数来获取商品对象。只通过ID可以获得商品对象，因为ID是唯一的，这里增加了<code>slug</code>字段是为了对搜索引擎优化。</p>
@@ -493,7 +493,7 @@ class Cart:
 class Cart:
     # ......
     <b>def get_total_price(self):</b>
-        <b>return sum(Decimal(item['price']*item['quantity']) for item in self.cart.values())</b>
+        <b>return sum(Decimal(item['price'])*item['quantity'] for item in self.cart.values())</b>
 </pre>
 <p>最后，再编写一个清空购物车的方法：</p>
 <pre>
