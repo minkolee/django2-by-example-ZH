@@ -35,7 +35,6 @@ PDF制作完成，可以下载PDF文件了。
 
 
 EPUB电子书继续提供下载，方便手机观看。
-也可以到[这里](http://conyli.cc/django2-by-example-zh.epub)下载EPUB电子书
 
 原书学习心得及博客整理请见[我的博客](http://www.conyli.cc/django-2-by-example).
 由于学习的时候主要记录了思路，现在正在按章节校对和整理成原汁原味的翻译。
