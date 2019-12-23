@@ -468,7 +468,7 @@ def dashboard(request):
 
     <b>if following_ids:</b>
         # 如果当前用户有关注的用户，仅展示被关注用户的行为
-        <b>actions = actions.objects.filter(user_id__in=following_ids)</b>
+        <b>actions = actions.filter(user_id__in=following_ids)</b>
     <b>actions = actions[:10]</b>
     return render(request, 'account/dashboard.html', {'section': 'dashboard', 'actions': actions})
 </pre>
